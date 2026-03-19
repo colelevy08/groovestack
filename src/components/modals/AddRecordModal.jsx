@@ -228,7 +228,7 @@ function VinylCamera({ onVerified, onRetake }) {
         {/* FAILED: rejection */}
         {status === STATUS.FAILED && (
           <div>
-            {capturedSrc && <img src={capturedSrc} alt="Rejected photo" style={{ width: '100%', borderRadius: 8, maxHeight: 200, objectFit: 'cover', opacity: 0.6, border: '2px solid #ef444455' }} />}
+            {capturedSrc && <img src={capturedSrc} alt="Rejected capture" style={{ width: '100%', borderRadius: 8, maxHeight: 200, objectFit: 'cover', opacity: 0.6, border: '2px solid #ef444455' }} />}
             <p style={{ fontSize: 13, color: '#f87171', marginTop: 10, lineHeight: 1.5, textAlign: 'center' }}>{message}</p>
             <button
               onClick={retake}
