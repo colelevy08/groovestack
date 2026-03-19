@@ -1,25 +1,573 @@
-import logo from './logo.svg';
-import './App.css';
+// Root component — owns all shared state and passes it down to screens and modals.
+// All record mutations, follow/unfollow, and user actions are handled here and passed as callbacks.
+// State is persisted to localStorage on every change (currentUser, records, following, profile, dmMessages).
+// Navigation state (nav) determines which screen is rendered in the main content area.
+// Auth is managed via Supabase — shows AuthScreen when no session is active.
+import { useState, useEffect, useCallback } from 'react';
+import INITIAL_RECORDS from './constants/records';
+import INITIAL_POSTS from './constants/posts';
+import INITIAL_LISTENING from './constants/listening';
+import { USER_PROFILES, ACCENT_COLORS } from './constants';
+import { supabase } from './utils/supabase';
+import { API_BASE } from './utils/api';
 
-function App() {
+// Layout
+import Sidebar from './components/Sidebar';
+import AuthScreen from './components/AuthScreen';
+
+// Screens
+import SocialFeedScreen from './components/screens/SocialFeedScreen';
+import ExploreScreen from './components/screens/ExploreScreen';
+import CollectionScreen from './components/screens/CollectionScreen';
+import ProfileScreen from './components/screens/ProfileScreen';
+import FollowingScreen from './components/screens/FollowingScreen';
+import TransactionsScreen from './components/screens/TransactionsScreen';
+import VinylBuddyScreen from './components/screens/VinylBuddyScreen';
+import UserProfilePage from './components/screens/UserProfilePage';
+
+// Modals
+import AddRecordModal from './components/modals/AddRecordModal';
+import CommentsModal from './components/modals/CommentsModal';
+import BuyModal from './components/modals/BuyModal';
+import DetailModal from './components/modals/DetailModal';
+import ProfileEditModal from './components/modals/ProfileEditModal';
+import UserProfileModal from './components/modals/UserProfileModal';
+import DMModal from './components/modals/DMModal';
+import NotificationsPanel from './components/modals/NotificationsPanel';
+import OfferModal from './components/modals/OfferModal';
+import CreatePostModal from './components/modals/CreatePostModal';
+import ArtistProfileModal from './components/modals/ArtistProfileModal';
+
+// UI
+import Toast from './components/ui/Toast';
+
+// ── Global font + reset ────────────────────────────────────────────────────────
+const FONT_STYLE = `
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500;700&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #080808; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #0a0a0a; }
+  ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+  select option { background: #111; }
+`;
+
+export default function App() {
+  // ── Auth state ──────────────────────────────────────────────────────────────
+  const [session, setSession] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // ── Core state — all initialized from localStorage with fallbacks ──────────
+  const [currentUser, setCurrentUser] = useState(() => localStorage.getItem('gs_currentUser') || '');
+  const [records, setRecords] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_records')) || INITIAL_RECORDS; } catch { return INITIAL_RECORDS; }
+  });
+  const [nav, setNav] = useState("Social");
+  const [posts, setPosts] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_posts')) || INITIAL_POSTS; } catch { return INITIAL_POSTS; }
+  });
+  const [following, setFollowing] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_following')) || ["mara.vinyl", "thomas.wax", "juniper.sounds", "felix.rpm", "nadia.rpm", "yuki.vinyl", "cleo.spins"]; } catch { return ["mara.vinyl", "thomas.wax", "juniper.sounds", "felix.rpm", "nadia.rpm", "yuki.vinyl", "cleo.spins"]; }
+  });
+  const [profile, setProfile] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_profile')) || { displayName: "", bio: "", location: "", favGenre: "" }; } catch { return { displayName: "", bio: "", location: "", favGenre: "" }; }
+  });
+  const [dmMessages, setDmMessages] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_dmMessages')) || {}; } catch { return {}; }
+  });
+  const [wishlist, setWishlist] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_wishlist')) || []; } catch { return []; }
+  });
+  const [offers, setOffers] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_offers')) || []; } catch { return []; }
+  });
+  const [purchases, setPurchases] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_purchases')) || []; } catch { return []; }
+  });
+  const [cart, setCart] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_cart')) || []; } catch { return []; }
+  });
+  const [listeningHistory, setListeningHistory] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_listening')) || INITIAL_LISTENING; } catch { return INITIAL_LISTENING; }
+  });
+  const [vinylBuddyDevice, setVinylBuddyDevice] = useState(() => localStorage.getItem('gs_vinylBuddyDevice') || '');
+  const vinylBuddyActivated = vinylBuddyDevice.length > 0;
+
+  // ── Modal / panel visibility ─────────────────────────────────────────────────
+  const [showAdd, setShowAdd] = useState(false);
+  const [commentRecord, setCommentRecord] = useState(null);
+  const [buyRecord, setBuyRecord] = useState(null);
+  const [detailRecord, setDetailRecord] = useState(null);
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [viewingUser, setViewingUser] = useState(null);
+  const [showDMs, setShowDMs] = useState(false);
+  const [showNotifs, setShowNotifs] = useState(false);
+  const [notifCount, setNotifCount] = useState(() => {
+    try { const v = localStorage.getItem('gs_notifCount'); return v !== null ? JSON.parse(v) : 4; } catch { return 4; }
+  });
+  const [offerTarget, setOfferTarget] = useState(null);
+  const [showCreatePost, setShowCreatePost] = useState(false);
+  const [viewingUserProfile, setViewingUserProfile] = useState(null);
+  const [viewingArtist, setViewingArtist] = useState(null);
+  const [toast, setToast] = useState({ visible: false, msg: "" });
+
+  // Shows the Toast bar and auto-hides it after 2.2 seconds
+  const showToast = msg => {
+    setToast({ visible: true, msg });
+    setTimeout(() => setToast(t => ({ ...t, visible: false })), 2200);
+  };
+
+  // Applies a transform fn to a record by id — also syncs detailRecord and commentRecord if they're open
+  const updateRecord = (id, fn) => {
+    setRecords(rs => rs.map(r => r.id === id ? fn(r) : r));
+    setDetailRecord(d => d?.id === id ? fn(d) : d);
+    setCommentRecord(d => d?.id === id ? fn(d) : d);
+  };
+
+  // ── Auth: load profile from Supabase ────────────────────────────────────────
+  const loadProfile = useCallback(async (userId) => {
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (data && !error) {
+      setCurrentUser(data.username);
+      setProfile({
+        displayName: data.display_name || '',
+        bio: data.bio || '',
+        location: data.location || '',
+        favGenre: data.fav_genre || '',
+        avatarUrl: data.avatar_url || '',
+        headerUrl: data.header_url || '',
+      });
+    }
+  }, []);
+
+  // ── Auth: session listener ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!supabase) {
+      setAuthLoading(false);
+      return;
+    }
+
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s);
+      if (s) loadProfile(s.user.id);
+      setAuthLoading(false);
+    });
+
+    // Listen for auth changes (login, logout, token refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+      if (s) {
+        loadProfile(s.user.id);
+      } else {
+        setCurrentUser('');
+        setProfile({ displayName: '', bio: '', location: '', favGenre: '' });
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [loadProfile]);
+
+  // ── Auth: logout ────────────────────────────────────────────────────────────
+  const handleLogout = async () => {
+    if (supabase) await supabase.auth.signOut();
+    Object.keys(localStorage).forEach(k => {
+      if (k.startsWith('gs_')) localStorage.removeItem(k);
+    });
+  };
+
+  // ── One-time migration: inject creator's records + wishlist into existing localStorage data ──
+  useEffect(() => {
+    const CREATOR_IDS = [9000,9001,9002,9003,9004,9005,9006,9007,9008,9009,9010,9011,9012,9013,9014,9015];
+    const hasCreatorRecords = records.some(r => CREATOR_IDS.includes(r.id));
+    if (!hasCreatorRecords) {
+      const creatorRecords = INITIAL_RECORDS.filter(r => CREATOR_IDS.includes(r.id));
+      if (creatorRecords.length > 0) setRecords(rs => [...creatorRecords, ...rs]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Persistence ──────────────────────────────────────────────────────────────
+  useEffect(() => { localStorage.setItem('gs_currentUser', currentUser); }, [currentUser]);
+  useEffect(() => { try { localStorage.setItem('gs_records', JSON.stringify(records)); } catch {} }, [records]);
+  useEffect(() => { localStorage.setItem('gs_following', JSON.stringify(following)); }, [following]);
+  useEffect(() => { localStorage.setItem('gs_profile', JSON.stringify(profile)); }, [profile]);
+  useEffect(() => { localStorage.setItem('gs_dmMessages', JSON.stringify(dmMessages)); }, [dmMessages]);
+  useEffect(() => { localStorage.setItem('gs_wishlist', JSON.stringify(wishlist)); }, [wishlist]);
+  useEffect(() => { localStorage.setItem('gs_offers', JSON.stringify(offers)); }, [offers]);
+  useEffect(() => { localStorage.setItem('gs_purchases', JSON.stringify(purchases)); }, [purchases]);
+  useEffect(() => { localStorage.setItem('gs_cart', JSON.stringify(cart)); }, [cart]);
+  useEffect(() => { try { localStorage.setItem('gs_posts', JSON.stringify(posts)); } catch {} }, [posts]);
+  useEffect(() => { try { localStorage.setItem('gs_listening', JSON.stringify(listeningHistory)); } catch {} }, [listeningHistory]);
+  useEffect(() => { localStorage.setItem('gs_vinylBuddyDevice', vinylBuddyDevice); }, [vinylBuddyDevice]);
+  useEffect(() => { localStorage.setItem('gs_notifCount', JSON.stringify(notifCount)); }, [notifCount]);
+
+  // ── Poll Vinyl Buddy server for new listening sessions ───────────────────
+  useEffect(() => {
+    if (!currentUser) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/vinyl-buddy/history/${currentUser}?limit=50`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled || !data.sessions?.length) return;
+        setListeningHistory(prev => {
+          const existingIds = new Set(prev.map(s => s.id));
+          const newSessions = data.sessions.filter(s => !existingIds.has(s.id));
+          return newSessions.length > 0 ? [...newSessions, ...prev] : prev;
+        });
+      } catch { /* server not running — that's fine */ }
+    };
+    poll();
+    const interval = setInterval(poll, 15000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [currentUser]);
+
+  // Re-keys currentUser, record.user, and DM message.from fields to the new handle atomically
+  const onUsernameChange = async (newHandle) => {
+    const old = currentUser;
+    setCurrentUser(newHandle);
+    setRecords(rs => rs.map(r => r.user === old ? { ...r, user: newHandle } : r));
+    setDmMessages(msgs => {
+      const updated = {};
+      for (const [thread, threadMsgs] of Object.entries(msgs)) {
+        updated[thread] = threadMsgs.map(m => m.from === old ? { ...m, from: newHandle } : m);
+      }
+      return updated;
+    });
+    setOffers(os => os.map(o => o.from === old ? { ...o, from: newHandle } : o));
+    setPosts(ps => ps.map(p => p.user === old ? { ...p, user: newHandle } : p));
+
+    // Persist to Supabase
+    if (supabase && session?.user?.id) {
+      await supabase.from('profiles').update({ username: newHandle }).eq('id', session.user.id);
+    }
+  };
+
+  // ── Wishlist actions ───────────────────────────────────────────────────────
+  const onAddWishlistItem = (album, artist) => {
+    const exists = wishlist.some(
+      w => w.album.toLowerCase() === album.toLowerCase() && w.artist.toLowerCase() === artist.toLowerCase()
+    );
+    if (exists) { showToast("Already on your wishlist!"); return; }
+    setWishlist(w => [...w, { id: Date.now(), album: album.trim(), artist: artist.trim() }]);
+    showToast("Added to wishlist!");
+  };
+
+  const onRemoveWishlistItem = (id) => {
+    setWishlist(w => w.filter(item => item.id !== id));
+    showToast("Removed from wishlist");
+  };
+
+  // ── Offer actions ──────────────────────────────────────────────────────────
+  const onSubmitOffer = ({ type, price, shipping, tradeRecord }) => {
+    if (!offerTarget) return;
+    setOffers(o => [{
+      id: Date.now(), from: currentUser, to: offerTarget.targetUser,
+      album: offerTarget.wishlistItem.album, artist: offerTarget.wishlistItem.artist,
+      offeredRecordId: offerTarget.offeredRecord?.id || null,
+      type: type || "cash",
+      price: parseFloat(price) || 0, shipping: parseFloat(shipping) || 0,
+      tradeRecord: tradeRecord || null,
+      status: "pending", time: "just now",
+    }, ...o]);
+    const label = type === "trade" ? "Trade offer" : type === "combo" ? "Combo offer" : "Offer";
+    setOfferTarget(null);
+    setNotifCount(n => n + 1);
+    showToast(`${label} sent to @${offerTarget.targetUser}!`);
+  };
+
+  // Opens OfferModal from the "Wanted By" section in DetailModal
+  const onOfferFromDetail = (record, targetUser, wishlistItem) => {
+    setDetailRecord(null);
+    setOfferTarget({ wishlistItem, targetUser, offeredRecord: record });
+  };
+
+  // ── Record actions — passed to screens and modals as callbacks ───────────────
+  const onLike = id => updateRecord(id, r => ({ ...r, liked: !r.liked, likes: r.liked ? r.likes - 1 : r.likes + 1 }));
+
+  const onSave = id => {
+    const r = records.find(r => r.id === id);
+    updateRecord(id, r => ({ ...r, saved: !r.saved }));
+    showToast(r?.saved ? "Removed from saved" : "Saved!");
+  };
+
+  const onComment = r => setCommentRecord(r);
+  const onBuy = r => setBuyRecord(r);
+  const onDetail = r => setDetailRecord(r);
+
+  const onAddComment = (id, c) => {
+    updateRecord(id, r => ({ ...r, comments: [...r.comments, c] }));
+    showToast("Comment posted!");
+  };
+
+  const onPurchase = id => {
+    const r = records.find(r => r.id === id);
+    if (r) {
+      setPurchases(ps => [{ id: Date.now(), recordId: r.id, album: r.album, artist: r.artist, price: r.price, condition: r.condition, accent: r.accent, format: r.format, year: r.year, seller: r.user, time: new Date().toLocaleString() }, ...ps]);
+    }
+    updateRecord(id, r => ({ ...r, forSale: false, price: null }));
+    setCart(c => c.filter(item => item.recordId !== id));
+    showToast("Purchase complete!");
+  };
+
+  const onAddToCart = r => {
+    if (cart.some(item => item.recordId === r.id)) { showToast("Already in cart!"); return; }
+    setCart(c => [{ id: Date.now(), recordId: r.id, album: r.album, artist: r.artist, price: r.price, condition: r.condition, accent: r.accent, format: r.format, year: r.year, seller: r.user }, ...c]);
+    showToast("Added to cart!");
+  };
+
+  const onRemoveFromCart = id => {
+    setCart(c => c.filter(item => item.id !== id));
+    showToast("Removed from cart");
+  };
+
+  const onAdd = r => {
+    setRecords(rs => [r, ...rs]);
+    showToast("Record added to collection!");
+  };
+
+  // ── Post actions ───────────────────────────────────────────────────────────
+  const onCreatePost = ({ caption, mediaUrl, mediaType, taggedRecord }) => {
+    const accent = ACCENT_COLORS[Math.floor(Math.random() * ACCENT_COLORS.length)];
+    setPosts(ps => [{
+      id: Date.now(), user: currentUser, caption, mediaUrl, mediaType,
+      taggedRecord, likes: 0, liked: false, comments: [], bookmarked: false,
+      timeAgo: "just now", createdAt: Date.now(), accent,
+    }, ...ps]);
+    showToast("Post shared!");
+  };
+
+  const onLikePost = id => {
+    setPosts(ps => ps.map(p => p.id === id ? { ...p, liked: !p.liked, likes: p.liked ? p.likes - 1 : p.likes + 1 } : p));
+  };
+
+  const onCommentPost = (id, comment) => {
+    setPosts(ps => ps.map(p => p.id === id ? { ...p, comments: [...p.comments, comment] } : p));
+    showToast("Comment posted!");
+  };
+
+  const onBookmarkPost = id => {
+    const p = posts.find(p => p.id === id);
+    setPosts(ps => ps.map(p => p.id === id ? { ...p, bookmarked: !p.bookmarked } : p));
+    showToast(p?.bookmarked ? "Removed from bookmarks" : "Bookmarked!");
+  };
+
+  // ── Social actions ───────────────────────────────────────────────────────────
+  const onFollow = u => {
+    if (following.includes(u)) {
+      setFollowing(f => f.filter(x => x !== u));
+      showToast(`Unfollowed @${u}`);
+    } else {
+      setFollowing(f => [...f, u]);
+      showToast(`Now following @${u}!`);
+    }
+  };
+
+  const onViewUser = u => setViewingUser(u);
+  const onViewArtist = name => setViewingArtist(name);
+
+  // Convenience bundle spread into ExploreScreen, CollectionScreen, and ProfileScreen
+  const cardHandlers = { onLike, onSave, onComment, onBuy, onDetail, onViewUser, onViewArtist };
+
+  // Compute who follows the current user by scanning USER_PROFILES followers arrays
+  const computedFollowers = Object.entries(USER_PROFILES)
+    .filter(([, p]) => (p.followers || []).includes(currentUser))
+    .map(([username]) => username);
+
+  // ── Profile save with Supabase persistence ──────────────────────────────────
+  const onProfileSave = async (p) => {
+    setProfile(p);
+    showToast("Profile updated!");
+    if (supabase && session?.user?.id) {
+      await supabase.from('profiles').update({
+        display_name: p.displayName || '',
+        bio: p.bio || '',
+        location: p.location || '',
+        fav_genre: p.favGenre || '',
+        avatar_url: p.avatarUrl || '',
+        header_url: p.headerUrl || '',
+      }).eq('id', session.user.id);
+    }
+  };
+
+  // ── Auth gate: loading → auth screen → main app ─────────────────────────────
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#080808', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <style>{FONT_STYLE}</style>
+        <div style={{ color: '#555', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>Loading...</div>
+      </div>
+    );
+  }
+
+  if (supabase && !session) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#080808', fontFamily: "'DM Sans',-apple-system,sans-serif", color: '#f5f5f5' }}>
+        <style>{FONT_STYLE}</style>
+        <AuthScreen />
+      </div>
+    );
+  }
+
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+    <div style={{ minHeight: "100vh", background: "#080808", fontFamily: "'DM Sans',-apple-system,sans-serif", color: "#f5f5f5" }}>
+      <style>{FONT_STYLE}</style>
+
+      <Sidebar
+        nav={nav} setNav={n => { setViewingUserProfile(null); setNav(n); }}
+        following={following} profile={profile} currentUser={currentUser}
+        notifCount={notifCount}
+        onNotifClick={() => { setShowNotifs(n => !n); setNotifCount(0); }}
+        onAddRecord={() => setShowAdd(true)}
+        onMessages={() => setShowDMs(true)}
+        onLogout={handleLogout}
+      />
+
+      <main style={{ marginLeft: 196, padding: "26px 40px", maxWidth: 1400 }}>
+        {/* Full user profile page — overrides nav routing when viewing another user's full profile */}
+        {viewingUserProfile ? (
+          <UserProfilePage
+            username={viewingUserProfile}
+            records={records} currentUser={currentUser} profile={profile}
+            following={following} onFollow={onFollow}
+            onBack={() => setViewingUserProfile(null)}
+            onDetail={onDetail} onBuy={onBuy} onViewArtist={onViewArtist}
+            onViewUser={u => { setViewingUserProfile(null); setTimeout(() => onViewUser(u), 0); }}
+            posts={posts} onLikePost={onLikePost} onBookmarkPost={onBookmarkPost}
+            listeningHistory={listeningHistory}
+            wishlist={wishlist}
+            onMakeOffer={(wishlistItem, targetUser) => {
+              const offeredRecord = records.find(r => r.user === currentUser && r.album.toLowerCase() === wishlistItem.album.toLowerCase() && r.artist.toLowerCase() === wishlistItem.artist.toLowerCase());
+              setOfferTarget({ wishlistItem, targetUser, offeredRecord });
+            }}
+          />
+        ) : (
+          <>
+            {nav === "Social" && (
+              <SocialFeedScreen
+                posts={posts} records={records} currentUser={currentUser} following={following}
+                profile={profile}
+                onCreatePost={() => setShowCreatePost(true)}
+                onLikePost={onLikePost} onCommentPost={onCommentPost} onBookmarkPost={onBookmarkPost}
+                onViewUser={onViewUser} onDetail={onDetail} onViewArtist={onViewArtist}
+              />
+            )}
+            {nav === "Marketplace" && <ExploreScreen records={records} onAddToCart={onAddToCart} onViewArtist={onViewArtist} {...cardHandlers} />}
+            {nav === "Following" && (
+              <FollowingScreen
+                following={following} records={records} currentUser={currentUser}
+                onFollow={onFollow} onViewUser={onViewUser}
+              />
+            )}
+            {nav === "Collection" && (
+              <CollectionScreen
+                records={records} currentUser={currentUser}
+                onAddRecord={() => setShowAdd(true)} {...cardHandlers}
+              />
+            )}
+            {nav === "Vinyl Buddy" && (
+              <VinylBuddyScreen
+                currentUser={currentUser}
+                listeningHistory={listeningHistory}
+                activated={vinylBuddyActivated}
+                deviceCode={vinylBuddyDevice}
+                onActivate={code => setVinylBuddyDevice(code)}
+                onDeactivate={() => setVinylBuddyDevice('')}
+              />
+            )}
+            {nav === "Activity" && (
+              <TransactionsScreen
+                offers={offers} purchases={purchases} cart={cart}
+                currentUser={currentUser} records={records}
+                onBuy={onBuy} onRemoveFromCart={onRemoveFromCart}
+                onViewUser={onViewUser} onDetail={onDetail}
+              />
+            )}
+            {nav === "Profile" && (
+              <ProfileScreen
+                records={records} currentUser={currentUser} profile={profile}
+                following={following} followers={computedFollowers}
+                wishlist={wishlist} onAddWishlistItem={onAddWishlistItem} onRemoveWishlistItem={onRemoveWishlistItem}
+                onEdit={() => setShowEditProfile(true)}
+                onShowFollowing={() => setNav("Following")}
+                onShowFollowers={() => setNav("Following")}
+                onDetail={onDetail} onViewArtist={onViewArtist}
+                posts={posts} onLikePost={onLikePost} onCommentPost={onCommentPost} onBookmarkPost={onBookmarkPost}
+                onViewUser={onViewUser}
+                listeningHistory={listeningHistory}
+              />
+            )}
+          </>
+        )}
+      </main>
+
+      {/* ── Modals ─────────────────────────────────────────────────────────────── */}
+      <AddRecordModal
+        open={showAdd} onClose={() => setShowAdd(false)}
+        onAdd={onAdd} currentUser={currentUser}
+      />
+      <CommentsModal
+        open={!!commentRecord} onClose={() => setCommentRecord(null)}
+        record={commentRecord} onAdd={onAddComment}
+        currentUser={currentUser} onViewUser={onViewUser}
+      />
+      <BuyModal
+        open={!!buyRecord} onClose={() => setBuyRecord(null)}
+        record={buyRecord} onPurchase={onPurchase} onAddToCart={onAddToCart}
+      />
+      <DetailModal
+        open={!!detailRecord} onClose={() => setDetailRecord(null)}
+        record={detailRecord} onLike={onLike} onSave={onSave} onViewUser={onViewUser} onViewArtist={onViewArtist}
+        onComment={r => { setDetailRecord(null); setCommentRecord(r); }}
+        onBuy={r => { setDetailRecord(null); setBuyRecord(r); }}
+        onAddWishlistItem={onAddWishlistItem}
+        currentUser={currentUser} records={records} onOfferFromDetail={onOfferFromDetail}
+      />
+      <ProfileEditModal
+        open={showEditProfile} onClose={() => setShowEditProfile(false)}
+        profile={profile} onSave={onProfileSave}
+        currentUser={currentUser} onUsernameChange={onUsernameChange}
+      />
+      <UserProfileModal
+        username={viewingUser} open={!!viewingUser} onClose={() => setViewingUser(null)}
+        records={records} currentUser={currentUser} profile={profile}
+        following={following} onFollow={onFollow}
+        posts={posts} listeningHistory={listeningHistory}
+        onViewFullProfile={u => { setViewingUser(null); setViewingUserProfile(u); }}
+      />
+      <DMModal
+        open={showDMs} onClose={() => setShowDMs(false)}
+        currentUser={currentUser} following={following}
+        messages={dmMessages} setMessages={setDmMessages}
+      />
+      <NotificationsPanel
+        open={showNotifs} onClose={() => setShowNotifs(false)}
+        following={following} records={records}
+        currentUser={currentUser} offers={offers}
+        onViewUser={u => { setShowNotifs(false); setViewingUser(u); }}
+      />
+      <OfferModal
+        open={!!offerTarget} onClose={() => setOfferTarget(null)}
+        target={offerTarget} records={records} onSubmit={onSubmitOffer}
+      />
+      <CreatePostModal
+        open={showCreatePost} onClose={() => setShowCreatePost(false)}
+        onSubmit={onCreatePost} records={records} currentUser={currentUser}
+        profile={profile}
+      />
+      <ArtistProfileModal
+        artist={viewingArtist} open={!!viewingArtist} onClose={() => setViewingArtist(null)}
+        records={records} onDetail={onDetail} onBuy={onBuy} onViewUser={onViewUser}
+      />
+      <Toast message={toast.msg} visible={toast.visible} />
     </div>
   );
 }
-
-export default App;
