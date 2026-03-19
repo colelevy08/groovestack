@@ -1,6 +1,9 @@
 require('dotenv').config();
 const express = require('express');
 const Anthropic = require('@anthropic-ai/sdk');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { Pool } = require('pg');
 
 const app = express();
 
@@ -486,6 +489,154 @@ app.get('/api/vinyl-buddy/devices/:username', (req, res) => {
 });
 
 // Health check
+// ── Postgres connection (Railway injects DATABASE_URL) ────────────────────────
+const pool = process.env.DATABASE_URL
+  ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false })
+  : null;
+
+const JWT_SECRET = process.env.JWT_SECRET || 'groovestack-dev-secret-change-me';
+
+// Initialize profiles table on startup
+if (pool) {
+  pool.query(`
+    CREATE TABLE IF NOT EXISTS profiles (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      username TEXT UNIQUE NOT NULL,
+      display_name TEXT NOT NULL DEFAULT '',
+      bio TEXT DEFAULT '',
+      location TEXT DEFAULT '',
+      fav_genre TEXT DEFAULT '',
+      avatar_url TEXT DEFAULT '',
+      header_url TEXT DEFAULT '',
+      accent TEXT DEFAULT '#0ea5e9',
+      created_at TIMESTAMPTZ DEFAULT now()
+    )
+  `).then(() => console.log('   Profiles table: ready'))
+    .catch(err => console.error('   DB init error:', err.message));
+}
+
+// JWT auth middleware — attaches req.user = { id, username } if valid token
+function authMiddleware(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'No token provided' });
+  try {
+    req.user = jwt.verify(auth.slice(7), JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
+
+function makeToken(user) {
+  return jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
+}
+
+// ── Auth API routes ──────────────────────────────────────────────────────────
+
+// POST /api/auth/signup — create account
+app.post('/api/auth/signup', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { email, password, username, displayName } = req.body;
+  if (!email || !password || !username) return res.status(400).json({ error: 'Email, password, and username are required' });
+  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+
+  try {
+    // Check username uniqueness
+    const existing = await pool.query('SELECT id FROM profiles WHERE username = $1 OR email = $2', [username.toLowerCase(), email.toLowerCase()]);
+    if (existing.rows.length > 0) return res.status(409).json({ error: 'Username or email already taken' });
+
+    const hash = await bcrypt.hash(password, 12);
+    const result = await pool.query(
+      'INSERT INTO profiles (email, password_hash, username, display_name) VALUES ($1, $2, $3, $4) RETURNING id, username, display_name, bio, location, fav_genre, avatar_url, header_url, accent',
+      [email.toLowerCase(), hash, username.toLowerCase(), displayName || username]
+    );
+    const user = result.rows[0];
+    const token = makeToken(user);
+    res.json({ token, user: { id: user.id, username: user.username, displayName: user.display_name, bio: user.bio, location: user.location, favGenre: user.fav_genre, avatarUrl: user.avatar_url, headerUrl: user.header_url, accent: user.accent } });
+  } catch (err) {
+    console.error('Signup error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/auth/login — sign in
+app.post('/api/auth/login', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+
+  try {
+    const result = await pool.query('SELECT * FROM profiles WHERE email = $1', [email.toLowerCase()]);
+    if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid email or password' });
+
+    const user = result.rows[0];
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
+
+    const token = makeToken(user);
+    res.json({ token, user: { id: user.id, username: user.username, displayName: user.display_name, bio: user.bio, location: user.location, favGenre: user.fav_genre, avatarUrl: user.avatar_url, headerUrl: user.header_url, accent: user.accent } });
+  } catch (err) {
+    console.error('Login error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/auth/me — get current user profile (requires token)
+app.get('/api/auth/me', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query('SELECT id, username, display_name, bio, location, fav_genre, avatar_url, header_url, accent FROM profiles WHERE id = $1', [req.user.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Profile not found' });
+    const u = result.rows[0];
+    res.json({ id: u.id, username: u.username, displayName: u.display_name, bio: u.bio, location: u.location, favGenre: u.fav_genre, avatarUrl: u.avatar_url, headerUrl: u.header_url, accent: u.accent });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/auth/profile — update profile (requires token)
+app.put('/api/auth/profile', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { displayName, bio, location, favGenre, avatarUrl, headerUrl } = req.body;
+  try {
+    await pool.query(
+      'UPDATE profiles SET display_name=$1, bio=$2, location=$3, fav_genre=$4, avatar_url=$5, header_url=$6 WHERE id=$7',
+      [displayName || '', bio || '', location || '', favGenre || '', avatarUrl || '', headerUrl || '', req.user.id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/auth/username — change username (requires token)
+app.put('/api/auth/username', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { username } = req.body;
+  if (!username) return res.status(400).json({ error: 'Username is required' });
+  try {
+    const existing = await pool.query('SELECT id FROM profiles WHERE username = $1 AND id != $2', [username.toLowerCase(), req.user.id]);
+    if (existing.rows.length > 0) return res.status(409).json({ error: 'Username already taken' });
+    await pool.query('UPDATE profiles SET username=$1 WHERE id=$2', [username.toLowerCase(), req.user.id]);
+    res.json({ ok: true, token: jwt.sign({ id: req.user.id, username: username.toLowerCase() }, JWT_SECRET, { expiresIn: '30d' }) });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/auth/check-username/:username — check if username is available
+app.get('/api/auth/check-username/:username', async (req, res) => {
+  if (!pool) return res.json({ available: true });
+  try {
+    const result = await pool.query('SELECT id FROM profiles WHERE username = $1', [req.params.username.toLowerCase()]);
+    res.json({ available: result.rows.length === 0 });
+  } catch {
+    res.json({ available: true });
+  }
+});
+
 app.get('/api/health', (_req, res) => res.json({
   status: 'ok',
   vinylBuddy: {

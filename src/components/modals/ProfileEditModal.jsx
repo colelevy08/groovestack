@@ -9,7 +9,7 @@ import FormInput from '../ui/FormInput';
 import FormTextarea from '../ui/FormTextarea';
 import FormSelect from '../ui/FormSelect';
 import { GENRES, USER_PROFILES } from '../../constants';
-import { supabase } from '../../utils/supabase';
+import { checkUsername } from '../../utils/supabase';
 
 // ── Client-side image resize — reads file, draws to canvas, returns data URL ──
 function resizeImage(file, maxW, maxH) {
@@ -74,11 +74,9 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
     if (!clean || clean === currentUser) { setUsernameError(""); return; }
     // Check static profiles
     if (USER_PROFILES[clean]) { setUsernameError(`@${clean} is already taken`); return; }
-    // Check Supabase
-    if (supabase) {
-      const { data } = await supabase.from('profiles').select('username').eq('username', clean).maybeSingle();
-      if (data) { setUsernameError(`@${clean} is already taken`); return; }
-    }
+    // Check database
+    const available = await checkUsername(clean);
+    if (!available) { setUsernameError(`@${clean} is already taken`); return; }
     setUsernameError("");
   };
 

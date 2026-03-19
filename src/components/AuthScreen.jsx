@@ -1,11 +1,11 @@
-// Login / Signup screen — shown when there's no active Supabase session.
+// Login / Signup screen — shown when there's no active session.
 // Matches GrooveStack's dark theme: #080808 bg, #0d0d0d card, DM Sans, gradient accents.
 import { useState } from 'react';
-import { supabase } from '../utils/supabase';
+import { signUp, signIn, checkUsername } from '../utils/supabase';
 import { USER_PROFILES } from '../constants';
 import FormInput from './ui/FormInput';
 
-export default function AuthScreen() {
+export default function AuthScreen({ onAuth }) {
   const [mode, setMode] = useState("login"); // "login" | "signup"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -14,11 +14,6 @@ export default function AuthScreen() {
   const [displayName, setDisplayName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-
-  const reset = () => {
-    setEmail(""); setPassword(""); setConfirmPassword("");
-    setUsername(""); setDisplayName(""); setError("");
-  };
 
   const toggleMode = () => {
     setMode(m => m === "login" ? "signup" : "login");
@@ -33,68 +28,36 @@ export default function AuthScreen() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!supabase) {
-      setError("Supabase is not configured. Add REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY to your .env file.");
-      return;
-    }
     setError("");
     setLoading(true);
 
     try {
       if (mode === "signup") {
-        // Validate
         if (!username.trim()) { setError("Username is required."); setLoading(false); return; }
         if (!displayName.trim()) { setError("Display name is required."); setLoading(false); return; }
         if (password.length < 6) { setError("Password must be at least 6 characters."); setLoading(false); return; }
         if (password !== confirmPassword) { setError("Passwords do not match."); setLoading(false); return; }
 
-        // Check username against static profiles
+        // Check against static profiles
         if (USER_PROFILES[username]) {
           setError(`@${username} is already taken.`);
           setLoading(false);
           return;
         }
 
-        // Check username against Supabase
-        const { data: existing } = await supabase
-          .from("profiles")
-          .select("username")
-          .eq("username", username)
-          .maybeSingle();
-        if (existing) {
+        // Check against database
+        const available = await checkUsername(username);
+        if (!available) {
           setError(`@${username} is already taken.`);
           setLoading(false);
           return;
         }
 
-        // Create auth user
-        const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
-        if (signUpError) { setError(signUpError.message); setLoading(false); return; }
-
-        // Create profile row
-        if (data.user) {
-          const { error: profileError } = await supabase.from("profiles").insert({
-            id: data.user.id,
-            username: username.trim(),
-            display_name: displayName.trim(),
-            bio: "",
-            location: "",
-            fav_genre: "",
-            avatar_url: "",
-            header_url: "",
-            accent: "#0ea5e9",
-          });
-          if (profileError) {
-            setError("Account created but profile setup failed: " + profileError.message);
-            setLoading(false);
-            return;
-          }
-        }
-        // Session is set automatically via onAuthStateChange in App.js
+        const { user } = await signUp({ email, password, username, displayName });
+        onAuth(user);
       } else {
-        // Login
-        const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-        if (signInError) { setError(signInError.message); setLoading(false); return; }
+        const { user } = await signIn({ email, password });
+        onAuth(user);
       }
     } catch (err) {
       setError(err.message || "An unexpected error occurred.");
@@ -146,7 +109,6 @@ export default function AuthScreen() {
             <FormInput label="CONFIRM PASSWORD" value={confirmPassword} onChange={setConfirmPassword} placeholder="Re-enter password" type="password" />
           )}
 
-          {/* Submit */}
           <button
             type="submit"
             disabled={loading}
@@ -165,7 +127,6 @@ export default function AuthScreen() {
             }
           </button>
 
-          {/* Mode toggle */}
           <div style={{ textAlign: "center", marginTop: 18 }}>
             <span style={{ fontSize: 13, color: "#555" }}>
               {mode === "login" ? "Don't have an account? " : "Already have an account? "}

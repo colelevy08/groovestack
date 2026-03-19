@@ -8,7 +8,7 @@ import INITIAL_RECORDS from './constants/records';
 import INITIAL_POSTS from './constants/posts';
 import INITIAL_LISTENING from './constants/listening';
 import { USER_PROFILES, ACCENT_COLORS } from './constants';
-import { supabase } from './utils/supabase';
+import { getToken, getMe, signOut, updateProfile, updateUsername as apiUpdateUsername } from './utils/supabase';
 import { API_BASE } from './utils/api';
 
 // Layout
@@ -124,59 +124,40 @@ export default function App() {
     setCommentRecord(d => d?.id === id ? fn(d) : d);
   };
 
-  // ── Auth: load profile from Supabase ────────────────────────────────────────
-  const loadProfile = useCallback(async (userId) => {
-    if (!supabase) return;
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-
-    if (data && !error) {
-      setCurrentUser(data.username);
-      setProfile({
-        displayName: data.display_name || '',
-        bio: data.bio || '',
-        location: data.location || '',
-        favGenre: data.fav_genre || '',
-        avatarUrl: data.avatar_url || '',
-        headerUrl: data.header_url || '',
-      });
-    }
+  // ── Auth: apply user data from API response ──────────────────────────────
+  const applyUser = useCallback((user) => {
+    if (!user) return;
+    setSession(user);
+    setCurrentUser(user.username || '');
+    setProfile({
+      displayName: user.displayName || '',
+      bio: user.bio || '',
+      location: user.location || '',
+      favGenre: user.favGenre || '',
+      avatarUrl: user.avatarUrl || '',
+      headerUrl: user.headerUrl || '',
+    });
   }, []);
 
-  // ── Auth: session listener ──────────────────────────────────────────────────
+  // ── Auth: check for existing JWT token on mount ─────────────────────────
   useEffect(() => {
-    if (!supabase) {
-      setAuthLoading(false);
-      return;
-    }
-
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session: s } }) => {
-      setSession(s);
-      if (s) loadProfile(s.user.id);
+    const token = getToken();
+    if (!token) { setAuthLoading(false); return; }
+    getMe().then(user => {
+      if (user) applyUser(user);
       setAuthLoading(false);
     });
+  }, [applyUser]);
 
-    // Listen for auth changes (login, logout, token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      if (s) {
-        loadProfile(s.user.id);
-      } else {
-        setCurrentUser('');
-        setProfile({ displayName: '', bio: '', location: '', favGenre: '' });
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [loadProfile]);
+  // ── Auth: called by AuthScreen after login/signup ───────────────────────
+  const handleAuth = (user) => applyUser(user);
 
   // ── Auth: logout ────────────────────────────────────────────────────────────
-  const handleLogout = async () => {
-    if (supabase) await supabase.auth.signOut();
+  const handleLogout = () => {
+    signOut();
+    setSession(null);
+    setCurrentUser('');
+    setProfile({ displayName: '', bio: '', location: '', favGenre: '' });
     Object.keys(localStorage).forEach(k => {
       if (k.startsWith('gs_')) localStorage.removeItem(k);
     });
@@ -245,9 +226,9 @@ export default function App() {
     setOffers(os => os.map(o => o.from === old ? { ...o, from: newHandle } : o));
     setPosts(ps => ps.map(p => p.user === old ? { ...p, user: newHandle } : p));
 
-    // Persist to Supabase
-    if (supabase && session?.user?.id) {
-      await supabase.from('profiles').update({ username: newHandle }).eq('id', session.user.id);
+    // Persist to database
+    if (session) {
+      try { await apiUpdateUsername(newHandle); } catch { /* offline fallback */ }
     }
   };
 
@@ -386,15 +367,8 @@ export default function App() {
   const onProfileSave = async (p) => {
     setProfile(p);
     showToast("Profile updated!");
-    if (supabase && session?.user?.id) {
-      await supabase.from('profiles').update({
-        display_name: p.displayName || '',
-        bio: p.bio || '',
-        location: p.location || '',
-        fav_genre: p.favGenre || '',
-        avatar_url: p.avatarUrl || '',
-        header_url: p.headerUrl || '',
-      }).eq('id', session.user.id);
+    if (session) {
+      try { await updateProfile(p); } catch { /* offline fallback */ }
     }
   };
 
@@ -408,11 +382,11 @@ export default function App() {
     );
   }
 
-  if (supabase && !session) {
+  if (!session) {
     return (
       <div style={{ minHeight: '100vh', background: '#080808', fontFamily: "'DM Sans',-apple-system,sans-serif", color: '#f5f5f5' }}>
         <style>{FONT_STYLE}</style>
-        <AuthScreen />
+        <AuthScreen onAuth={handleAuth} />
       </div>
     );
   }
