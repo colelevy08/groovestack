@@ -9,14 +9,14 @@ export default function UserChip({ username, onViewUser }) {
   return (
     <button
       onClick={e => { e.stopPropagation(); onViewUser(username); }}
-      style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 6 }}
+      className="bg-transparent border-none cursor-pointer p-0 flex items-center gap-1.5"
     >
       <Avatar username={username} size={30} />
-      <div style={{ textAlign: "left" }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "#e5e5e5", lineHeight: 1.2 }}>
+      <div className="text-left">
+        <div className="text-xs font-semibold text-[#e5e5e5] leading-tight">
           {p.displayName || username}
         </div>
-        <div style={{ fontSize: 10, color: "#555", fontFamily: "'DM Mono',monospace" }}>@{username}</div>
+        <div className="text-[10px] text-gs-dim font-mono">@{username}</div>
       </div>
     </button>
   );

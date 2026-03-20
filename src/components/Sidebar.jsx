@@ -118,7 +118,7 @@ export default function Sidebar({ nav, setNav, following, profile, currentUser, 
       </div>
 
       {/* ── Mobile bottom tab bar ────────────────────────────── */}
-      <div className="gs-mobile-bar hidden fixed bottom-0 left-0 right-0 bg-gs-sidebar border-t border-gs-border-subtle justify-around items-center z-[100]" style={{ padding: "6px 0 env(safe-area-inset-bottom, 6px)" }}>
+      <div className="gs-mobile-bar hidden fixed bottom-0 left-0 right-0 bg-gs-sidebar border-t border-gs-border-subtle justify-around items-center z-[100] px-0 pt-1.5 pb-[env(safe-area-inset-bottom,6px)]">
         {MOBILE_TABS.map(({ id, label, path }) => {
           const active = nav === id;
           const guestLocked = isGuest && !["Marketplace", "Collection"].includes(id);
@@ -132,7 +132,7 @@ export default function Sidebar({ nav, setNav, following, profile, currentUser, 
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d={path} />
               </svg>
-              <span className="text-[9px] font-sans" style={{ fontWeight: active ? 700 : 500 }}>
+              <span className={`text-[9px] font-sans ${active ? "font-bold" : "font-medium"}`}>
                 {isGuestProfile ? "Sign In" : label}
               </span>
               {active && <div className="w-1 h-1 rounded-full bg-gs-accent mt-0.5" />}

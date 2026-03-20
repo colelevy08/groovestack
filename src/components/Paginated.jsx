@@ -14,21 +14,21 @@ export default function Paginated({ records, handlers }) {
 
   return (
     <div>
-      <div className="gs-card-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+      <div className="gs-card-grid grid grid-cols-2 gap-3.5">
         {visible.map(r => <Card key={r.id} r={r} {...handlers} />)}
       </div>
       {hasMore && (
-        <div style={{ textAlign: "center", marginTop: 24 }}>
+        <div className="text-center mt-6">
           <button
             onClick={() => setPage(p => p + 1)}
-            style={{ padding: "10px 28px", background: "#111", border: "1px solid #2a2a2a", borderRadius: 10, color: "#aaa", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+            className="gs-btn-secondary px-7 py-2.5 text-[13px]"
           >
             Load more · {records.length - visible.length} remaining
           </button>
         </div>
       )}
       {!hasMore && records.length > PAGE_SIZE && (
-        <div style={{ textAlign: "center", marginTop: 20, fontSize: 12, color: "#444" }}>
+        <div className="text-center mt-5 text-xs text-gs-faint">
           All {records.length} records shown
         </div>
       )}

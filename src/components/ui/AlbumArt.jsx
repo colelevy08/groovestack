@@ -31,19 +31,13 @@ export default function AlbumArt({ album, artist, size = 72, accent = "#555" }) 
   const radius = Math.round(size * 0.18);
 
   return (
-    <div style={{
-      width: size,
-      height: size,
-      borderRadius: radius,
-      overflow: "hidden",
-      flexShrink: 0,
-      background: "#1a1a1a",
-      border: "1px solid #2a2a2a",
-      position: "relative",
-    }}>
+    <div
+      className="overflow-hidden shrink-0 bg-[#1a1a1a] border border-gs-border-hover relative"
+      style={{ width: size, height: size, borderRadius: radius }}
+    >
       {/* VinylDisc shows while image is loading */}
       {!loaded && (
-        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div className="absolute inset-0 flex items-center justify-center">
           <VinylDisc accent={accent} size={size} />
         </div>
       )}
@@ -52,14 +46,7 @@ export default function AlbumArt({ album, artist, size = 72, accent = "#555" }) 
         alt={`${album || "Album"} cover`}
         onLoad={() => setLoaded(true)}
         onError={() => setErrored(true)}
-        style={{
-          width: "100%",
-          height: "100%",
-          objectFit: "cover",
-          display: loaded ? "block" : "block",
-          opacity: loaded ? 1 : 0,
-          transition: "opacity 0.25s ease",
-        }}
+        className={`w-full h-full object-cover transition-opacity duration-[250ms] ${loaded ? "opacity-100" : "opacity-0"}`}
       />
     </div>
   );

@@ -28,87 +28,123 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
 
   return (
     <Modal open={open} onClose={onClose} title="Record Detail" width="520px">
-      <div style={{ display: "flex", gap: 20, marginBottom: 20 }}>
+      <div className="flex gap-5 mb-5">
         <AlbumArt album={record.album} artist={record.artist} accent={record.accent} size={96} />
-        <div style={{ flex: 1 }}>
-          <h2 style={{ fontSize: 22, fontWeight: 800, color: "#f5f5f5", letterSpacing: "-0.03em", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+        <div className="flex-1">
+          <h2 className="text-[22px] font-extrabold text-gs-text tracking-tight mb-1 flex items-center gap-1.5">
             {record.album}
-            {record.verified && <span title="Verified vinyl" style={{ color: "#3b82f6", fontSize: 16 }}>✓</span>}
+            {record.verified && <span title="Verified vinyl" className="text-blue-500 text-base">✓</span>}
           </h2>
-          <p style={{ fontSize: 14, color: "#888", marginBottom: 10 }}>
-            <button onClick={() => { onClose(); onViewArtist?.(record.artist); }} style={{ background: "none", border: "none", color: "#888", fontSize: 14, padding: 0, cursor: "pointer" }}
-              onMouseEnter={e => e.currentTarget.style.color = "#ccc"} onMouseLeave={e => e.currentTarget.style.color = "#888"}
-            >{record.artist}</button>
+          <p className="text-sm text-gs-muted mb-2.5">
+            <button
+              onClick={() => { onClose(); onViewArtist?.(record.artist); }}
+              className="bg-transparent border-none text-gs-muted text-sm p-0 cursor-pointer hover:text-gray-300"
+            >
+              {record.artist}
+            </button>
           </p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <div className="flex gap-2 flex-wrap items-center">
             <Stars rating={record.rating} size={14} />
             <Badge label={record.condition} color={condColor(record.condition)} />
-            <span style={{ fontSize: "11px", color: "#555", fontFamily: "'DM Mono',monospace" }}>{record.format} · {record.year} · {record.label}</span>
+            <span className="text-[11px] text-gs-dim font-mono">{record.format} · {record.year} · {record.label}</span>
           </div>
         </div>
       </div>
 
       {/* Posted by */}
       <div
-        style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "#111", borderRadius: 10, marginBottom: 16, cursor: "pointer" }}
+        className="flex items-center gap-2 px-3.5 py-2.5 bg-[#111] rounded-[10px] mb-4 cursor-pointer"
         onClick={() => { onClose(); onViewUser(record.user); }}
       >
         <Avatar username={record.user} size={28} />
-        <div style={{ flex: 1 }}>
-          <span style={{ fontSize: 12, color: "#888" }}>Posted by </span>
-          <span style={{ fontSize: 12, fontWeight: 600, color: "#0ea5e9" }}>@{record.user}</span>
+        <div className="flex-1">
+          <span className="text-xs text-gs-muted">Posted by </span>
+          <span className="text-xs font-semibold text-gs-accent">@{record.user}</span>
         </div>
-        <span style={{ fontSize: 11, color: "#444" }}>→ view profile</span>
+        <span className="text-[11px] text-gs-faint">→ view profile</span>
       </div>
 
       {record.review && (
-        <blockquote style={{ borderLeft: `2px solid ${record.accent}55`, paddingLeft: 14, color: "#aaa", fontSize: 13, lineHeight: 1.7, fontStyle: "italic", marginBottom: 18 }}>
+        <blockquote
+          className="pl-3.5 text-[#aaa] text-[13px] leading-[1.7] italic mb-[18px]"
+          style={{ borderLeft: `2px solid ${record.accent}55` }}
+        >
           "{record.review}"
         </blockquote>
       )}
 
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 20 }}>
+      <div className="flex gap-1.5 flex-wrap mb-5">
         {record.tags.map(t => (
-          <span key={t} style={{ fontSize: 11, padding: "3px 9px", borderRadius: 20, background: "#1a1a1a", color: "#666", border: "1px solid #2a2a2a" }}>#{t}</span>
+          <span key={t} className="text-[11px] px-2.5 py-[3px] rounded-full bg-[#1a1a1a] text-[#666] border border-gs-border-hover">#{t}</span>
         ))}
       </div>
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <button onClick={() => onLike(record.id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 8, background: record.liked ? record.accent + "22" : "#1a1a1a", border: `1px solid ${record.liked ? record.accent + "44" : "#2a2a2a"}`, color: record.liked ? record.accent : "#888", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={() => onLike(record.id)}
+          className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg text-xs font-semibold cursor-pointer border"
+          style={{
+            background: record.liked ? record.accent + "22" : "#1a1a1a",
+            borderColor: record.liked ? record.accent + "44" : "#2a2a2a",
+            color: record.liked ? record.accent : "#888",
+          }}
+        >
           ❤ {record.likes}
         </button>
-        <button onClick={() => { onClose(); onComment(record); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 8, background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#888", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+        <button
+          onClick={() => { onClose(); onComment(record); }}
+          className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-[#1a1a1a] border border-gs-border-hover text-gs-muted text-xs font-semibold cursor-pointer"
+        >
           💬 {record.comments.length}
         </button>
-        <button onClick={() => onSave(record.id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 8, background: record.saved ? "#f59e0b22" : "#1a1a1a", border: `1px solid ${record.saved ? "#f59e0b44" : "#2a2a2a"}`, color: record.saved ? "#f59e0b" : "#888", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+        <button
+          onClick={() => onSave(record.id)}
+          className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg text-xs font-semibold cursor-pointer border"
+          style={{
+            background: record.saved ? "#f59e0b22" : "#1a1a1a",
+            borderColor: record.saved ? "#f59e0b44" : "#2a2a2a",
+            color: record.saved ? "#f59e0b" : "#888",
+          }}
+        >
           {record.saved ? "★ Saved" : "☆ Save"}
         </button>
-        <button onClick={() => onAddWishlistItem(record.album, record.artist)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 8, background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#888", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+        <button
+          onClick={() => onAddWishlistItem(record.album, record.artist)}
+          className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-[#1a1a1a] border border-gs-border-hover text-gs-muted text-xs font-semibold cursor-pointer"
+        >
           ✨ Wishlist
         </button>
         {isOwn && !record.verified && onVerifyRecord && (
-          <button onClick={() => { onClose(); onVerifyRecord(record); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 8, background: "#3b82f622", border: "1px solid #3b82f644", color: "#3b82f6", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+          <button
+            onClick={() => { onClose(); onVerifyRecord(record); }}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-blue-500/[0.13] border border-blue-500/[0.27] text-blue-500 text-xs font-semibold cursor-pointer"
+          >
             📷 Verify
           </button>
         )}
         {record.forSale && (
-          <button onClick={() => { onClose(); onBuy(record); }} style={{ marginLeft: "auto", padding: "9px 18px", borderRadius: 8, background: `linear-gradient(135deg,${record.accent},#6366f1)`, border: "none", color: "#000", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+          <button
+            onClick={() => { onClose(); onBuy(record); }}
+            className="ml-auto px-[18px] py-2.5 rounded-lg border-none text-black font-extrabold text-[13px] cursor-pointer"
+            style={{ background: `linear-gradient(135deg,${record.accent},#6366f1)` }}
+          >
             Buy · ${record.price}
           </button>
         )}
       </div>
 
       {wantedBy.length > 0 && (
-        <div style={{ marginTop: 20, borderTop: "1px solid #1a1a1a", paddingTop: 16 }}>
-          <div style={{ fontSize: 11, color: "#555", fontFamily: "'DM Mono',monospace", marginBottom: 10, letterSpacing: "0.08em" }}>WANTED BY</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div className="mt-5 border-t border-[#1a1a1a] pt-4">
+          <div className="text-[11px] text-gs-dim font-mono mb-2.5 tracking-widest">WANTED BY</div>
+          <div className="flex flex-col gap-2">
             {wantedBy.map(({ username, wishlistItem }) => (
-              <div key={username} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "#111", borderRadius: 10 }}>
+              <div key={username} className="flex items-center gap-2.5 px-3 py-2 bg-[#111] rounded-[10px]">
                 <Avatar username={username} size={28} />
-                <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "#0ea5e9" }}>@{username}</span>
+                <span className="flex-1 text-xs font-semibold text-gs-accent">@{username}</span>
                 <button
                   onClick={() => onOfferFromDetail(record, username, wishlistItem)}
-                  style={{ padding: "5px 12px", borderRadius: 7, background: "linear-gradient(135deg,#f59e0b,#ef4444)", border: "none", color: "#fff", fontWeight: 700, fontSize: 11, cursor: "pointer" }}
+                  className="px-3 py-[5px] rounded-[7px] border-none text-white font-bold text-[11px] cursor-pointer"
+                  style={{ background: "linear-gradient(135deg,#f59e0b,#ef4444)" }}
                 >
                   Offer
                 </button>

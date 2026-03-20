@@ -17,51 +17,59 @@ export default function UserProfileModal({ username, open, onClose, records, cur
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(6px)" }}
+      className="gs-overlay fixed inset-0 flex items-center justify-center z-[1000] backdrop-blur-[6px]"
       onClick={e => e.target === e.currentTarget && onClose()}
     >
-      <div style={{ background: "#0d0d0d", border: "1px solid #1e1e1e", borderRadius: 18, width: 420, maxWidth: "94vw", overflow: "hidden", boxShadow: "0 32px 80px rgba(0,0,0,0.85)" }}>
+      <div className="bg-gs-surface border border-gs-border rounded-[18px] w-[420px] max-w-[94vw] overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.85)]">
         {/* Header banner */}
-        <div style={{ height: 80, background: p.headerUrl ? `url(${p.headerUrl}) center/cover` : `linear-gradient(135deg,${p.accent || "#0ea5e9"}33,#6366f122)`, position: "relative" }}>
-          <button onClick={onClose} style={{ position: "absolute", top: 10, right: 10, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: 6, width: 28, height: 28, cursor: "pointer", color: "#aaa", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }}>×</button>
+        <div
+          className="h-20 relative"
+          style={p.headerUrl
+            ? { background: `url(${p.headerUrl}) center/cover` }
+            : { background: `linear-gradient(135deg,${p.accent || "#0ea5e9"}33,#6366f122)` }}
+        >
+          <button onClick={onClose} className="absolute top-2.5 right-2.5 bg-black/50 border-none rounded-md w-7 h-7 cursor-pointer text-[#aaa] text-lg flex items-center justify-center backdrop-blur-[4px]">×</button>
         </div>
 
         {/* Profile info */}
-        <div style={{ padding: "0 24px 24px", marginTop: -32 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 14 }}>
-            <div style={{ borderRadius: "50%", border: "3px solid #0d0d0d", lineHeight: 0, position: "relative", zIndex: 2 }}>
+        <div className="px-6 pb-6 -mt-8">
+          <div className="flex justify-between items-end mb-3.5">
+            <div className="rounded-full border-[3px] border-gs-surface leading-none relative z-[2]">
               <Avatar username={username} size={64} src={isOwn ? profile?.avatarUrl : undefined} />
             </div>
             {!isOwn && (
               <button
                 onClick={() => onFollow(username)}
-                style={{ padding: "8px 20px", borderRadius: 20, border: isFollowing ? "1px solid #2a2a2a" : "none", background: isFollowing ? "#1a1a1a" : "linear-gradient(135deg,#0ea5e9,#6366f1)", color: isFollowing ? "#888" : "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                className={isFollowing
+                  ? "py-2 px-5 rounded-[20px] border border-gs-border-hover bg-[#1a1a1a] text-gs-muted text-xs font-bold cursor-pointer"
+                  : "gs-btn-gradient py-2 px-5 rounded-[20px] border-none text-white text-xs font-bold cursor-pointer"
+                }
               >
                 {isFollowing ? "Following ✓" : "Follow"}
               </button>
             )}
           </div>
 
-          <div style={{ fontSize: 20, fontWeight: 800, color: "#f5f5f5", letterSpacing: "-0.03em", marginBottom: 2 }}>{p.displayName}</div>
-          <div style={{ fontSize: 12, color: p.accent || "#0ea5e9", fontFamily: "'DM Mono',monospace", marginBottom: 10 }}>@{username}</div>
-          {p.bio && <p style={{ fontSize: 13, color: "#888", lineHeight: 1.6, marginBottom: 12, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{p.bio}</p>}
+          <div className="text-xl font-extrabold text-gs-text tracking-[-0.03em] mb-0.5">{p.displayName}</div>
+          <div className="text-xs font-mono mb-2.5" style={{ color: p.accent || "#0ea5e9" }}>@{username}</div>
+          {p.bio && <p className="text-[13px] text-gs-muted leading-relaxed mb-3 line-clamp-2">{p.bio}</p>}
 
-          <div style={{ display: "flex", gap: 12, fontSize: 12, color: "#555", marginBottom: 18, flexWrap: "wrap" }}>
+          <div className="flex gap-3 text-xs text-gs-dim mb-[18px] flex-wrap">
             {p.location && <span>📍 {p.location}</span>}
             {p.favGenre && <span>🎵 {p.favGenre}</span>}
           </div>
 
           {/* Stats — 4 clean boxes */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginBottom: 20 }}>
+          <div className="grid grid-cols-4 gap-2 mb-5">
             {[
               { l: "Records", v: userRecords.length },
               { l: "For Sale", v: forSale.length },
               { l: "Followers", v: followerCount },
               { l: "Posts", v: userPosts.length },
             ].map(s => (
-              <div key={s.l} style={{ background: "#111", borderRadius: 10, padding: "10px 6px", textAlign: "center" }}>
-                <div style={{ fontSize: 18, fontWeight: 800, color: "#f5f5f5", letterSpacing: "-0.02em" }}>{s.v}</div>
-                <div style={{ fontSize: 10, color: p.accent || "#0ea5e9", fontFamily: "'DM Mono',monospace", marginTop: 2 }}>{s.l}</div>
+              <div key={s.l} className="gs-stat bg-[#111] rounded-[10px] py-2.5 px-1.5 text-center">
+                <div className="text-lg font-extrabold text-gs-text tracking-[-0.02em]">{s.v}</div>
+                <div className="text-[10px] font-mono mt-0.5" style={{ color: p.accent || "#0ea5e9" }}>{s.l}</div>
               </div>
             ))}
           </div>
@@ -69,13 +77,13 @@ export default function UserProfileModal({ username, open, onClose, records, cur
           {/* View Full Profile button */}
           <button
             onClick={() => { onClose(); onViewFullProfile(username); }}
-            style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 10, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 8 }}
+            className="gs-btn-gradient w-full p-3 border-none rounded-[10px] text-white text-[13px] font-bold cursor-pointer mb-2"
           >
             View Full Profile
           </button>
           <button
             onClick={onClose}
-            style={{ width: "100%", padding: 10, background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 10, color: "#666", fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+            className="gs-btn-secondary w-full p-2.5 bg-[#1a1a1a] border border-gs-border-hover rounded-[10px] text-[#666] text-xs font-semibold cursor-pointer"
           >
             Close
           </button>

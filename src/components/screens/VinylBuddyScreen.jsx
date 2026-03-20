@@ -119,88 +119,84 @@ function LandingPage({ onActivate }) {
   return (
     <div>
       {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.04em", color: "#f5f5f5", marginBottom: 2 }}>Vinyl Buddy</h1>
-        <p style={{ fontSize: 12, color: "#555" }}>Your personal vinyl identification companion</p>
+      <div className="mb-6">
+        <h1 className="text-[22px] font-extrabold tracking-[-0.04em] text-gs-text mb-0.5">Vinyl Buddy</h1>
+        <p className="text-xs text-gs-dim">Your personal vinyl identification companion</p>
       </div>
 
       {/* Hero card */}
-      <div style={{ background: "linear-gradient(135deg,#0ea5e911,#6366f111)", border: "1px solid #0ea5e922", borderRadius: 16, padding: "32px 28px", marginBottom: 20, position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", top: -20, right: -20, width: 120, height: 120, borderRadius: "50%", background: "radial-gradient(circle,#0ea5e915,transparent 70%)" }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 14, background: "linear-gradient(135deg,#0ea5e9,#6366f1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>
+      <div className="rounded-2xl p-7 mb-5 relative overflow-hidden bg-gradient-to-br from-[#0ea5e911] to-[#6366f111] border border-[#0ea5e922]">
+        <div className="absolute -top-5 -right-5 w-[120px] h-[120px] rounded-full bg-[radial-gradient(circle,#0ea5e915,transparent_70%)]" />
+        <div className="flex items-center gap-4 mb-4">
+          <div className="w-14 h-14 rounded-[14px] flex items-center justify-center text-2xl shrink-0 bg-gradient-to-br from-gs-accent to-gs-indigo">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
             </svg>
           </div>
           <div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: "#f5f5f5", letterSpacing: "-0.03em" }}>Meet Vinyl Buddy</div>
-            <div style={{ fontSize: 13, color: "#888", lineHeight: 1.5, marginTop: 4 }}>
+            <div className="text-xl font-extrabold text-gs-text tracking-[-0.03em]">Meet Vinyl Buddy</div>
+            <div className="text-[13px] text-gs-muted leading-normal mt-1">
               A tiny ESP32-powered device that sits next to your turntable, listens to your records, and identifies every track you play.
             </div>
           </div>
         </div>
 
         {/* How it works */}
-        <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+        <div className="flex gap-2 mt-5">
           {["Place near turntable", "Music auto-detected", "Track identified in seconds"].map((step, i) => (
-            <div key={i} style={{ flex: 1, background: "#0a0a0a88", borderRadius: 10, padding: "10px 12px", textAlign: "center" }}>
-              <div style={{ fontSize: 14, fontWeight: 800, color: "#0ea5e9", marginBottom: 4 }}>{i + 1}</div>
-              <div style={{ fontSize: 11, color: "#777", lineHeight: 1.4 }}>{step}</div>
+            <div key={i} className="flex-1 rounded-[10px] px-3 py-2.5 text-center bg-gs-sidebar/50">
+              <div className="text-sm font-extrabold text-gs-accent mb-1">{i + 1}</div>
+              <div className="text-[11px] text-[#777] leading-snug">{step}</div>
             </div>
           ))}
         </div>
       </div>
 
       {/* Feature pills */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginBottom: 24 }}>
+      <div className="grid grid-cols-3 gap-2.5 mb-6">
         {features.map(f => (
-          <div key={f.title} style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 14, padding: "18px 14px", textAlign: "center" }}>
-            <div style={{ fontSize: 28, marginBottom: 8 }}>{f.icon}</div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f5", marginBottom: 6 }}>{f.title}</div>
-            <div style={{ fontSize: 11, color: "#666", lineHeight: 1.5 }}>{f.desc}</div>
+          <div key={f.title} className="bg-gs-card border border-gs-border rounded-[14px] py-[18px] px-3.5 text-center">
+            <div className="text-[28px] mb-2">{f.icon}</div>
+            <div className="text-[13px] font-bold text-gs-text mb-1.5">{f.title}</div>
+            <div className="text-[11px] text-[#666] leading-normal">{f.desc}</div>
           </div>
         ))}
       </div>
 
       {/* Activation section */}
       {!showForm ? (
-        <div style={{ textAlign: "center", padding: "20px 0" }}>
+        <div className="text-center py-5">
           <button
             onClick={() => setShowForm(true)}
-            style={{ padding: "14px 36px", background: "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 12, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer", letterSpacing: "-0.02em" }}
+            className="gs-btn-gradient px-9 py-3.5 text-sm tracking-[-0.02em]"
           >
             Activate Your Device
           </button>
-          <p style={{ fontSize: 11, color: "#444", marginTop: 10 }}>Already have a Vinyl Buddy? Enter your device code to get started.</p>
+          <p className="text-[11px] text-gs-faint mt-2.5">Already have a Vinyl Buddy? Enter your device code to get started.</p>
         </div>
       ) : (
-        <div style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 14, padding: "22px 20px" }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#f5f5f5", marginBottom: 4 }}>Activate Your Device</div>
-          <p style={{ fontSize: 11, color: "#666", marginBottom: 16, lineHeight: 1.5 }}>
+        <div className="bg-gs-card border border-gs-border rounded-[14px] py-[22px] px-5">
+          <div className="text-sm font-bold text-gs-text mb-1">Activate Your Device</div>
+          <p className="text-[11px] text-[#666] mb-4 leading-normal">
             Enter the 12-character device code shown on your Vinyl Buddy's OLED screen during WiFi setup. It looks like: AABB11223344
           </p>
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <div style={{ flex: 1 }}>
+          <div className="flex gap-2 items-start">
+            <div className="flex-1">
               <input
                 value={code}
                 onChange={e => { setCode(e.target.value); setError(""); }}
                 onKeyDown={e => e.key === "Enter" && handleActivate()}
                 placeholder="e.g. AABB11223344"
                 maxLength={12}
-                style={{
-                  width: "100%", padding: "11px 14px", background: "#111", border: `1px solid ${error ? "#ef4444" : "#2a2a2a"}`,
-                  borderRadius: 9, color: "#f5f5f5", fontSize: 14, fontFamily: "'DM Mono',monospace",
-                  letterSpacing: "0.08em", outline: "none", textTransform: "uppercase",
-                }}
+                className={`w-full py-[11px] px-3.5 bg-[#111] rounded-[9px] text-gs-text text-sm font-mono tracking-[0.08em] outline-none uppercase border ${error ? "border-red-500" : "border-gs-border-hover"}`}
               />
-              {error && <div style={{ fontSize: 11, color: "#ef4444", marginTop: 6 }}>{error}</div>}
+              {error && <div className="text-[11px] text-red-500 mt-1.5">{error}</div>}
             </div>
-            <button onClick={handleActivate} style={{ padding: "11px 22px", background: "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 9, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}>
+            <button onClick={handleActivate} className="gs-btn-gradient py-[11px] px-[22px] rounded-[9px] text-[13px] whitespace-nowrap">
               Activate
             </button>
           </div>
-          <button onClick={() => { setShowForm(false); setCode(""); setError(""); }} style={{ marginTop: 12, background: "none", border: "none", color: "#555", fontSize: 11, cursor: "pointer", padding: 0 }}>
+          <button onClick={() => { setShowForm(false); setCode(""); setError(""); }} className="mt-3 bg-transparent border-none text-gs-dim text-[11px] cursor-pointer p-0">
             Cancel
           </button>
         </div>
@@ -248,33 +244,39 @@ function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate }) 
   return (
     <div>
       {/* Header */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 2 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.04em", color: "#f5f5f5" }}>Vinyl Buddy</h1>
+      <div className="mb-5">
+        <div className="flex items-center gap-2.5 mb-0.5">
+          <h1 className="text-[22px] font-extrabold tracking-[-0.04em] text-gs-text">Vinyl Buddy</h1>
           <Badge label="Active" color="#22c55e" />
         </div>
-        <p style={{ fontSize: 12, color: "#555" }}>Your listening dashboard</p>
+        <p className="text-xs text-gs-dim">Your listening dashboard</p>
       </div>
 
       {/* Summary cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, marginBottom: 22 }}>
+      <div className="grid grid-cols-4 gap-2.5 mb-[22px]">
         {[
           { l: "Total Listens", v: myListens.length, c: "#0ea5e9" },
           { l: "Artists", v: artists.size, c: "#8b5cf6" },
           { l: "Albums", v: albums.size, c: "#f59e0b" },
           { l: "Avg Score", v: `${avgScore}%`, c: "#22c55e" },
         ].map(s => (
-          <div key={s.l} style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 12, padding: "14px 10px", textAlign: "center" }}>
-            <div style={{ fontSize: 22, fontWeight: 800, color: s.c, letterSpacing: "-0.02em" }}>{s.v}</div>
-            <div style={{ fontSize: 10, color: "#555", fontFamily: "'DM Mono',monospace", marginTop: 3 }}>{s.l}</div>
+          <div key={s.l} className="gs-stat bg-gs-card border border-gs-border rounded-xl">
+            <div className="text-[22px] font-extrabold tracking-[-0.02em]" style={{ color: s.c }}>{s.v}</div>
+            <div className="text-[10px] text-gs-dim font-mono mt-[3px]">{s.l}</div>
           </div>
         ))}
       </div>
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #1a1a1a", marginBottom: 18 }}>
+      <div className="flex gap-0 border-b border-[#1a1a1a] mb-[18px]">
         {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{ padding: "9px 16px", background: "none", border: "none", borderBottom: `2px solid ${tab === t ? "#0ea5e9" : "transparent"}`, color: tab === t ? "#0ea5e9" : "#555", fontSize: 12, fontWeight: 600, cursor: "pointer", textTransform: "capitalize", marginBottom: -1 }}>
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`py-[9px] px-4 bg-transparent border-none text-xs font-semibold cursor-pointer capitalize -mb-px border-b-2 ${
+              tab === t ? "border-gs-accent text-gs-accent" : "border-transparent text-gs-dim"
+            }`}
+          >
             {t}
           </button>
         ))}
@@ -288,36 +290,36 @@ function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate }) 
           ) : (
             <>
               {/* Top cards row */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 18 }}>
+              <div className="grid grid-cols-2 gap-2.5 mb-[18px]">
                 {/* Top Artist */}
-                <div style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 14, overflow: "hidden" }}>
-                  <div style={{ height: 2, background: "linear-gradient(90deg,#8b5cf6,transparent)" }} />
-                  <div style={{ padding: "16px 14px" }}>
-                    <div style={{ fontSize: 10, color: "#555", fontFamily: "'DM Mono',monospace", marginBottom: 8 }}>TOP ARTIST</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 40, height: 40, borderRadius: "50%", background: "linear-gradient(135deg,#8b5cf6,#6366f1)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>
+                <div className="bg-gs-card border border-gs-border rounded-[14px] overflow-hidden">
+                  <div className="h-0.5 bg-gradient-to-r from-[#8b5cf6] to-transparent" />
+                  <div className="p-4 px-3.5">
+                    <div className="text-[10px] text-gs-dim font-mono mb-2">TOP ARTIST</div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-base shrink-0 bg-gradient-to-br from-[#8b5cf6] to-gs-indigo">
                         {topArtist ? topArtist[0].charAt(0).toUpperCase() : "?"}
                       </div>
                       <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "#f5f5f5" }}>{topArtist ? topArtist[0] : "—"}</div>
-                        <div style={{ fontSize: 11, color: "#8b5cf6" }}>{topArtist ? `${topArtist[1]} plays` : ""}</div>
+                        <div className="text-sm font-bold text-gs-text">{topArtist ? topArtist[0] : "—"}</div>
+                        <div className="text-[11px] text-[#8b5cf6]">{topArtist ? `${topArtist[1]} plays` : ""}</div>
                       </div>
                     </div>
                   </div>
                 </div>
 
                 {/* Top Track */}
-                <div style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 14, overflow: "hidden" }}>
-                  <div style={{ height: 2, background: "linear-gradient(90deg,#0ea5e9,transparent)" }} />
-                  <div style={{ padding: "16px 14px" }}>
-                    <div style={{ fontSize: 10, color: "#555", fontFamily: "'DM Mono',monospace", marginBottom: 8 }}>TOP TRACK</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div className="bg-gs-card border border-gs-border rounded-[14px] overflow-hidden">
+                  <div className="h-0.5 bg-gradient-to-r from-gs-accent to-transparent" />
+                  <div className="p-4 px-3.5">
+                    <div className="text-[10px] text-gs-dim font-mono mb-2">TOP TRACK</div>
+                    <div className="flex items-center gap-2.5">
                       <AlbumArt album={topTrackSession?.track.album} artist={topTrackSession?.track.artist} accent="#0ea5e9" size={40} />
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-bold text-gs-text whitespace-nowrap overflow-hidden text-ellipsis">
                           {topTrack ? topTrack[0].split(" — ")[0] : "—"}
                         </div>
-                        <div style={{ fontSize: 11, color: "#0ea5e9" }}>{topTrack ? `${topTrack[1]} plays` : ""}</div>
+                        <div className="text-[11px] text-gs-accent">{topTrack ? `${topTrack[1]} plays` : ""}</div>
                       </div>
                     </div>
                   </div>
@@ -325,9 +327,9 @@ function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate }) 
               </div>
 
               {/* Recent Activity */}
-              <div style={{ marginBottom: 8 }}>
-                <div style={{ fontSize: 10, color: "#555", fontFamily: "'DM Mono',monospace", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.06em" }}>Recent Activity</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div className="mb-2">
+                <div className="text-[10px] text-gs-dim font-mono mb-2.5 uppercase tracking-[0.06em]">Recent Activity</div>
+                <div className="flex flex-col gap-1.5">
                   {myListens.slice(0, 5).map(session => (
                     <SessionRow key={session.id} session={session} />
                   ))}
@@ -343,23 +345,27 @@ function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate }) 
         myListens.length === 0 ? (
           <Empty icon="\uD83C\uDFA7" text="No listening history yet. Connect a Vinyl Buddy to start tracking!" />
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className="flex flex-col gap-2">
             {myListens.map(session => (
-              <div key={session.id} style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 12, overflow: "hidden", transition: "border-color 0.15s" }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = "#0ea5e933"}
-                onMouseLeave={e => e.currentTarget.style.borderColor = "#1e1e1e"}>
-                <div style={{ height: 2, background: "linear-gradient(90deg,#0ea5e9,#8b5cf6,transparent)" }} />
-                <div style={{ padding: "12px 14px", display: "flex", gap: 12, alignItems: "center" }}>
+              <div key={session.id} className="bg-gs-card border border-gs-border rounded-xl overflow-hidden transition-colors duration-150 hover:border-[#0ea5e933]">
+                <div className="h-0.5 bg-gradient-to-r from-gs-accent via-[#8b5cf6] to-transparent" />
+                <div className="py-3 px-3.5 flex gap-3 items-center">
                   <AlbumArt album={session.track.album} artist={session.track.artist} accent="#0ea5e9" size={38} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{session.track.title}</div>
-                    <div style={{ fontSize: 11, color: "#888" }}>{session.track.artist}</div>
-                    <div style={{ fontSize: 10, color: "#555" }}>{session.track.album}{session.track.year ? ` \u00B7 ${session.track.year}` : ""}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-bold text-gs-text whitespace-nowrap overflow-hidden text-ellipsis">{session.track.title}</div>
+                    <div className="text-[11px] text-gs-muted">{session.track.artist}</div>
+                    <div className="text-[10px] text-gs-dim">{session.track.album}{session.track.year ? ` \u00B7 ${session.track.year}` : ""}</div>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
-                    <span style={{ fontSize: 10, color: "#444", fontFamily: "'DM Mono',monospace" }}>{relTime(session.timestampMs)}</span>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className="text-[10px] text-gs-faint font-mono">{relTime(session.timestampMs)}</span>
                     {session.score > 0 && (
-                      <span style={{ fontSize: 9, padding: "2px 6px", background: session.score >= 90 ? "#22c55e11" : "#f59e0b11", border: `1px solid ${session.score >= 90 ? "#22c55e22" : "#f59e0b22"}`, borderRadius: 4, color: session.score >= 90 ? "#22c55e" : "#f59e0b", fontWeight: 600, fontFamily: "'DM Mono',monospace" }}>
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-semibold font-mono border ${
+                          session.score >= 90
+                            ? "bg-[#22c55e11] border-[#22c55e22] text-[#22c55e]"
+                            : "bg-[#f59e0b11] border-[#f59e0b22] text-[#f59e0b]"
+                        }`}
+                      >
                         {session.score}% match
                       </span>
                     )}
@@ -384,13 +390,13 @@ function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate }) 
 // ============================================================================
 function SessionRow({ session }) {
   return (
-    <div style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 10, padding: "10px 12px", display: "flex", gap: 10, alignItems: "center" }}>
+    <div className="bg-gs-card border border-gs-border rounded-[10px] py-2.5 px-3 flex gap-2.5 items-center">
       <AlbumArt album={session.track.album} artist={session.track.artist} accent="#0ea5e9" size={30} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: "#f5f5f5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{session.track.title}</div>
-        <div style={{ fontSize: 10, color: "#666" }}>{session.track.artist}</div>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-bold text-gs-text whitespace-nowrap overflow-hidden text-ellipsis">{session.track.title}</div>
+        <div className="text-[10px] text-[#666]">{session.track.artist}</div>
       </div>
-      <span style={{ fontSize: 10, color: "#444", fontFamily: "'DM Mono',monospace", flexShrink: 0 }}>{relTime(session.timestampMs)}</span>
+      <span className="text-[10px] text-gs-faint font-mono shrink-0">{relTime(session.timestampMs)}</span>
     </div>
   );
 }
@@ -444,31 +450,31 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate }) {
   return (
     <div>
       {/* Device info card */}
-      <div style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 14, overflow: "hidden", marginBottom: 12 }}>
-        <div style={{ height: 2, background: `linear-gradient(90deg,${sc.text},transparent)` }} />
-        <div style={{ padding: "18px 16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ width: 44, height: 44, borderRadius: 12, background: "linear-gradient(135deg,#0ea5e9,#6366f1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div className="bg-gs-card border border-gs-border rounded-[14px] overflow-hidden mb-3">
+        <div className="h-0.5" style={{ background: `linear-gradient(90deg,${sc.text},transparent)` }} />
+        <div className="py-[18px] px-4">
+          <div className="flex justify-between items-center mb-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center bg-gradient-to-br from-gs-accent to-gs-indigo">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="4" y="2" width="16" height="20" rx="2" ry="2" />
                   <line x1="12" y1="18" x2="12" y2="18" />
                 </svg>
               </div>
               <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: "#f5f5f5" }}>Vinyl Buddy</div>
-                <div style={{ fontSize: 11, color: "#555", fontFamily: "'DM Mono',monospace" }}>ESP32-DevKitC V4</div>
+                <div className="text-[15px] font-bold text-gs-text">Vinyl Buddy</div>
+                <div className="text-[11px] text-gs-dim font-mono">ESP32-DevKitC V4</div>
               </div>
             </div>
-            {/* Status pill */}
-            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", background: sc.bg, border: `1px solid ${sc.border}`, borderRadius: 20 }}>
-              <div style={{ width: 6, height: 6, borderRadius: "50%", background: sc.dot, boxShadow: status === "online" ? `0 0 6px ${sc.dot}` : "none" }} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: sc.text }}>{sc.label}</span>
+            {/* Status pill — dynamic colors from statusColors must stay inline */}
+            <div className="flex items-center gap-1.5 py-[5px] px-3 rounded-full" style={{ background: sc.bg, border: `1px solid ${sc.border}` }}>
+              <div className="w-1.5 h-1.5 rounded-full" style={{ background: sc.dot, boxShadow: status === "online" ? `0 0 6px ${sc.dot}` : "none" }} />
+              <span className="text-[11px] font-semibold" style={{ color: sc.text }}>{sc.label}</span>
             </div>
           </div>
 
           {/* Info grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div className="grid grid-cols-2 gap-2">
             {[
               { label: "Device Code", value: deviceCode },
               { label: "Heartbeats", value: deviceInfo?.totalHeartbeats ?? "—" },
@@ -477,9 +483,9 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate }) {
               { label: "First Seen", value: deviceInfo?.firstSeen ? new Date(deviceInfo.firstSeen).toLocaleDateString() : "—" },
               { label: "Last Seen", value: deviceInfo?.lastSeen ? relTime(new Date(deviceInfo.lastSeen).getTime()) : "—" },
             ].map(item => (
-              <div key={item.label} style={{ background: "#111", borderRadius: 8, padding: "10px 12px" }}>
-                <div style={{ fontSize: 10, color: "#555", fontFamily: "'DM Mono',monospace", marginBottom: 4 }}>{item.label}</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#ccc", fontFamily: item.label === "Device Code" ? "'DM Mono',monospace" : "inherit", letterSpacing: item.label === "Device Code" ? "0.06em" : "normal" }}>
+              <div key={item.label} className="bg-[#111] rounded-lg py-2.5 px-3">
+                <div className="text-[10px] text-gs-dim font-mono mb-1">{item.label}</div>
+                <div className={`text-[13px] font-semibold text-[#ccc] ${item.label === "Device Code" ? "font-mono tracking-[0.06em]" : ""}`}>
                   {item.value}
                 </div>
               </div>
@@ -490,31 +496,31 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate }) {
 
       {/* Server connection hint */}
       {status === "offline" && (
-        <div style={{ background: "#f59e0b08", border: "1px solid #f59e0b22", borderRadius: 10, padding: "12px 14px", marginBottom: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "#f59e0b", marginBottom: 4 }}>Device Offline</div>
-          <div style={{ fontSize: 11, color: "#888", lineHeight: 1.5 }}>
+        <div className="rounded-[10px] py-3 px-3.5 mb-3 bg-[#f59e0b08] border border-[#f59e0b22]">
+          <div className="text-xs font-semibold text-[#f59e0b] mb-1">Device Offline</div>
+          <div className="text-[11px] text-gs-muted leading-normal">
             Make sure your Vinyl Buddy is powered on and connected to the same WiFi network. The server should be running on port 3001.
           </div>
         </div>
       )}
 
       {/* Reset device */}
-      <div style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 14, padding: "16px" }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f5", marginBottom: 4 }}>Reset Device</div>
-        <p style={{ fontSize: 11, color: "#666", marginBottom: 12, lineHeight: 1.5 }}>
+      <div className="bg-gs-card border border-gs-border rounded-[14px] p-4">
+        <div className="text-[13px] font-bold text-gs-text mb-1">Reset Device</div>
+        <p className="text-[11px] text-[#666] mb-3 leading-normal">
           Remove this Vinyl Buddy from your account. Your listening history will be preserved, but you'll need to re-enter the device code to reconnect.
         </p>
         {!showConfirm ? (
-          <button onClick={() => setShowConfirm(true)} style={{ padding: "9px 18px", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#ef4444", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
+          <button onClick={() => setShowConfirm(true)} className="gs-btn-secondary py-[9px] px-[18px] rounded-lg text-red-500 text-xs">
             Reset Device
           </button>
         ) : (
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span style={{ fontSize: 12, color: "#ef4444", fontWeight: 600 }}>Are you sure?</span>
-            <button onClick={() => { setShowConfirm(false); onDeactivate(); }} style={{ padding: "8px 16px", background: "#ef4444", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+          <div className="flex gap-2 items-center">
+            <span className="text-xs text-red-500 font-semibold">Are you sure?</span>
+            <button onClick={() => { setShowConfirm(false); onDeactivate(); }} className="py-2 px-4 bg-red-500 border-none rounded-lg text-white font-bold text-xs cursor-pointer">
               Yes, Reset
             </button>
-            <button onClick={() => setShowConfirm(false)} style={{ padding: "8px 16px", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 8, color: "#888", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
+            <button onClick={() => setShowConfirm(false)} className="gs-btn-secondary py-2 px-4 rounded-lg text-xs">
               Cancel
             </button>
           </div>

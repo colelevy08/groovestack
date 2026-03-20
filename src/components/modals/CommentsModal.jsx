@@ -27,33 +27,31 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
 
   return (
     <Modal open={open} onClose={onClose} title={`Comments · ${record.album}`} width="460px">
-      <div style={{ maxHeight: 300, overflowY: "auto", marginBottom: 16 }}>
+      <div className="max-h-[300px] overflow-y-auto mb-4">
         {record.comments.length === 0 && (
-          <div style={{ textAlign: "center", color: "#444", fontSize: 13, padding: "32px 0" }}>No comments yet — be the first!</div>
+          <div className="text-center text-gs-faint text-[13px] py-8">No comments yet — be the first!</div>
         )}
         {record.comments.map(c => (
-          <div key={c.id} style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+          <div key={c.id} className="flex gap-2.5 mb-3.5">
             <Avatar username={c.user} size={30} onClick={() => { onClose(); onViewUser(c.user); }} />
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "baseline", marginBottom: 3 }}>
-                <button onClick={() => { onClose(); onViewUser(c.user); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#e0e0e0", padding: 0 }}>@{c.user}</button>
-                <span style={{ fontSize: 11, color: "#444", fontFamily: "'DM Mono',monospace" }}>{c.time}</span>
+            <div className="flex-1">
+              <div className="flex gap-2 items-baseline mb-[3px]">
+                <button onClick={() => { onClose(); onViewUser(c.user); }} className="bg-transparent border-none cursor-pointer text-xs font-bold text-[#e0e0e0] p-0">@{c.user}</button>
+                <span className="text-[11px] text-gs-faint font-mono">{c.time}</span>
               </div>
-              <p style={{ fontSize: 13, color: "#aaa", lineHeight: 1.5 }}>{c.text}</p>
+              <p className="text-[13px] text-[#aaa] leading-normal">{c.text}</p>
             </div>
           </div>
         ))}
         <div ref={endRef} />
       </div>
-      <div style={{ display: "flex", gap: 8, borderTop: "1px solid #1a1a1a", paddingTop: 14 }}>
+      <div className="flex gap-2 border-t border-gs-border-subtle pt-3.5">
         <input
           value={text} onChange={e => setText(e.target.value)}
           placeholder="Add a comment..." onKeyDown={e => e.key === "Enter" && submit()}
-          style={{ flex: 1, background: "#111", border: "1px solid #222", borderRadius: 8, padding: "9px 12px", color: "#f0f0f0", fontSize: 13, outline: "none", fontFamily: "'DM Sans',sans-serif" }}
-          onFocus={e => e.target.style.borderColor = "#0ea5e955"}
-          onBlur={e => e.target.style.borderColor = "#222"}
+          className="flex-1 bg-[#111] border border-gs-subtle rounded-lg px-3 py-2.5 text-gs-text text-[13px] outline-none font-sans focus:border-gs-accent/30"
         />
-        <button onClick={submit} style={{ padding: "9px 16px", background: "#0ea5e9", border: "none", borderRadius: 8, color: "#000", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Post</button>
+        <button onClick={submit} className="px-4 py-2.5 bg-gs-accent border-none rounded-lg text-black font-bold text-xs cursor-pointer">Post</button>
       </div>
     </Modal>
   );

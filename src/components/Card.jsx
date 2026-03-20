@@ -8,7 +8,7 @@ import { condColor } from '../utils/helpers';
 
 export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, onViewUser, onViewArtist }) {
   return (
-    <div className="gs-card group" style={{ borderColor: undefined }}>
+    <div className="gs-card group">
       {/* Accent bar */}
       <div className="h-0.5" style={{ background: `linear-gradient(90deg,${r.accent},transparent)` }} />
       <div className="p-4">

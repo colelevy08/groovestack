@@ -10,12 +10,12 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, ..
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+      <div className="flex justify-between items-center mb-5">
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.04em", color: "#f5f5f5", marginBottom: 2 }}>My Collection</h1>
-          <p style={{ fontSize: 12, color: "#555" }}>{mine.length} record{mine.length !== 1 ? "s" : ""}</p>
+          <h1 className="text-[22px] font-extrabold tracking-tight text-gs-text mb-0.5">My Collection</h1>
+          <p className="text-xs text-gs-dim">{mine.length} record{mine.length !== 1 ? "s" : ""}</p>
         </div>
-        <button onClick={onAddRecord} style={{ padding: "9px 18px", background: "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 10, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+        <button onClick={onAddRecord} className="gs-btn-gradient px-[18px] py-[9px] text-xs">
           + Add Record
         </button>
       </div>

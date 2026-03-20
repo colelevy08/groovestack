@@ -34,33 +34,31 @@ export default function NotificationsPanel({ open, onClose, following, records, 
   ].slice(0, 14);
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 999 }} onClick={onClose}>
+    <div className="fixed inset-0 z-[999]" onClick={onClose}>
       <div
-        style={{ position: "absolute", top: 0, right: 0, width: 320, height: "100vh", background: "#0d0d0d", borderLeft: "1px solid #1a1a1a", display: "flex", flexDirection: "column", boxShadow: "-16px 0 48px rgba(0,0,0,0.7)" }}
+        className="absolute top-0 right-0 w-80 h-screen bg-gs-surface border-l border-gs-border flex flex-col shadow-[-16px_0_48px_rgba(0,0,0,0.7)]"
         onClick={e => e.stopPropagation()}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 20px", borderBottom: "1px solid #1a1a1a" }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#f5f5f5" }}>Notifications</span>
-          <button onClick={onClose} style={{ background: "#1a1a1a", border: "none", borderRadius: 6, width: 28, height: 28, cursor: "pointer", color: "#888", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+        <div className="flex justify-between items-center px-5 py-[18px] border-b border-gs-border">
+          <span className="text-[15px] font-bold text-gs-text">Notifications</span>
+          <button onClick={onClose} className="bg-gs-border border-none rounded-md w-7 h-7 cursor-pointer text-gs-muted text-lg flex items-center justify-center hover:text-gs-text">×</button>
         </div>
-        <div style={{ overflowY: "auto", flex: 1 }}>
-          {notifs.length === 0 && <div style={{ padding: 40, textAlign: "center", color: "#444", fontSize: 13 }}>No notifications yet.</div>}
+        <div className="overflow-y-auto flex-1">
+          {notifs.length === 0 && <div className="p-10 text-center text-gs-faint text-[13px]">No notifications yet.</div>}
           {notifs.map(n => (
             <div
               key={n.id}
-              style={{ display: "flex", gap: 12, padding: "14px 20px", borderBottom: "1px solid #111", cursor: "pointer", transition: "background 0.12s" }}
-              onMouseEnter={e => e.currentTarget.style.background = "#111"}
-              onMouseLeave={e => e.currentTarget.style.background = "none"}
+              className="flex gap-3 px-5 py-3.5 border-b border-[#111] cursor-pointer transition-colors duration-[120ms] hover:bg-[#111]"
               onClick={() => { onViewUser(n.user); onClose(); }}
             >
               <Avatar username={n.user} size={36} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, color: "#ddd", lineHeight: 1.5 }}>
-                  <span style={{ fontWeight: 700, color: "#f5f5f5" }}>@{n.user}</span> {n.text}
+              <div className="flex-1">
+                <div className="text-xs text-[#ddd] leading-normal">
+                  <span className="font-bold text-gs-text">@{n.user}</span> {n.text}
                 </div>
-                <div style={{ fontSize: 11, color: "#444", fontFamily: "'DM Mono',monospace", marginTop: 3 }}>{n.time}</div>
+                <div className="text-[11px] text-gs-faint font-mono mt-0.5">{n.time}</div>
               </div>
-              <span style={{ fontSize: 16 }}>{NOTIF_ICONS[n.type]}</span>
+              <span className="text-base">{NOTIF_ICONS[n.type]}</span>
             </div>
           ))}
         </div>

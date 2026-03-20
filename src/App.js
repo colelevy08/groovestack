@@ -412,7 +412,7 @@ export default function App() {
         onSignIn={() => setShowAuth(true)}
       />
 
-      <main className="gs-main" style={{ marginLeft: 196, padding: "26px 40px", maxWidth: 1400 }}>
+      <main className="gs-main ml-[196px] px-10 py-[26px] max-w-[1400px]">
         {/* Full user profile page — overrides nav routing when viewing another user's full profile */}
         {viewingUserProfile ? (
           <UserProfilePage

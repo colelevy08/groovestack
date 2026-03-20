@@ -25,7 +25,7 @@ export default function Avatar({ username, size = 34, onClick, src }) {
         onMouseLeave={e => { e.currentTarget.style.opacity = "1"; }}
         style={baseStyle}
       >
-        <img src={imgSrc} alt={username} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        <img src={imgSrc} alt={username} className="w-full h-full object-cover block" />
       </div>
     );
   }

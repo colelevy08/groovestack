@@ -114,66 +114,56 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
   return (
     <Modal open={open} onClose={onClose} title="Edit Profile">
       {/* Hidden file inputs */}
-      <input ref={headerInputRef} type="file" accept="image/*" onChange={handleHeaderFile} style={{ display: "none" }} />
-      <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarFile} style={{ display: "none" }} />
+      <input ref={headerInputRef} type="file" accept="image/*" onChange={handleHeaderFile} className="hidden" />
+      <input ref={avatarInputRef} type="file" accept="image/*" onChange={handleAvatarFile} className="hidden" />
 
       {/* ── Image upload preview ─────────────────────────────────────────── */}
-      <div style={{ marginBottom: 20, borderRadius: 12, overflow: "hidden", border: "1px solid #1e1e1e" }}>
+      <div className="mb-5 rounded-xl overflow-hidden border border-gs-border">
         {/* Header image area */}
         <div
           onClick={() => headerInputRef.current?.click()}
           onMouseEnter={() => setHeaderHover(true)}
           onMouseLeave={() => setHeaderHover(false)}
+          className="h-[100px] cursor-pointer relative"
           style={{
-            height: 100, cursor: "pointer", position: "relative",
             background: headerUrl
               ? `url(${headerUrl}) center/cover no-repeat`
               : "linear-gradient(135deg,#0ea5e922,#6366f115)",
           }}
         >
-          <div style={{
-            position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-            background: headerHover ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0)",
-            transition: "background 0.2s", color: "#fff", fontSize: 11, fontWeight: 600,
-          }}>
+          <div className={`absolute inset-0 flex items-center justify-center gap-1.5 transition-colors duration-200 text-white text-[11px] font-semibold ${headerHover ? 'bg-black/55' : 'bg-transparent'}`}>
             {headerHover && <>{cameraIcon} {headerUrl ? "Change Header" : "Add Header"}</>}
           </div>
         </div>
 
         {/* Avatar area — overlapping header bottom */}
-        <div style={{ padding: "0 14px 12px", marginTop: -28, display: "flex", alignItems: "flex-end", gap: 12 }}>
+        <div className="px-3.5 pb-3 -mt-7 flex items-end gap-3">
           <div
             onClick={() => avatarInputRef.current?.click()}
             onMouseEnter={() => setAvatarHover(true)}
             onMouseLeave={() => setAvatarHover(false)}
+            className="w-16 h-16 rounded-full cursor-pointer relative border-[3px] border-[#111] overflow-hidden shrink-0 flex items-center justify-center"
             style={{
-              width: 64, height: 64, borderRadius: "50%", cursor: "pointer", position: "relative",
-              border: "3px solid #111", overflow: "hidden", flexShrink: 0,
               background: avatarUrl ? "none" : "linear-gradient(135deg,#0ea5e9,#6366f1)",
-              display: "flex", alignItems: "center", justifyContent: "center",
             }}
           >
             {avatarUrl ? (
-              <img src={avatarUrl} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
             ) : (
-              <span style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>{currentUser.slice(0, 2).toUpperCase()}</span>
+              <span className="text-lg font-extrabold text-white">{currentUser.slice(0, 2).toUpperCase()}</span>
             )}
-            <div style={{
-              position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
-              background: avatarHover ? "rgba(0,0,0,0.55)" : "rgba(0,0,0,0)",
-              transition: "background 0.2s", color: "#fff", borderRadius: "50%",
-            }}>
+            <div className={`absolute inset-0 flex items-center justify-center transition-colors duration-200 text-white rounded-full ${avatarHover ? 'bg-black/55' : 'bg-transparent'}`}>
               {avatarHover && cameraIcon}
             </div>
           </div>
-          <div style={{ flex: 1, display: "flex", gap: 8, paddingBottom: 4 }}>
+          <div className="flex-1 flex gap-2 pb-1">
             {avatarUrl && (
-              <button onClick={e => { e.stopPropagation(); setAvatarUrl(null); }} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", padding: 0 }}>
+              <button onClick={e => { e.stopPropagation(); setAvatarUrl(null); }} className="bg-transparent border-none text-gs-dim text-[10px] cursor-pointer p-0">
                 Remove photo
               </button>
             )}
             {headerUrl && (
-              <button onClick={e => { e.stopPropagation(); setHeaderUrl(null); }} style={{ background: "none", border: "none", color: "#555", fontSize: 10, cursor: "pointer", padding: 0 }}>
+              <button onClick={e => { e.stopPropagation(); setHeaderUrl(null); }} className="bg-transparent border-none text-gs-dim text-[10px] cursor-pointer p-0">
                 Remove header
               </button>
             )}
@@ -182,7 +172,7 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
       </div>
 
       {/* ── Text fields ──────────────────────────────────────────────────── */}
-      <div style={{ marginBottom: 12 }}>
+      <div className="mb-3">
         <FormInput
           label="USERNAME (@handle)"
           value={username}
@@ -190,20 +180,20 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
           placeholder="yourhandle"
         />
         {usernameError
-          ? <div style={{ fontSize: 11, color: "#f87171", marginTop: 4, fontFamily: "'DM Mono',monospace" }}>{usernameError}</div>
-          : <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>Letters, numbers, dots, and underscores only.</div>
+          ? <div className="text-[11px] text-red-400 mt-1 font-mono">{usernameError}</div>
+          : <div className="text-[11px] text-gs-dim mt-1">Letters, numbers, dots, and underscores only.</div>
         }
       </div>
       <FormInput label="DISPLAY NAME" value={displayName} onChange={setDisplayName} placeholder="Your name" />
       <FormTextarea label="BIO" value={bio} onChange={setBio} placeholder="Tell the community about your collection..." />
       <FormInput label="LOCATION" value={location} onChange={setLocation} placeholder="Chicago, IL" />
       <FormSelect label="FAVORITE GENRE" value={favGenre} onChange={setFavGenre} options={GENRES} />
-      <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-        <button onClick={onClose} style={{ flex: 1, padding: 11, background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 10, color: "#888", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+      <div className="flex gap-2.5 mt-1">
+        <button onClick={onClose} className="gs-btn-secondary flex-1 py-[11px] text-[13px]">Cancel</button>
         <button
           onClick={handleSave}
           disabled={!!usernameError}
-          style={{ flex: 2, padding: 11, background: usernameError ? "#1a1a1a" : "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 10, color: usernameError ? "#555" : "#fff", fontSize: 13, fontWeight: 700, cursor: usernameError ? "not-allowed" : "pointer" }}
+          className={`flex-[2] py-[11px] rounded-[10px] text-[13px] font-bold ${usernameError ? 'bg-[#1a1a1a] text-gs-dim cursor-not-allowed border-none' : 'gs-btn-gradient'}`}
         >
           Save Changes
         </button>

@@ -71,25 +71,25 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(6px)" }}
+      className="gs-overlay fixed inset-0 flex items-center justify-center z-[1000] backdrop-blur-[6px]"
       onClick={e => e.target === e.currentTarget && onClose()}
     >
-      <div style={{ background: "#0d0d0d", border: "1px solid #1e1e1e", borderRadius: 18, width: 540, maxWidth: "94vw", maxHeight: "88vh", overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 32px 80px rgba(0,0,0,0.85)" }}>
+      <div className="bg-gs-surface border border-gs-border rounded-[18px] w-[540px] max-w-[94vw] max-h-[88vh] overflow-hidden flex flex-col shadow-[0_32px_80px_rgba(0,0,0,0.85)]">
         {/* Gradient bar */}
-        <div style={{ height: 3, background: "linear-gradient(90deg,#0ea5e9,#6366f1)" }} />
+        <div className="h-[3px] bg-gradient-to-r from-gs-accent to-gs-indigo" />
 
         {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #1a1a1a" }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: "#f5f5f5" }}>Create Post</span>
-          <button onClick={onClose} style={{ background: "#1a1a1a", border: "none", borderRadius: 6, width: 28, height: 28, cursor: "pointer", color: "#888", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+        <div className="flex justify-between items-center px-5 py-4 border-b border-[#1a1a1a]">
+          <span className="text-[15px] font-bold text-gs-text">Create Post</span>
+          <button onClick={onClose} className="bg-[#1a1a1a] border-none rounded-md w-7 h-7 cursor-pointer text-gs-muted text-lg flex items-center justify-center">×</button>
         </div>
 
         {/* Body */}
-        <div style={{ overflowY: "auto", flex: 1, padding: 20 }}>
+        <div className="overflow-y-auto flex-1 p-5">
           {/* User header */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+          <div className="flex items-center gap-2.5 mb-4">
             <Avatar username={currentUser} size={36} src={profile?.avatarUrl} />
-            <div style={{ fontSize: 13, fontWeight: 600, color: "#e0e0e0" }}>@{currentUser}</div>
+            <div className="text-[13px] font-semibold text-[#e0e0e0]">@{currentUser}</div>
           </div>
 
           {/* Caption */}
@@ -99,27 +99,20 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
             onChange={e => setCaption(e.target.value)}
             placeholder="What's spinning? Share what you're listening to..."
             rows={4}
-            style={{
-              width: "100%", background: "#111", border: "1px solid #1e1e1e", borderRadius: 12,
-              padding: "14px 16px", color: "#e0e0e0", fontSize: 14, lineHeight: 1.6,
-              resize: "vertical", outline: "none", fontFamily: "'DM Sans',sans-serif",
-              minHeight: 100,
-            }}
-            onFocus={e => e.target.style.borderColor = "#0ea5e933"}
-            onBlur={e => e.target.style.borderColor = "#1e1e1e"}
+            className="w-full bg-[#111] border border-gs-border rounded-xl px-4 py-3.5 text-[#e0e0e0] text-sm leading-[1.6] resize-y outline-none font-sans min-h-[100px] focus:border-gs-accent/20"
           />
 
           {/* Tagged record preview */}
           {taggedRecord && (
-            <div style={{ marginTop: 12, background: "#0ea5e908", border: "1px solid #0ea5e922", borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+            <div className="mt-3 bg-gs-accent/[0.03] border border-gs-accent/[0.13] rounded-xl px-3.5 py-3 flex items-center gap-3">
               <AlbumArt album={taggedRecord.album} artist={taggedRecord.artist} accent="#0ea5e9" size={38} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f5" }}>{taggedRecord.album}</div>
-                <div style={{ fontSize: 11, color: "#888" }}>{taggedRecord.artist}</div>
+              <div className="flex-1">
+                <div className="text-[13px] font-bold text-gs-text">{taggedRecord.album}</div>
+                <div className="text-[11px] text-gs-muted">{taggedRecord.artist}</div>
               </div>
               <button
                 onClick={() => setTaggedRecord(null)}
-                style={{ background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 6, width: 24, height: 24, cursor: "pointer", color: "#666", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}
+                className="bg-[#1a1a1a] border border-gs-border-hover rounded-md w-6 h-6 cursor-pointer text-[#666] text-sm flex items-center justify-center"
               >
                 ×
               </button>
@@ -128,19 +121,17 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
 
           {/* Media URL preview */}
           {showMediaInput && (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <div className="mt-3">
+              <div className="flex gap-2 mb-2">
                 {["image", "video"].map(t => (
                   <button
                     key={t}
                     onClick={() => setMediaType(t)}
-                    style={{
-                      padding: "5px 14px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer",
-                      background: mediaType === t ? "#0ea5e918" : "#111",
-                      border: `1px solid ${mediaType === t ? "#0ea5e944" : "#1e1e1e"}`,
-                      color: mediaType === t ? "#0ea5e9" : "#666",
-                      textTransform: "capitalize",
-                    }}
+                    className={`px-3.5 py-[5px] rounded-[7px] text-[11px] font-semibold cursor-pointer capitalize ${
+                      mediaType === t
+                        ? 'bg-gs-accent/10 border border-gs-accent/25 text-gs-accent'
+                        : 'bg-[#111] border border-gs-border text-[#666]'
+                    }`}
                   >
                     {t}
                   </button>
@@ -150,41 +141,35 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
                 value={mediaUrl}
                 onChange={e => setMediaUrl(e.target.value)}
                 placeholder={`Paste ${mediaType} URL...`}
-                style={{ width: "100%", background: "#111", border: "1px solid #1e1e1e", borderRadius: 10, padding: "10px 14px", color: "#ccc", fontSize: 12, outline: "none" }}
-                onFocus={e => e.target.style.borderColor = "#0ea5e933"}
-                onBlur={e => e.target.style.borderColor = "#1e1e1e"}
+                className="w-full bg-[#111] border border-gs-border rounded-[10px] px-3.5 py-2.5 text-[#ccc] text-xs outline-none focus:border-gs-accent/20"
               />
             </div>
           )}
 
           {/* Tag record search */}
           {showTagSearch && !taggedRecord && (
-            <div style={{ marginTop: 12 }}>
+            <div className="mt-3">
               <input
                 ref={searchRef}
                 value={tagSearch}
                 onChange={e => setTagSearch(e.target.value)}
                 placeholder="Search for a record to tag..."
-                style={{ width: "100%", background: "#111", border: "1px solid #1e1e1e", borderRadius: 10, padding: "10px 14px", color: "#ccc", fontSize: 12, outline: "none", marginBottom: 8 }}
-                onFocus={e => e.target.style.borderColor = "#0ea5e933"}
-                onBlur={e => e.target.style.borderColor = "#1e1e1e"}
+                className="w-full bg-[#111] border border-gs-border rounded-[10px] px-3.5 py-2.5 text-[#ccc] text-xs outline-none mb-2 focus:border-gs-accent/20"
               />
 
               {/* Search results */}
               {searchResults.length > 0 && (
-                <div style={{ background: "#111", border: "1px solid #1e1e1e", borderRadius: 10, overflow: "hidden", marginBottom: 8 }}>
+                <div className="bg-[#111] border border-gs-border rounded-[10px] overflow-hidden mb-2">
                   {searchResults.map(r => (
                     <div
                       key={r.id}
                       onClick={() => selectRecord(r)}
-                      style={{ padding: "10px 14px", display: "flex", gap: 10, alignItems: "center", cursor: "pointer", borderBottom: "1px solid #1a1a1a", transition: "background 0.1s" }}
-                      onMouseEnter={e => e.currentTarget.style.background = "#1a1a1a"}
-                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                      className="px-3.5 py-2.5 flex gap-2.5 items-center cursor-pointer border-b border-[#1a1a1a] transition-colors duration-100 hover:bg-[#1a1a1a]"
                     >
                       <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={28} />
                       <div>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: "#f5f5f5" }}>{r.album}</div>
-                        <div style={{ fontSize: 10, color: "#666" }}>{r.artist}</div>
+                        <div className="text-xs font-semibold text-gs-text">{r.album}</div>
+                        <div className="text-[10px] text-[#666]">{r.artist}</div>
                       </div>
                     </div>
                   ))}
@@ -195,29 +180,33 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
               {!showCustomTag ? (
                 <button
                   onClick={() => setShowCustomTag(true)}
-                  style={{ background: "none", border: "none", color: "#0ea5e9", fontSize: 12, cursor: "pointer", padding: 0, fontWeight: 600 }}
+                  className="bg-transparent border-none text-gs-accent text-xs cursor-pointer p-0 font-semibold"
                 >
                   + Tag a record not on the platform
                 </button>
               ) : (
-                <div style={{ background: "#111", border: "1px solid #1e1e1e", borderRadius: 10, padding: 14 }}>
-                  <div style={{ fontSize: 11, color: "#666", marginBottom: 8, fontWeight: 600 }}>Tag a custom record</div>
+                <div className="bg-[#111] border border-gs-border rounded-[10px] p-3.5">
+                  <div className="text-[11px] text-[#666] mb-2 font-semibold">Tag a custom record</div>
                   <input
                     value={customAlbum}
                     onChange={e => setCustomAlbum(e.target.value)}
                     placeholder="Album title"
-                    style={{ width: "100%", background: "#0d0d0d", border: "1px solid #1e1e1e", borderRadius: 8, padding: "8px 12px", color: "#ccc", fontSize: 12, outline: "none", marginBottom: 6 }}
+                    className="w-full bg-gs-surface border border-gs-border rounded-lg px-3 py-2 text-[#ccc] text-xs outline-none mb-1.5"
                   />
                   <input
                     value={customArtist}
                     onChange={e => setCustomArtist(e.target.value)}
                     placeholder="Artist"
-                    style={{ width: "100%", background: "#0d0d0d", border: "1px solid #1e1e1e", borderRadius: 8, padding: "8px 12px", color: "#ccc", fontSize: 12, outline: "none", marginBottom: 8 }}
+                    className="w-full bg-gs-surface border border-gs-border rounded-lg px-3 py-2 text-[#ccc] text-xs outline-none mb-2"
                   />
                   <button
                     onClick={confirmCustomTag}
                     disabled={!customAlbum.trim()}
-                    style={{ padding: "7px 16px", background: customAlbum.trim() ? "#0ea5e9" : "#1a1a1a", border: "none", borderRadius: 7, color: customAlbum.trim() ? "#fff" : "#555", fontWeight: 700, fontSize: 11, cursor: customAlbum.trim() ? "pointer" : "default" }}
+                    className={`px-4 py-[7px] border-none rounded-[7px] font-bold text-[11px] ${
+                      customAlbum.trim()
+                        ? 'bg-gs-accent text-white cursor-pointer'
+                        : 'bg-[#1a1a1a] text-gs-dim cursor-default'
+                    }`}
                   >
                     Add Tag
                   </button>
@@ -227,15 +216,14 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
           )}
 
           {/* Action buttons row */}
-          <div style={{ display: "flex", gap: 8, marginTop: 16, borderTop: "1px solid #1a1a1a", paddingTop: 14 }}>
+          <div className="flex gap-2 mt-4 border-t border-[#1a1a1a] pt-3.5">
             <button
               onClick={() => { setShowMediaInput(s => !s); }}
-              style={{
-                display: "flex", alignItems: "center", gap: 6, padding: "7px 14px",
-                background: showMediaInput ? "#0ea5e912" : "#111",
-                border: `1px solid ${showMediaInput ? "#0ea5e933" : "#1e1e1e"}`,
-                borderRadius: 8, color: showMediaInput ? "#0ea5e9" : "#666", fontSize: 11, fontWeight: 600, cursor: "pointer",
-              }}
+              className={`flex items-center gap-1.5 px-3.5 py-[7px] rounded-lg text-[11px] font-semibold cursor-pointer ${
+                showMediaInput
+                  ? 'bg-gs-accent/[0.07] border border-gs-accent/20 text-gs-accent'
+                  : 'bg-[#111] border border-gs-border text-[#666]'
+              }`}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" />
@@ -249,12 +237,11 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
                   setTimeout(() => searchRef.current?.focus(), 50);
                 }
               }}
-              style={{
-                display: "flex", alignItems: "center", gap: 6, padding: "7px 14px",
-                background: (showTagSearch || taggedRecord) ? "#f59e0b12" : "#111",
-                border: `1px solid ${(showTagSearch || taggedRecord) ? "#f59e0b33" : "#1e1e1e"}`,
-                borderRadius: 8, color: (showTagSearch || taggedRecord) ? "#f59e0b" : "#666", fontSize: 11, fontWeight: 600, cursor: "pointer",
-              }}
+              className={`flex items-center gap-1.5 px-3.5 py-[7px] rounded-lg text-[11px] font-semibold cursor-pointer ${
+                (showTagSearch || taggedRecord)
+                  ? 'bg-[#f59e0b]/[0.07] border border-[#f59e0b]/20 text-[#f59e0b]'
+                  : 'bg-[#111] border border-gs-border text-[#666]'
+              }`}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" />
@@ -265,20 +252,18 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
         </div>
 
         {/* Footer */}
-        <div style={{ padding: "14px 20px", borderTop: "1px solid #1a1a1a", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <span style={{ fontSize: 11, color: "#333" }}>
+        <div className="px-5 py-3.5 border-t border-[#1a1a1a] flex justify-between items-center">
+          <span className="text-[11px] text-gs-subtle">
             {caption.length > 0 && `${caption.length} characters`}
           </span>
           <button
             onClick={handlePost}
             disabled={!canPost}
-            style={{
-              padding: "10px 28px", borderRadius: 10,
-              background: canPost ? "linear-gradient(135deg,#0ea5e9,#6366f1)" : "#1a1a1a",
-              border: "none", color: canPost ? "#fff" : "#555",
-              fontWeight: 700, fontSize: 13, cursor: canPost ? "pointer" : "default",
-              transition: "opacity 0.15s",
-            }}
+            className={`px-7 py-2.5 rounded-[10px] border-none font-bold text-[13px] transition-opacity duration-150 ${
+              canPost
+                ? 'gs-btn-gradient text-white cursor-pointer'
+                : 'bg-[#1a1a1a] text-gs-dim cursor-default'
+            }`}
           >
             Post
           </button>

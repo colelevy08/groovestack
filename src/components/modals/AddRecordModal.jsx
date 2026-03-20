@@ -105,54 +105,46 @@ function VinylCamera({ onVerified, onRetake }) {
   };
 
   // ── Render ──────────────────────────────────────────────────────────────────
-  const panelStyle = {
-    marginBottom: 20,
-    borderRadius: 12,
-    overflow: 'hidden',
-    border: '1px solid',
-    borderColor: status === STATUS.VERIFIED ? '#22c55e44' : status === STATUS.FAILED ? '#ef444444' : '#1e1e1e',
-    background: '#0a0a0a',
-  };
+  const panelBorderClass =
+    status === STATUS.VERIFIED ? 'border-green-500/25' :
+    status === STATUS.FAILED ? 'border-red-500/25' :
+    'border-gs-border';
 
-  const headerStyle = {
-    padding: '11px 16px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottom: '1px solid #1a1a1a',
-    background: status === STATUS.VERIFIED ? '#14532d22' : status === STATUS.FAILED ? '#7f1d1d22' : 'transparent',
-  };
+  const headerBgClass =
+    status === STATUS.VERIFIED ? 'bg-green-950/15' :
+    status === STATUS.FAILED ? 'bg-red-950/15' :
+    'bg-transparent';
 
   return (
-    <div style={panelStyle}>
+    <div className={`mb-5 rounded-xl overflow-hidden border bg-gs-sidebar ${panelBorderClass}`}>
       {/* ── Header ── */}
-      <div style={headerStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 16 }}>
+      <div className={`px-4 py-[11px] flex items-center justify-between border-b border-[#1a1a1a] ${headerBgClass}`}>
+        <div className="flex items-center gap-2">
+          <span className="text-base">
             {status === STATUS.VERIFIED ? '✅' : status === STATUS.FAILED ? '❌' : status === STATUS.VERIFYING ? '⏳' : '📷'}
           </span>
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#ccc', fontFamily: "'DM Mono',monospace", letterSpacing: '0.06em' }}>
+          <span className="text-xs font-bold text-[#ccc] font-mono tracking-wide">
             {status === STATUS.VERIFIED ? 'VINYL VERIFIED' : status === STATUS.FAILED ? 'VERIFICATION FAILED' : status === STATUS.VERIFYING ? 'ANALYZING...' : 'VINYL VERIFICATION'}
           </span>
         </div>
-        <span style={{ fontSize: 10, color: '#444', fontFamily: "'DM Mono',monospace" }}>powered by Claude</span>
+        <span className="text-[10px] text-gs-faint font-mono">powered by Claude</span>
       </div>
 
       {/* ── Body ── */}
-      <div style={{ padding: 16 }}>
+      <div className="p-4">
 
         {/* IDLE: prompt to open camera */}
         {status === STATUS.IDLE && (
-          <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
-            <p style={{ fontSize: 13, color: '#666', marginBottom: 14, lineHeight: 1.5 }}>
+          <div className="text-center pt-2 pb-1">
+            <p className="text-[13px] text-[#666] mb-3.5 leading-normal">
               Show us your vinyl! Take a quick photo to confirm you own the record before adding it to your collection.
             </p>
             {camError && (
-              <p style={{ fontSize: 12, color: '#f87171', marginBottom: 12 }}>{camError}</p>
+              <p className="text-xs text-red-400 mb-3">{camError}</p>
             )}
             <button
               onClick={startCamera}
-              style={{ padding: '10px 22px', background: 'linear-gradient(135deg,#6366f1,#0ea5e9)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7 }}
+              className="gs-btn-gradient px-[22px] py-2.5 rounded-[10px] text-[13px] font-bold inline-flex items-center gap-[7px]"
             >
               <span>📷</span> Open Camera
             </button>
@@ -166,18 +158,18 @@ function VinylCamera({ onVerified, onRetake }) {
               ref={videoRef}
               playsInline
               muted
-              style={{ width: '100%', borderRadius: 8, display: 'block', maxHeight: 260, objectFit: 'cover', background: '#111' }}
+              className="w-full rounded-lg block max-h-[260px] object-cover bg-[#111]"
             />
-            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <div className="flex gap-2 mt-2.5">
               <button
                 onClick={() => { stopStream(); setStatus(STATUS.IDLE); }}
-                style={{ flex: 1, padding: 9, background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 8, color: '#888', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                className="flex-1 p-[9px] bg-[#1a1a1a] border border-gs-border-hover rounded-lg text-gs-muted text-xs font-semibold cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={capturePhoto}
-                style={{ flex: 2, padding: 9, background: 'linear-gradient(135deg,#6366f1,#0ea5e9)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+                className="flex-[2] p-[9px] gs-btn-gradient rounded-lg text-[13px] font-bold cursor-pointer"
               >
                 📸 Capture Photo
               </button>
@@ -186,22 +178,22 @@ function VinylCamera({ onVerified, onRetake }) {
         )}
 
         {/* Hidden canvas used for capture */}
-        <canvas ref={canvasRef} style={{ display: 'none' }} />
+        <canvas ref={canvasRef} className="hidden" />
 
         {/* CAPTURED: show photo, invite verification */}
         {(status === STATUS.CAPTURED) && (
           <div>
-            <img src={capturedSrc} alt="Captured vinyl" style={{ width: '100%', borderRadius: 8, maxHeight: 260, objectFit: 'cover' }} />
-            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <img src={capturedSrc} alt="Captured vinyl" className="w-full rounded-lg max-h-[260px] object-cover" />
+            <div className="flex gap-2 mt-2.5">
               <button
                 onClick={retake}
-                style={{ flex: 1, padding: 9, background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 8, color: '#888', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                className="flex-1 p-[9px] bg-[#1a1a1a] border border-gs-border-hover rounded-lg text-gs-muted text-xs font-semibold cursor-pointer"
               >
                 Retake
               </button>
               <button
                 onClick={verify}
-                style={{ flex: 2, padding: 9, background: 'linear-gradient(135deg,#7c3aed,#0ea5e9)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}
+                className="flex-[2] p-[9px] bg-gradient-to-br from-purple-600 to-gs-accent border-none rounded-lg text-white text-[13px] font-bold cursor-pointer flex items-center justify-center gap-[7px]"
               >
                 <span>✨</span> Verify with Claude AI
               </button>
@@ -211,29 +203,29 @@ function VinylCamera({ onVerified, onRetake }) {
 
         {/* VERIFYING: spinner */}
         {status === STATUS.VERIFYING && (
-          <div style={{ textAlign: 'center', padding: '10px 0' }}>
-            <img src={capturedSrc} alt="Captured vinyl" style={{ width: '100%', borderRadius: 8, maxHeight: 200, objectFit: 'cover', opacity: 0.5, marginBottom: 14 }} />
+          <div className="text-center py-2.5">
+            <img src={capturedSrc} alt="Captured vinyl" className="w-full rounded-lg max-h-[200px] object-cover opacity-50 mb-3.5" />
             <SpinnerDots />
-            <p style={{ fontSize: 12, color: '#555', marginTop: 10 }}>Claude is examining your vinyl…</p>
+            <p className="text-xs text-gs-dim mt-2.5">Claude is examining your vinyl…</p>
           </div>
         )}
 
         {/* VERIFIED: success */}
         {status === STATUS.VERIFIED && (
           <div>
-            <img src={capturedSrc} alt="Verified vinyl" style={{ width: '100%', borderRadius: 8, maxHeight: 200, objectFit: 'cover', border: '2px solid #22c55e55' }} />
-            <p style={{ fontSize: 13, color: '#4ade80', marginTop: 10, lineHeight: 1.5, textAlign: 'center' }}>{message}</p>
+            <img src={capturedSrc} alt="Verified vinyl" className="w-full rounded-lg max-h-[200px] object-cover border-2 border-green-500/35" />
+            <p className="text-[13px] text-green-400 mt-2.5 leading-normal text-center">{message}</p>
           </div>
         )}
 
         {/* FAILED: rejection */}
         {status === STATUS.FAILED && (
           <div>
-            {capturedSrc && <img src={capturedSrc} alt="Rejected capture" style={{ width: '100%', borderRadius: 8, maxHeight: 200, objectFit: 'cover', opacity: 0.6, border: '2px solid #ef444455' }} />}
-            <p style={{ fontSize: 13, color: '#f87171', marginTop: 10, lineHeight: 1.5, textAlign: 'center' }}>{message}</p>
+            {capturedSrc && <img src={capturedSrc} alt="Rejected capture" className="w-full rounded-lg max-h-[200px] object-cover opacity-60 border-2 border-red-500/35" />}
+            <p className="text-[13px] text-red-400 mt-2.5 leading-normal text-center">{message}</p>
             <button
               onClick={retake}
-              style={{ marginTop: 10, width: '100%', padding: 9, background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 8, color: '#aaa', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+              className="mt-2.5 w-full p-[9px] bg-[#1a1a1a] border border-gs-border-hover rounded-lg text-[#aaa] text-[13px] font-semibold cursor-pointer"
             >
               📷 Try Again
             </button>
@@ -247,11 +239,9 @@ function VinylCamera({ onVerified, onRetake }) {
 // Three pulsing dots shown while Claude AI is analyzing the captured photo
 function SpinnerDots() {
   return (
-    <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center', height: 28 }}>
+    <div className="flex gap-1.5 justify-center items-center h-7">
       {[0, 1, 2].map(i => (
-        <div key={i} style={{
-          width: 8, height: 8, borderRadius: '50%',
-          background: 'linear-gradient(135deg,#7c3aed,#0ea5e9)',
+        <div key={i} className="w-2 h-2 rounded-full bg-gradient-to-br from-purple-600 to-gs-accent" style={{
           animation: `bounce 1.2s ${i * 0.2}s ease-in-out infinite`,
         }} />
       ))}
@@ -311,42 +301,42 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
   return (
     <Modal open={open} onClose={() => { reset(); onClose(); }} title="Add Record to Collection" width="520px">
       {err && (
-        <div style={{ background: '#ef444422', border: '1px solid #ef444444', borderRadius: 8, padding: '10px 14px', color: '#f87171', fontSize: 13, marginBottom: 16 }}>
+        <div className="bg-red-500/15 border border-red-500/25 rounded-lg px-3.5 py-2.5 text-red-400 text-[13px] mb-4">
           {err}
         </div>
       )}
 
       {/* ── Record details form ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 14px' }}>
-        <div style={{ gridColumn: '1/-1' }}><FormInput label="ALBUM TITLE *" value={album} onChange={setAlbum} placeholder="e.g. Kind of Blue" /></div>
-        <div style={{ gridColumn: '1/-1' }}><FormInput label="ARTIST *" value={artist} onChange={setArtist} placeholder="e.g. Miles Davis" /></div>
+      <div className="grid grid-cols-2 gap-x-3.5 gap-y-0">
+        <div className="col-span-2"><FormInput label="ALBUM TITLE *" value={album} onChange={setAlbum} placeholder="e.g. Kind of Blue" /></div>
+        <div className="col-span-2"><FormInput label="ARTIST *" value={artist} onChange={setArtist} placeholder="e.g. Miles Davis" /></div>
         <FormInput label="YEAR" value={year} onChange={setYear} placeholder="1959" type="number" />
         <FormSelect label="FORMAT" value={format} onChange={setFormat} options={FORMATS} />
         <FormInput label="LABEL" value={label} onChange={setLabel} placeholder="e.g. Columbia" />
         <FormSelect label="CONDITION" value={condition} onChange={setCondition} options={CONDITIONS} />
       </div>
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#666', letterSpacing: '0.08em', marginBottom: 8, fontFamily: "'DM Mono',monospace" }}>YOUR RATING</label>
+      <div className="mb-4">
+        <label className="block text-[11px] font-semibold text-[#666] tracking-wider mb-2 font-mono">YOUR RATING</label>
         <Stars rating={rating} onRate={setRating} size={22} />
       </div>
       <FormTextarea label="REVIEW / NOTES" value={review} onChange={setReview} placeholder="What makes this pressing special?" />
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: '#666', letterSpacing: '0.08em', marginBottom: 8, fontFamily: "'DM Mono',monospace" }}>GENRES</label>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      <div className="mb-4">
+        <label className="block text-[11px] font-semibold text-[#666] tracking-wider mb-2 font-mono">GENRES</label>
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-wrap gap-1.5">
             {GENRES.map(t => (
-              <button key={t} onClick={() => toggleTag(t)} style={{ padding: '4px 10px', borderRadius: 20, border: '1px solid', background: tags.includes(t) ? '#0ea5e9' : '#1a1a1a', borderColor: tags.includes(t) ? '#0ea5e9' : '#2a2a2a', color: tags.includes(t) ? '#000' : '#666', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              <button key={t} onClick={() => toggleTag(t)} className={`px-2.5 py-1 rounded-full border text-xs font-semibold cursor-pointer ${tags.includes(t) ? 'bg-gs-accent border-gs-accent text-black' : 'bg-[#1a1a1a] border-gs-border-hover text-[#666]'}`}>
                 {t}
               </button>
             ))}
           </div>
           {/* Subgenre pills for selected genres */}
           {GENRES.filter(g => tags.includes(g) && GENRE_MAP[g]?.length > 0).map(g => (
-            <div key={g + "-sub"} style={{ paddingLeft: 8, borderLeft: '2px solid #1e1e1e' }}>
-              <span style={{ fontSize: 10, color: '#555', fontFamily: "'DM Mono',monospace", marginBottom: 4, display: 'block' }}>{g} subgenres:</span>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+            <div key={g + "-sub"} className="pl-2 border-l-2 border-gs-border">
+              <span className="text-[10px] text-gs-dim font-mono mb-1 block">{g} subgenres:</span>
+              <div className="flex flex-wrap gap-[5px]">
                 {GENRE_MAP[g].map(sg => (
-                  <button key={sg} onClick={() => toggleTag(sg)} style={{ padding: '3px 9px', borderRadius: 16, border: '1px solid', background: tags.includes(sg) ? '#6366f1' : '#111', borderColor: tags.includes(sg) ? '#6366f1' : '#1e1e1e', color: tags.includes(sg) ? '#fff' : '#555', fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>
+                  <button key={sg} onClick={() => toggleTag(sg)} className={`px-[9px] py-[3px] rounded-2xl border text-[10px] font-semibold cursor-pointer ${tags.includes(sg) ? 'bg-gs-indigo border-gs-indigo text-white' : 'bg-[#111] border-gs-border text-gs-dim'}`}>
                     {sg}
                   </button>
                 ))}
@@ -355,22 +345,22 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
           ))}
         </div>
       </div>
-      <div style={{ marginBottom: 20, padding: 14, background: '#111', borderRadius: 10, border: '1px solid #1a1a1a' }}>
+      <div className="mb-5 p-3.5 bg-[#111] rounded-[10px] border border-[#1a1a1a]">
         <Toggle on={forSale} onToggle={() => setForSale(!forSale)} label="List for sale" />
-        {forSale && <div style={{ marginTop: 12 }}><FormInput label="ASKING PRICE (USD)" value={price} onChange={setPrice} placeholder="0.00" type="number" /></div>}
+        {forSale && <div className="mt-3"><FormInput label="ASKING PRICE (USD)" value={price} onChange={setPrice} placeholder="0.00" type="number" /></div>}
       </div>
 
       {/* ── Optional Claude AI vinyl verification ── */}
       {!verified && (
-        <div style={{ marginBottom: 16, padding: 14, background: '#111', borderRadius: 12, border: '1px solid #1a1a1a' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showVerify ? 14 : 0 }}>
+        <div className="mb-4 p-3.5 bg-[#111] rounded-xl border border-[#1a1a1a]">
+          <div className={`flex items-center justify-between ${showVerify ? 'mb-3.5' : ''}`}>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#ccc', marginBottom: 2 }}>Verify your vinyl?</div>
-              <div style={{ fontSize: 11, color: '#555' }}>Get a <span style={{ color: '#3b82f6' }}>✓ verified</span> badge on this record</div>
+              <div className="text-xs font-bold text-[#ccc] mb-0.5">Verify your vinyl?</div>
+              <div className="text-[11px] text-gs-dim">Get a <span className="text-blue-500">✓ verified</span> badge on this record</div>
             </div>
             <button
               onClick={() => setShowVerify(v => !v)}
-              style={{ padding: '7px 14px', background: showVerify ? '#1a1a1a' : 'linear-gradient(135deg,#3b82f6,#6366f1)', border: showVerify ? '1px solid #2a2a2a' : 'none', borderRadius: 8, color: showVerify ? '#666' : '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+              className={`px-3.5 py-[7px] rounded-lg text-[11px] font-bold cursor-pointer ${showVerify ? 'bg-[#1a1a1a] border border-gs-border-hover text-[#666]' : 'bg-gradient-to-br from-blue-500 to-gs-indigo border-none text-white'}`}
             >
               {showVerify ? 'Skip' : '📷 Verify'}
             </button>
@@ -384,29 +374,23 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
         </div>
       )}
       {verified && (
-        <div style={{ marginBottom: 16, padding: '10px 14px', background: '#1e3a5f22', borderRadius: 10, border: '1px solid #3b82f633', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ color: '#3b82f6', fontSize: 16 }}>✓</span>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#3b82f6' }}>Vinyl verified by Claude AI</span>
+        <div className="mb-4 px-3.5 py-2.5 bg-blue-900/15 rounded-[10px] border border-blue-500/20 flex items-center gap-2">
+          <span className="text-blue-500 text-base">✓</span>
+          <span className="text-xs font-semibold text-blue-500">Vinyl verified by Claude AI</span>
         </div>
       )}
 
       {/* ── Action buttons ── */}
-      <div style={{ display: 'flex', gap: 10 }}>
+      <div className="flex gap-2.5">
         <button
           onClick={() => { reset(); onClose(); }}
-          style={{ flex: 1, padding: 11, background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 10, color: '#888', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+          className="flex-1 p-[11px] bg-[#1a1a1a] border border-gs-border-hover rounded-[10px] text-gs-muted text-[13px] font-semibold cursor-pointer"
         >
           Cancel
         </button>
         <button
           onClick={submit}
-          style={{
-            flex: 2, padding: 11, border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700,
-            cursor: 'pointer',
-            background: verified ? 'linear-gradient(135deg,#22c55e,#0ea5e9)' : 'linear-gradient(135deg,#0ea5e9,#6366f1)',
-            color: '#fff',
-            transition: 'all 0.3s ease',
-          }}
+          className={`flex-[2] p-[11px] border-none rounded-[10px] text-[13px] font-bold cursor-pointer text-white transition-all duration-300 ${verified ? 'bg-gradient-to-br from-green-500 to-gs-accent' : 'bg-gradient-to-br from-gs-accent to-gs-indigo'}`}
         >
           {verified ? '✓ Add Verified Record' : 'Add to Collection'}
         </button>

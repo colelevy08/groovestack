@@ -97,38 +97,42 @@ export default function VerifyRecordModal({ open, onClose, record, onVerified })
 
   if (!open || !record) return null;
 
+  const borderColorClass = status === STATUS.VERIFIED ? 'border-blue-500/25' : status === STATUS.FAILED ? 'border-red-500/25' : 'border-gs-border';
+  const headerBgClass = status === STATUS.VERIFIED ? 'bg-blue-900/10' : status === STATUS.FAILED ? 'bg-red-900/10' : 'bg-transparent';
+  const statusLabelColor = status === STATUS.VERIFIED ? 'text-blue-500' : 'text-neutral-400';
+
   return (
     <Modal open={open} onClose={handleClose} title="Verify Your Vinyl" width="460px">
       {/* Record being verified */}
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '12px 14px', background: '#111', borderRadius: 10, marginBottom: 16 }}>
+      <div className="flex gap-3 items-center px-3.5 py-3 bg-[#111] rounded-[10px] mb-4">
         <AlbumArt album={record.album} artist={record.artist} accent={record.accent} size={44} />
         <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#f5f5f5' }}>{record.album}</div>
-          <div style={{ fontSize: 12, color: '#666' }}>{record.artist}</div>
+          <div className="text-sm font-bold text-gs-text">{record.album}</div>
+          <div className="text-xs text-[#666]">{record.artist}</div>
         </div>
       </div>
 
-      <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid', borderColor: status === STATUS.VERIFIED ? '#3b82f644' : status === STATUS.FAILED ? '#ef444444' : '#1e1e1e', background: '#0a0a0a' }}>
-        <div style={{ padding: '11px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1a1a1a', background: status === STATUS.VERIFIED ? '#1e3a5f22' : status === STATUS.FAILED ? '#7f1d1d22' : 'transparent' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 16 }}>
+      <div className={`rounded-xl overflow-hidden border ${borderColorClass} bg-gs-sidebar`}>
+        <div className={`px-4 py-[11px] flex items-center justify-between border-b border-[#1a1a1a] ${headerBgClass}`}>
+          <div className="flex items-center gap-2">
+            <span className="text-base">
               {status === STATUS.VERIFIED ? '✓' : status === STATUS.FAILED ? '✗' : status === STATUS.VERIFYING ? '...' : '📷'}
             </span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: status === STATUS.VERIFIED ? '#3b82f6' : '#ccc', fontFamily: "'DM Mono',monospace", letterSpacing: '0.06em' }}>
+            <span className={`text-xs font-bold ${statusLabelColor} font-mono tracking-wider`}>
               {status === STATUS.VERIFIED ? 'VERIFIED' : status === STATUS.FAILED ? 'FAILED' : status === STATUS.VERIFYING ? 'ANALYZING...' : 'TAKE A PHOTO'}
             </span>
           </div>
-          <span style={{ fontSize: 10, color: '#444', fontFamily: "'DM Mono',monospace" }}>powered by Claude</span>
+          <span className="text-[10px] text-gs-faint font-mono">powered by Claude</span>
         </div>
 
-        <div style={{ padding: 16 }}>
+        <div className="p-4">
           {status === STATUS.IDLE && (
-            <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
-              <p style={{ fontSize: 13, color: '#666', marginBottom: 14, lineHeight: 1.5 }}>
-                Show us your copy of <strong style={{ color: '#aaa' }}>{record.album}</strong> to earn a verified badge.
+            <div className="text-center pt-2 pb-1">
+              <p className="text-[13px] text-[#666] mb-3.5 leading-normal">
+                Show us your copy of <strong className="text-[#aaa]">{record.album}</strong> to earn a verified badge.
               </p>
-              {camError && <p style={{ fontSize: 12, color: '#f87171', marginBottom: 12 }}>{camError}</p>}
-              <button onClick={startCamera} style={{ padding: '10px 22px', background: 'linear-gradient(135deg,#3b82f6,#6366f1)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              {camError && <p className="text-xs text-red-400 mb-3">{camError}</p>}
+              <button onClick={startCamera} className="gs-btn-gradient px-[22px] py-2.5 rounded-[10px] text-[13px] font-bold cursor-pointer">
                 📷 Open Camera
               </button>
             </div>
@@ -136,44 +140,44 @@ export default function VerifyRecordModal({ open, onClose, record, onVerified })
 
           {status === STATUS.CAPTURING && (
             <div>
-              <video ref={videoRef} playsInline muted style={{ width: '100%', borderRadius: 8, display: 'block', maxHeight: 260, objectFit: 'cover', background: '#111' }} />
-              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                <button onClick={() => { stopStream(); setStatus(STATUS.IDLE); }} style={{ flex: 1, padding: 9, background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 8, color: '#888', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-                <button onClick={capturePhoto} style={{ flex: 2, padding: 9, background: 'linear-gradient(135deg,#3b82f6,#6366f1)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>📸 Capture</button>
+              <video ref={videoRef} playsInline muted className="w-full rounded-lg block max-h-[260px] object-cover bg-[#111]" />
+              <div className="flex gap-2 mt-2.5">
+                <button onClick={() => { stopStream(); setStatus(STATUS.IDLE); }} className="gs-btn-secondary flex-1 py-2.5 rounded-lg text-xs font-semibold cursor-pointer">Cancel</button>
+                <button onClick={capturePhoto} className="gs-btn-gradient flex-[2] py-2.5 rounded-lg text-[13px] font-bold cursor-pointer">📸 Capture</button>
               </div>
             </div>
           )}
 
-          <canvas ref={canvasRef} style={{ display: 'none' }} />
+          <canvas ref={canvasRef} className="hidden" />
 
           {status === STATUS.CAPTURED && (
             <div>
-              <img src={capturedSrc} alt="Captured" style={{ width: '100%', borderRadius: 8, maxHeight: 260, objectFit: 'cover' }} />
-              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                <button onClick={retake} style={{ flex: 1, padding: 9, background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 8, color: '#888', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Retake</button>
-                <button onClick={verify} style={{ flex: 2, padding: 9, background: 'linear-gradient(135deg,#3b82f6,#6366f1)', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>✨ Verify with Claude AI</button>
+              <img src={capturedSrc} alt="Captured" className="w-full rounded-lg max-h-[260px] object-cover" />
+              <div className="flex gap-2 mt-2.5">
+                <button onClick={retake} className="gs-btn-secondary flex-1 py-2.5 rounded-lg text-xs font-semibold cursor-pointer">Retake</button>
+                <button onClick={verify} className="gs-btn-gradient flex-[2] py-2.5 rounded-lg text-[13px] font-bold cursor-pointer">✨ Verify with Claude AI</button>
               </div>
             </div>
           )}
 
           {status === STATUS.VERIFYING && (
-            <div style={{ textAlign: 'center', padding: '10px 0' }}>
-              <img src={capturedSrc} alt="Verifying" style={{ width: '100%', borderRadius: 8, maxHeight: 200, objectFit: 'cover', opacity: 0.5, marginBottom: 14 }} />
-              <div style={{ display: 'flex', gap: 6, justifyContent: 'center', alignItems: 'center', height: 28 }}>
+            <div className="text-center py-2.5">
+              <img src={capturedSrc} alt="Verifying" className="w-full rounded-lg max-h-[200px] object-cover opacity-50 mb-3.5" />
+              <div className="flex gap-1.5 justify-center items-center h-7">
                 {[0, 1, 2].map(i => (
-                  <div key={i} style={{ width: 8, height: 8, borderRadius: '50%', background: 'linear-gradient(135deg,#3b82f6,#6366f1)', animation: `vr-bounce 1.2s ${i * 0.2}s ease-in-out infinite` }} />
+                  <div key={i} className="w-2 h-2 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500" style={{ animation: `vr-bounce 1.2s ${i * 0.2}s ease-in-out infinite` }} />
                 ))}
               </div>
               <style>{`@keyframes vr-bounce { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }`}</style>
-              <p style={{ fontSize: 12, color: '#555', marginTop: 10 }}>Claude is examining your vinyl...</p>
+              <p className="text-xs text-gs-dim mt-2.5">Claude is examining your vinyl...</p>
             </div>
           )}
 
           {status === STATUS.VERIFIED && (
             <div>
-              <img src={capturedSrc} alt="Verified" style={{ width: '100%', borderRadius: 8, maxHeight: 200, objectFit: 'cover', border: '2px solid #3b82f655' }} />
-              <p style={{ fontSize: 13, color: '#3b82f6', marginTop: 10, lineHeight: 1.5, textAlign: 'center' }}>{message}</p>
-              <button onClick={handleClose} style={{ marginTop: 12, width: '100%', padding: 11, background: 'linear-gradient(135deg,#3b82f6,#6366f1)', border: 'none', borderRadius: 10, color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              <img src={capturedSrc} alt="Verified" className="w-full rounded-lg max-h-[200px] object-cover border-2 border-blue-500/30" />
+              <p className="text-[13px] text-blue-500 mt-2.5 leading-normal text-center">{message}</p>
+              <button onClick={handleClose} className="gs-btn-gradient mt-3 w-full py-[11px] rounded-[10px] text-[13px] font-bold cursor-pointer">
                 ✓ Done
               </button>
             </div>
@@ -181,9 +185,9 @@ export default function VerifyRecordModal({ open, onClose, record, onVerified })
 
           {status === STATUS.FAILED && (
             <div>
-              {capturedSrc && <img src={capturedSrc} alt="Rejected" style={{ width: '100%', borderRadius: 8, maxHeight: 200, objectFit: 'cover', opacity: 0.6, border: '2px solid #ef444455' }} />}
-              <p style={{ fontSize: 13, color: '#f87171', marginTop: 10, lineHeight: 1.5, textAlign: 'center' }}>{message}</p>
-              <button onClick={retake} style={{ marginTop: 10, width: '100%', padding: 9, background: '#1a1a1a', border: '1px solid #2a2a2a', borderRadius: 8, color: '#aaa', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>📷 Try Again</button>
+              {capturedSrc && <img src={capturedSrc} alt="Rejected" className="w-full rounded-lg max-h-[200px] object-cover opacity-60 border-2 border-red-500/30" />}
+              <p className="text-[13px] text-red-400 mt-2.5 leading-normal text-center">{message}</p>
+              <button onClick={retake} className="gs-btn-secondary mt-2.5 w-full py-2.5 rounded-lg text-[13px] font-semibold cursor-pointer">📷 Try Again</button>
             </div>
           )}
         </div>

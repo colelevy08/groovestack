@@ -43,35 +43,37 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
   return (
     <div>
       {/* Profile card */}
-      <div style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 16, overflow: "hidden", marginBottom: 24 }}>
+      <div className="gs-card mb-6">
         {/* Header — custom image or gradient fallback */}
-        <div style={{
-          height: profile.headerUrl ? 140 : 72,
-          background: profile.headerUrl
-            ? `url(${profile.headerUrl}) center/cover no-repeat`
-            : "linear-gradient(135deg,#0ea5e933,#6366f122)",
-          transition: "height 0.3s ease",
-        }} />
+        <div
+          className="transition-[height] duration-300 ease-in-out"
+          style={{
+            height: profile.headerUrl ? 140 : 72,
+            background: profile.headerUrl
+              ? `url(${profile.headerUrl}) center/cover no-repeat`
+              : "linear-gradient(135deg,#0ea5e933,#6366f122)",
+          }}
+        />
 
-        <div style={{ padding: "0 24px 24px", marginTop: -32 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 14 }}>
-            <div style={{ borderRadius: "50%", border: "3px solid #0f0f0f", lineHeight: 0, position: "relative", zIndex: 2 }}>
+        <div className="px-6 pb-6 -mt-8">
+          <div className="flex justify-between items-end mb-3.5">
+            <div className="rounded-full border-[3px] border-gs-card leading-none relative z-[2]">
               <Avatar username={currentUser} size={64} src={profile.avatarUrl} />
             </div>
-            <button onClick={onEdit} style={{ padding: "8px 18px", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 20, color: "#aaa", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            <button onClick={onEdit} className="gs-btn-secondary px-[18px] py-2 rounded-[20px] text-xs">
               Edit Profile
             </button>
           </div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "#f5f5f5", letterSpacing: "-0.03em", marginBottom: 2 }}>{profile.displayName}</div>
-          <div style={{ fontSize: 12, color: "#0ea5e9", fontFamily: "'DM Mono',monospace", marginBottom: 12 }}>@{currentUser}</div>
-          {profile.bio && <p style={{ fontSize: 13, color: "#888", lineHeight: 1.6, marginBottom: 14 }}>{profile.bio}</p>}
-          <div style={{ display: "flex", gap: 14, fontSize: 12, color: "#555", marginBottom: 20, flexWrap: "wrap" }}>
+          <div className="text-xl font-extrabold text-gs-text tracking-tight mb-0.5">{profile.displayName}</div>
+          <div className="text-xs text-gs-accent font-mono mb-3">@{currentUser}</div>
+          {profile.bio && <p className="text-[13px] text-gs-muted leading-relaxed mb-3.5">{profile.bio}</p>}
+          <div className="flex gap-3.5 text-xs text-gs-dim mb-5 flex-wrap">
             {profile.location && <span>📍 {profile.location}</span>}
             {profile.favGenre && <span>🎵 {profile.favGenre}</span>}
           </div>
 
           {/* Stats — 4 key numbers */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
+          <div className="grid grid-cols-4 gap-2.5">
             {[
               { l: "Records", v: mine.length, click: () => setTab("records") },
               { l: "For Sale", v: forSale.length, click: () => setTab("for sale") },
@@ -80,12 +82,10 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
             ].map(s => (
               <div
                 key={s.l} onClick={s.click}
-                style={{ background: "#111", borderRadius: 10, padding: "12px 8px", textAlign: "center", cursor: "pointer" }}
-                onMouseEnter={e => e.currentTarget.style.background = "#191919"}
-                onMouseLeave={e => e.currentTarget.style.background = "#111"}
+                className="gs-stat"
               >
-                <div style={{ fontSize: 20, fontWeight: 800, color: "#f5f5f5", letterSpacing: "-0.02em" }}>{s.v}</div>
-                <div style={{ fontSize: 10, color: "#0ea5e9", fontFamily: "'DM Mono',monospace", marginTop: 3 }}>{s.l}</div>
+                <div className="text-xl font-extrabold text-gs-text tracking-tight">{s.v}</div>
+                <div className="text-[10px] text-gs-accent font-mono mt-[3px]">{s.l}</div>
               </div>
             ))}
           </div>
@@ -93,17 +93,19 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
       </div>
 
       {/* Tabs with counts */}
-      <div style={{ display: "flex", gap: 0, borderBottom: "1px solid #1a1a1a", marginBottom: 18 }}>
+      <div className="flex border-b border-[#1a1a1a] mb-[18px]">
         {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
-            padding: "10px 14px", background: "none", border: "none",
-            borderBottom: `2px solid ${tab === t.id ? "#0ea5e9" : "transparent"}`,
-            color: tab === t.id ? "#0ea5e9" : "#555", fontSize: 12, fontWeight: 600,
-            cursor: "pointer", textTransform: "capitalize", marginBottom: -1,
-            display: "flex", alignItems: "center", gap: 5,
-          }}>
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`px-3.5 py-2.5 bg-transparent border-none border-b-2 text-xs font-semibold cursor-pointer capitalize -mb-px flex items-center gap-[5px] transition-colors duration-150 ${
+              tab === t.id
+                ? "border-b-gs-accent text-gs-accent"
+                : "border-b-transparent text-gs-dim hover:text-gs-muted"
+            }`}
+          >
             {t.id}
-            <span style={{ fontSize: 10, color: tab === t.id ? "#0ea5e966" : "#333", fontFamily: "'DM Mono',monospace" }}>{t.count}</span>
+            <span className={`text-[10px] font-mono ${tab === t.id ? "text-gs-accent/40" : "text-gs-subtle"}`}>{t.count}</span>
           </button>
         ))}
       </div>
@@ -112,40 +114,52 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
         myPosts.length === 0 ? (
           <Empty icon="📝" text="No posts yet. Share what you're spinning!" />
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div className="flex flex-col gap-3">
             {myPosts.map(post => {
               const matchedRecord = post.taggedRecord ? records.find(r => r.album.toLowerCase() === post.taggedRecord.album.toLowerCase() && r.artist.toLowerCase() === post.taggedRecord.artist.toLowerCase()) : null;
               const tagAccent = matchedRecord?.accent || post.accent || "#0ea5e9";
               return (
-                <div key={post.id} style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 14, overflow: "hidden" }}>
-                  <div style={{ height: 2, background: `linear-gradient(90deg,${tagAccent},transparent)` }} />
-                  <div style={{ padding: 16 }}>
+                <div key={post.id} className="bg-gs-card border border-gs-border rounded-[14px] overflow-hidden">
+                  <div className="h-0.5" style={{ background: `linear-gradient(90deg,${tagAccent},transparent)` }} />
+                  <div className="p-4">
                     {post.taggedRecord && (
-                      <div onClick={() => matchedRecord && onDetail(matchedRecord)} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, padding: "8px 10px", background: tagAccent + "0a", borderRadius: 8, cursor: matchedRecord ? "pointer" : "default" }}>
+                      <div
+                        onClick={() => matchedRecord && onDetail(matchedRecord)}
+                        className="flex items-center gap-2.5 mb-2.5 px-2.5 py-2 rounded-lg"
+                        style={{ background: tagAccent + "0a", cursor: matchedRecord ? "pointer" : "default" }}
+                      >
                         <AlbumArt album={post.taggedRecord.album} artist={post.taggedRecord.artist} accent={tagAccent} size={30} />
                         <div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: "#f5f5f5" }}>{post.taggedRecord.album}</div>
-                          <div style={{ fontSize: 10, color: "#666" }}>{post.taggedRecord.artist}</div>
+                          <div className="text-xs font-bold text-gs-text">{post.taggedRecord.album}</div>
+                          <div className="text-[10px] text-[#666]">{post.taggedRecord.artist}</div>
                         </div>
                       </div>
                     )}
-                    <p style={{ fontSize: 13, color: "#ccc", lineHeight: 1.6, marginBottom: 10 }}>{post.caption}</p>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px solid #1a1a1a", paddingTop: 10 }}>
-                      <div style={{ display: "flex", gap: 12 }}>
-                        <button onClick={() => onLikePost && onLikePost(post.id)} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", cursor: "pointer", color: post.liked ? "#ef4444" : "#555", fontSize: 12, fontWeight: 600 }}>
+                    <p className="text-[13px] text-[#ccc] leading-relaxed mb-2.5">{post.caption}</p>
+                    <div className="flex items-center justify-between border-t border-[#1a1a1a] pt-2.5">
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => onLikePost && onLikePost(post.id)}
+                          className="flex items-center gap-1 bg-transparent border-none cursor-pointer text-xs font-semibold"
+                          style={{ color: post.liked ? "#ef4444" : "#555" }}
+                        >
                           <svg width="13" height="13" viewBox="0 0 24 24" fill={post.liked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" /></svg>
                           {post.likes}
                         </button>
-                        <span style={{ display: "flex", alignItems: "center", gap: 4, color: "#555", fontSize: 12, fontWeight: 600 }}>
+                        <span className="flex items-center gap-1 text-gs-dim text-xs font-semibold">
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
                           {post.comments.length}
                         </span>
                       </div>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <button onClick={() => onBookmarkPost && onBookmarkPost(post.id)} style={{ background: "none", border: "none", cursor: "pointer", color: post.bookmarked ? "#f59e0b" : "#555" }}>
+                      <div className="flex gap-2 items-center">
+                        <button
+                          onClick={() => onBookmarkPost && onBookmarkPost(post.id)}
+                          className="bg-transparent border-none cursor-pointer"
+                          style={{ color: post.bookmarked ? "#f59e0b" : "#555" }}
+                        >
                           <svg width="13" height="13" viewBox="0 0 24 24" fill={post.bookmarked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
                         </button>
-                        <span style={{ fontSize: 10, color: "#333", fontFamily: "'DM Mono',monospace" }}>{post.timeAgo}</span>
+                        <span className="text-[10px] text-gs-subtle font-mono">{post.timeAgo}</span>
                       </div>
                     </div>
                   </div>
@@ -160,7 +174,7 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
         ) : (
           <div>
             {/* Listening stats bar */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <div className="flex gap-2 mb-4">
               {(() => {
                 const artists = new Set(myListens.map(s => s.track.artist));
                 const albums = new Set(myListens.map(s => s.track.album));
@@ -169,31 +183,29 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
                   { label: "Artists", value: artists.size, color: "#8b5cf6" },
                   { label: "Albums", value: albums.size, color: "#f59e0b" },
                 ].map(s => (
-                  <div key={s.label} style={{ flex: 1, background: "#111", borderRadius: 10, padding: "10px 12px", textAlign: "center" }}>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: s.color }}>{s.value}</div>
-                    <div style={{ fontSize: 10, color: "#555", fontFamily: "'DM Mono',monospace", marginTop: 2 }}>{s.label}</div>
+                  <div key={s.label} className="flex-1 bg-[#111] rounded-[10px] px-3 py-2.5 text-center">
+                    <div className="text-base font-extrabold" style={{ color: s.color }}>{s.value}</div>
+                    <div className="text-[10px] text-gs-dim font-mono mt-0.5">{s.label}</div>
                   </div>
                 ));
               })()}
             </div>
 
             {/* Session list */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="flex flex-col gap-2">
               {myListens.map(session => (
-                <div key={session.id} style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 12, overflow: "hidden", transition: "border-color 0.15s" }}
-                  onMouseEnter={e => e.currentTarget.style.borderColor = "#0ea5e933"}
-                  onMouseLeave={e => e.currentTarget.style.borderColor = "#1e1e1e"}>
-                  <div style={{ height: 2, background: "linear-gradient(90deg,#0ea5e9,#8b5cf6,transparent)" }} />
-                  <div style={{ padding: "12px 14px", display: "flex", gap: 12, alignItems: "center" }}>
+                <div key={session.id} className="bg-gs-card border border-gs-border rounded-xl overflow-hidden transition-colors duration-150 hover:border-gs-accent/20">
+                  <div className="h-0.5 bg-gradient-to-r from-gs-accent via-[#8b5cf6] to-transparent" />
+                  <div className="p-3 px-3.5 flex gap-3 items-center">
                     <AlbumArt album={session.track.album} artist={session.track.artist} accent="#0ea5e9" size={38} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{session.track.title}</div>
-                      <div style={{ fontSize: 11, color: "#888" }}>{session.track.artist}</div>
-                      <div style={{ fontSize: 10, color: "#555" }}>{session.track.album}{session.track.year ? ` \u00B7 ${session.track.year}` : ""}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-bold text-gs-text whitespace-nowrap overflow-hidden text-ellipsis">{session.track.title}</div>
+                      <div className="text-[11px] text-gs-muted">{session.track.artist}</div>
+                      <div className="text-[10px] text-gs-dim">{session.track.album}{session.track.year ? ` \u00B7 ${session.track.year}` : ""}</div>
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
-                      <span style={{ fontSize: 10, color: "#444", fontFamily: "'DM Mono',monospace" }}>{relTime(session.timestampMs)}</span>
-                      <span style={{ fontSize: 9, padding: "2px 6px", background: "#0ea5e911", border: "1px solid #0ea5e922", borderRadius: 4, color: "#0ea5e9", fontWeight: 600, fontFamily: "'DM Mono',monospace" }}>vinyl buddy</span>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span className="text-[10px] text-gs-faint font-mono">{relTime(session.timestampMs)}</span>
+                      <span className="text-[9px] px-1.5 py-0.5 bg-gs-accent/[0.07] border border-gs-accent/[0.13] rounded text-gs-accent font-semibold font-mono">vinyl buddy</span>
                     </div>
                   </div>
                 </div>
@@ -204,15 +216,15 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
       ) : tab === "wishlist" ? (
         <div>
           {/* Inline add form */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "flex-end" }}>
-            <div style={{ flex: 1 }}><FormInput label="" value={newWishAlbum} onChange={setNewWishAlbum} placeholder="Album title" /></div>
-            <div style={{ flex: 1 }}><FormInput label="" value={newWishArtist} onChange={setNewWishArtist} placeholder="Artist" /></div>
+          <div className="flex gap-2 mb-4 items-end">
+            <div className="flex-1"><FormInput label="" value={newWishAlbum} onChange={setNewWishAlbum} placeholder="Album title" /></div>
+            <div className="flex-1"><FormInput label="" value={newWishArtist} onChange={setNewWishArtist} placeholder="Artist" /></div>
             <button onClick={() => {
               if (newWishAlbum.trim() && newWishArtist.trim()) {
                 onAddWishlistItem(newWishAlbum, newWishArtist);
                 setNewWishAlbum(""); setNewWishArtist("");
               }
-            }} style={{ padding: "10px 18px", marginBottom: 14, background: "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+            }} className="gs-btn-gradient px-[18px] py-2.5 mb-3.5 rounded-lg text-xs whitespace-nowrap">
               + Add
             </button>
           </div>
@@ -220,20 +232,21 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
           {(wishlist || []).length === 0 ? (
             <Empty icon="✨" text="Your wishlist is empty. Add albums you're looking for!" />
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="flex flex-col gap-2">
               {wishlist.map(w => {
                 const matchedRecord = records.find(r => r.album.toLowerCase() === w.album.toLowerCase() && r.artist.toLowerCase() === w.artist.toLowerCase());
                 return (
                   <div key={w.id} onClick={() => matchedRecord && onDetail(matchedRecord)}
-                    style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 12, padding: "12px 14px", display: "flex", gap: 12, alignItems: "center", cursor: matchedRecord ? "pointer" : "default", transition: "border-color 0.15s" }}
+                    className="bg-gs-card border border-gs-border rounded-xl p-3 px-3.5 flex gap-3 items-center transition-colors duration-150"
+                    style={{ cursor: matchedRecord ? "pointer" : "default" }}
                     onMouseEnter={e => matchedRecord && (e.currentTarget.style.borderColor = (matchedRecord.accent || "#555") + "55")}
                     onMouseLeave={e => matchedRecord && (e.currentTarget.style.borderColor = "#1e1e1e")}>
                     {matchedRecord ? <AlbumArt album={matchedRecord.album} artist={matchedRecord.artist} accent={matchedRecord.accent} size={38} /> : <AlbumArt album={w.album} artist={w.artist} accent="#555" size={38} />}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f5" }}>{w.album}</div>
-                      <div style={{ fontSize: 11, color: "#666" }}>{w.artist}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] font-bold text-gs-text">{w.album}</div>
+                      <div className="text-[11px] text-[#666]">{w.artist}</div>
                     </div>
-                    <button onClick={e => { e.stopPropagation(); onRemoveWishlistItem(w.id); }} style={{ padding: "5px 12px", background: "#1a1a1a", border: "1px solid #2a2a2a", borderRadius: 7, color: "#666", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                    <button onClick={e => { e.stopPropagation(); onRemoveWishlistItem(w.id); }} className="gs-btn-secondary px-3 py-[5px] rounded-[7px] text-[11px]">
                       Remove
                     </button>
                   </div>
@@ -245,20 +258,21 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
       ) : display.length === 0 ? (
         <Empty icon="💿" text={`No ${tab} yet.`} />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div className="flex flex-col gap-2">
           {display.slice(0, 50).map(r => (
-            <div key={r.id} onClick={() => onDetail(r)} style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 12, padding: "12px 14px", display: "flex", gap: 12, alignItems: "center", cursor: "pointer", transition: "border-color 0.15s" }}
+            <div key={r.id} onClick={() => onDetail(r)}
+              className="bg-gs-card border border-gs-border rounded-xl p-3 px-3.5 flex gap-3 items-center cursor-pointer transition-colors duration-150"
               onMouseEnter={e => e.currentTarget.style.borderColor = r.accent + "55"}
               onMouseLeave={e => e.currentTarget.style.borderColor = "#1e1e1e"}>
               <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={38} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 4 }}>
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-bold text-gs-text whitespace-nowrap overflow-hidden text-ellipsis flex items-center gap-1">
                   {r.album}
-                  {r.verified && <span title="Verified vinyl" style={{ color: "#3b82f6", fontSize: 11, flexShrink: 0 }}>✓</span>}
+                  {r.verified && <span title="Verified vinyl" className="text-blue-500 text-[11px] shrink-0">✓</span>}
                 </div>
-                <div style={{ fontSize: 11, color: "#666" }}>{r.artist} · {r.year} · {r.format}</div>
+                <div className="text-[11px] text-[#666]">{r.artist} · {r.year} · {r.format}</div>
               </div>
-              <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+              <div className="flex gap-1.5 items-center shrink-0">
                 <Badge label={r.condition} color={condColor(r.condition)} />
                 {r.forSale && <Badge label={`$${r.price}`} color="#f59e0b" />}
                 <Stars rating={r.rating} size={10} />

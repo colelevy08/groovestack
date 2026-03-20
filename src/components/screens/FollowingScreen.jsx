@@ -13,27 +13,27 @@ export default function FollowingScreen({ following, records, currentUser, onFol
 
   return (
     <div>
-      <h1 style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.04em", color: "#f5f5f5", marginBottom: 6 }}>Following</h1>
-      <p style={{ fontSize: 12, color: "#555", marginBottom: 22 }}>Following {following.length} collectors</p>
+      <h1 className="text-[22px] font-extrabold tracking-tight text-gs-text mb-1.5">Following</h1>
+      <p className="text-xs text-gs-dim mb-5">Following {following.length} collectors</p>
 
       {following.length > 0 && (
         <>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#555", letterSpacing: "0.08em", fontFamily: "'DM Mono',monospace", marginBottom: 10 }}>PEOPLE YOU FOLLOW</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 32 }}>
+          <div className="text-[11px] font-bold text-gs-dim tracking-widest font-mono mb-2.5">PEOPLE YOU FOLLOW</div>
+          <div className="flex flex-col gap-2 mb-8">
             {following.map(u => {
               const p = getProfile(u);
               const uRecs = records.filter(r => r.user === u);
               return (
-                <div key={u} style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 13, padding: "14px 16px", display: "flex", gap: 13, alignItems: "center" }}>
+                <div key={u} className="bg-gs-card border border-gs-border rounded-xl px-4 py-3.5 flex gap-3 items-center">
                   <Avatar username={u} size={44} onClick={() => onViewUser(u)} />
-                  <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => onViewUser(u)}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "#f5f5f5" }}>{p.displayName}</div>
-                    <div style={{ fontSize: 11, color: "#555", fontFamily: "'DM Mono',monospace" }}>@{u}</div>
-                    {p.bio && <div style={{ fontSize: 12, color: "#777", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.bio}</div>}
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onViewUser(u)}>
+                    <div className="text-sm font-bold text-gs-text">{p.displayName}</div>
+                    <div className="text-[11px] text-gs-dim font-mono">@{u}</div>
+                    {p.bio && <div className="text-xs text-[#777] mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap">{p.bio}</div>}
                   </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontSize: 11, color: "#555", marginBottom: 8 }}>{uRecs.length} records</div>
-                    <button onClick={() => onFollow(u)} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #2a2a2a", background: "#1a1a1a", color: "#888", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Unfollow</button>
+                  <div className="text-right shrink-0">
+                    <div className="text-[11px] text-gs-dim mb-2">{uRecs.length} records</div>
+                    <button onClick={() => onFollow(u)} className="px-3.5 py-1.5 rounded-lg border border-gs-border-hover bg-[#1a1a1a] text-gs-muted text-[11px] font-semibold cursor-pointer">Unfollow</button>
                   </div>
                 </div>
               );
@@ -42,24 +42,24 @@ export default function FollowingScreen({ following, records, currentUser, onFol
         </>
       )}
 
-      <div style={{ fontSize: 11, fontWeight: 700, color: "#555", letterSpacing: "0.08em", fontFamily: "'DM Mono',monospace", marginBottom: 10 }}>SUGGESTED COLLECTORS</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className="text-[11px] font-bold text-gs-dim tracking-widest font-mono mb-2.5">SUGGESTED COLLECTORS</div>
+      <div className="flex flex-col gap-2">
         {suggestions.map(u => {
           const p = getProfile(u);
           const uRecs = records.filter(r => r.user === u);
           return (
-            <div key={u} style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 13, padding: "14px 16px", display: "flex", gap: 13, alignItems: "center" }}>
+            <div key={u} className="bg-gs-card border border-gs-border rounded-xl px-4 py-3.5 flex gap-3 items-center">
               <Avatar username={u} size={44} onClick={() => onViewUser(u)} />
-              <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => onViewUser(u)}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#f5f5f5" }}>{p.displayName}</div>
-                <div style={{ fontSize: 11, color: "#555", fontFamily: "'DM Mono',monospace" }}>@{u}</div>
-                {p.bio && <div style={{ fontSize: 12, color: "#777", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.bio}</div>}
-                <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-                  {p.favGenre && <span style={{ fontSize: "10px", padding: "1px 7px", borderRadius: 20, background: "#1a1a1a", color: "#555", border: "1px solid #2a2a2a" }}>{p.favGenre}</span>}
-                  <span style={{ fontSize: "10px", padding: "1px 7px", borderRadius: 20, background: "#1a1a1a", color: "#555", border: "1px solid #2a2a2a" }}>{uRecs.length} records</span>
+              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onViewUser(u)}>
+                <div className="text-sm font-bold text-gs-text">{p.displayName}</div>
+                <div className="text-[11px] text-gs-dim font-mono">@{u}</div>
+                {p.bio && <div className="text-xs text-[#777] mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap">{p.bio}</div>}
+                <div className="flex gap-1.5 mt-1">
+                  {p.favGenre && <span className="text-[10px] px-1.5 py-px rounded-full bg-[#1a1a1a] text-gs-dim border border-gs-border-hover">{p.favGenre}</span>}
+                  <span className="text-[10px] px-1.5 py-px rounded-full bg-[#1a1a1a] text-gs-dim border border-gs-border-hover">{uRecs.length} records</span>
                 </div>
               </div>
-              <button onClick={() => onFollow(u)} style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "linear-gradient(135deg,#0ea5e9,#6366f1)", color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>
+              <button onClick={() => onFollow(u)} className="gs-btn-gradient px-4 py-2 rounded-lg text-white text-xs font-bold cursor-pointer shrink-0">
                 Follow
               </button>
             </div>

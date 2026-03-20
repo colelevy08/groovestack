@@ -45,25 +45,23 @@ export default function ArtistProfileModal({ artist, open, onClose, records, onD
   return (
     <Modal open={open} onClose={onClose} title="" width="680px">
       {/* Hero section with artist image + info */}
-      <div style={{ margin: "-22px -22px 0", padding: 0 }}>
-        <div style={{
-          position: "relative",
-          height: 180,
-          background: info?.imageUrl
-            ? `url(${info.imageUrl}) center/cover`
-            : "linear-gradient(135deg,#0ea5e922,#6366f122)",
-          borderRadius: "0",
-          overflow: "hidden",
-        }}>
+      <div className="-m-[22px] mb-0 p-0">
+        <div
+          className="relative h-[180px] overflow-hidden rounded-none"
+          style={info?.imageUrl
+            ? { background: `url(${info.imageUrl}) center/cover` }
+            : { background: "linear-gradient(135deg,#0ea5e922,#6366f122)" }
+          }
+        >
           {/* Gradient overlay for text readability */}
-          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(transparent 20%, #0d0d0d 100%)" }} />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-gs-surface" />
           {/* Artist name + description */}
-          <div style={{ position: "absolute", bottom: 18, left: 22, right: 22 }}>
-            <h2 style={{ fontSize: 28, fontWeight: 800, color: "#f5f5f5", letterSpacing: "-0.03em", marginBottom: 4, textShadow: "0 2px 12px rgba(0,0,0,0.6)" }}>
+          <div className="absolute bottom-[18px] left-[22px] right-[22px]">
+            <h2 className="text-[28px] font-extrabold text-gs-text tracking-tight mb-1 drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)]">
               {info?.name || artist}
             </h2>
             {info?.description && (
-              <p style={{ fontSize: 12, color: "#aaa", fontFamily: "'DM Mono',monospace", textShadow: "0 1px 6px rgba(0,0,0,0.5)" }}>
+              <p className="text-xs text-[#aaa] font-mono drop-shadow-[0_1px_6px_rgba(0,0,0,0.5)]">
                 {info.description}
               </p>
             )}
@@ -71,9 +69,9 @@ export default function ArtistProfileModal({ artist, open, onClose, records, onD
         </div>
       </div>
 
-      <div style={{ padding: "18px 0 0" }}>
+      <div className="pt-[18px]">
         {/* Stats row */}
-        <div style={{ display: "flex", gap: 16, marginBottom: 18, flexWrap: "wrap" }}>
+        <div className="flex gap-4 mb-[18px] flex-wrap">
           <Stat value={artistRecords.length} label="records" />
           <Stat value={forSale.length} label="for sale" />
           {priceRange && <Stat value={priceRange} label="price range" />}
@@ -82,9 +80,9 @@ export default function ArtistProfileModal({ artist, open, onClose, records, onD
 
         {/* Genre tags */}
         {genres.length > 0 && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 18 }}>
+          <div className="flex gap-1.5 flex-wrap mb-[18px]">
             {genres.map(g => (
-              <span key={g} style={{ fontSize: 10, padding: "3px 10px", borderRadius: 20, background: "#1a1a1a", color: "#888", border: "1px solid #2a2a2a", fontWeight: 600 }}>
+              <span key={g} className="text-[10px] px-2.5 py-[3px] rounded-full bg-[#1a1a1a] text-gs-muted border border-gs-border-hover font-semibold">
                 {g}
               </span>
             ))}
@@ -93,33 +91,31 @@ export default function ArtistProfileModal({ artist, open, onClose, records, onD
 
         {/* Bio */}
         {loading ? (
-          <p style={{ fontSize: 13, color: "#555", padding: "12px 0" }}>Loading artist info…</p>
+          <p className="text-[13px] text-gs-dim py-3">Loading artist info…</p>
         ) : info?.bio ? (
-          <p style={{ fontSize: 13, color: "#999", lineHeight: 1.7, marginBottom: 20, maxHeight: 100, overflow: "hidden", textOverflow: "ellipsis" }}>
+          <p className="text-[13px] text-[#999] leading-[1.7] mb-5 max-h-[100px] overflow-hidden text-ellipsis">
             {info.bio.length > 300 ? info.bio.slice(0, 300) + "…" : info.bio}
           </p>
         ) : null}
 
         {/* Top Collectors */}
         {topCollectors.length > 0 && (
-          <div style={{ marginBottom: 20 }}>
-            <h3 style={{ fontSize: 11, fontWeight: 700, color: "#555", letterSpacing: "0.08em", marginBottom: 10, fontFamily: "'DM Mono',monospace" }}>
+          <div className="mb-5">
+            <h3 className="text-[11px] font-bold text-gs-dim tracking-[0.08em] mb-2.5 font-mono">
               TOP COLLECTORS
             </h3>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <div className="flex gap-2.5 flex-wrap">
               {topCollectors.map(([user, count]) => {
                 const p = getProfile(user);
                 return (
                   <div
                     key={user}
                     onClick={() => { onClose(); onViewUser(user); }}
-                    style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", background: "#111", border: "1px solid #1e1e1e", borderRadius: 10, cursor: "pointer", transition: "border-color 0.15s" }}
-                    onMouseEnter={e => e.currentTarget.style.borderColor = p.accent + "55"}
-                    onMouseLeave={e => e.currentTarget.style.borderColor = "#1e1e1e"}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-[#111] border border-gs-border rounded-[10px] cursor-pointer transition-colors duration-150 hover:border-gs-border-hover"
                   >
                     <Avatar username={user} size={24} />
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "#ccc" }}>{p.displayName}</span>
-                    <span style={{ fontSize: 10, color: "#555", fontFamily: "'DM Mono',monospace" }}>{count}</span>
+                    <span className="text-xs font-semibold text-[#ccc]">{p.displayName}</span>
+                    <span className="text-[10px] text-gs-dim font-mono">{count}</span>
                   </div>
                 );
               })}
@@ -128,52 +124,50 @@ export default function ArtistProfileModal({ artist, open, onClose, records, onD
         )}
 
         {/* Records on GrooveStack */}
-        <h3 style={{ fontSize: 11, fontWeight: 700, color: "#555", letterSpacing: "0.08em", marginBottom: 12, fontFamily: "'DM Mono',monospace" }}>
+        <h3 className="text-[11px] font-bold text-gs-dim tracking-[0.08em] mb-3 font-mono">
           RECORDS ON GROOVESTACK
         </h3>
         {artistRecords.length === 0 ? (
-          <p style={{ fontSize: 13, color: "#555", textAlign: "center", padding: 20 }}>No records listed yet.</p>
+          <p className="text-[13px] text-gs-dim text-center p-5">No records listed yet.</p>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className="flex flex-col gap-2">
             {artistRecords.map(r => (
               <div
                 key={r.id}
                 onClick={() => { onClose(); onDetail(r); }}
-                style={{
-                  display: "flex", alignItems: "center", gap: 12, padding: 12,
-                  background: "#111", border: "1px solid #1a1a1a", borderRadius: 12,
-                  cursor: "pointer", transition: "border-color 0.15s",
-                }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = r.accent + "44"}
-                onMouseLeave={e => e.currentTarget.style.borderColor = "#1a1a1a"}
+                className="flex items-center gap-3 p-3 bg-[#111] border border-[#1a1a1a] rounded-xl cursor-pointer transition-colors duration-150 hover:border-gs-border-hover"
               >
                 <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={44} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f5", marginBottom: 2, display: "flex", alignItems: "center", gap: 4 }}>{r.album}{r.verified && <span title="Verified vinyl" style={{ color: "#3b82f6", fontSize: 11 }}>✓</span>}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <div className="flex-1 min-w-0">
+                  <div className="text-[13px] font-bold text-gs-text mb-0.5 flex items-center gap-1">
+                    {r.album}
+                    {r.verified && <span title="Verified vinyl" className="text-blue-500 text-[11px]">✓</span>}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <button
                       onClick={e => { e.stopPropagation(); onViewUser(r.user); onClose(); }}
-                      style={{ background: "none", border: "none", color: "#0ea5e9", fontSize: 11, cursor: "pointer", padding: 0, fontWeight: 600 }}
+                      className="bg-transparent border-none text-gs-accent text-[11px] cursor-pointer p-0 font-semibold"
                     >
                       @{r.user}
                     </button>
                     <Badge label={r.condition} color={condColor(r.condition)} />
-                    <span style={{ fontSize: 10, color: "#555", fontFamily: "'DM Mono',monospace" }}>{r.format} · {r.year}</span>
+                    <span className="text-[10px] text-gs-dim font-mono">{r.format} · {r.year}</span>
                   </div>
                 </div>
-                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div className="text-right shrink-0">
                   {r.forSale ? (
                     <>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: "#f5f5f5", letterSpacing: "-0.03em" }}>${r.price}</div>
+                      <div className="text-lg font-extrabold text-gs-text tracking-tight">${r.price}</div>
                       <button
                         onClick={e => { e.stopPropagation(); onBuy(r); onClose(); }}
-                        style={{ marginTop: 4, padding: "5px 14px", borderRadius: 6, background: `linear-gradient(135deg,${r.accent},#6366f1)`, border: "none", color: "#000", fontWeight: 700, fontSize: 10, cursor: "pointer" }}
+                        className="mt-1 px-3.5 py-[5px] rounded-md border-none text-black font-bold text-[10px] cursor-pointer"
+                        style={{ background: `linear-gradient(135deg,${r.accent},#6366f1)` }}
                       >
                         Buy
                       </button>
                     </>
                   ) : (
-                    <span style={{ fontSize: 10, color: "#3a3a3a", fontFamily: "'DM Mono',monospace" }}>Not for sale</span>
+                    <span className="text-[10px] text-[#3a3a3a] font-mono">Not for sale</span>
                   )}
                 </div>
               </div>
@@ -188,9 +182,9 @@ export default function ArtistProfileModal({ artist, open, onClose, records, onD
 // Small stat pill used in the stats row
 function Stat({ value, label }) {
   return (
-    <div style={{ background: "#111", border: "1px solid #1a1a1a", borderRadius: 10, padding: "8px 14px", textAlign: "center" }}>
-      <div style={{ fontSize: 18, fontWeight: 800, color: "#f5f5f5", letterSpacing: "-0.02em" }}>{value}</div>
-      <div style={{ fontSize: 10, color: "#555", fontFamily: "'DM Mono',monospace", marginTop: 2 }}>{label}</div>
+    <div className="bg-[#111] border border-[#1a1a1a] rounded-[10px] px-3.5 py-2 text-center">
+      <div className="text-lg font-extrabold text-gs-text tracking-tight">{value}</div>
+      <div className="text-[10px] text-gs-dim font-mono mt-0.5">{label}</div>
     </div>
   );
 }
