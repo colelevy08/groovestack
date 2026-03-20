@@ -93,6 +93,7 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
   const handleHeaderFile = async e => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5242880) { alert('Image must be under 5MB'); e.target.value = ''; return; }
     try { setHeaderUrl(await resizeImage(file, 800, 200)); } catch {}
     e.target.value = '';
   };
@@ -100,6 +101,7 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
   const handleAvatarFile = async e => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5242880) { alert('Image must be under 5MB'); e.target.value = ''; return; }
     try { setAvatarUrl(await resizeImage(file, 128, 128)); } catch {}
     e.target.value = '';
   };

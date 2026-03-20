@@ -1,7 +1,7 @@
 // Social feed — user-created posts with tagged records, likes, comments, and bookmarks.
 // This replaces the old Feed as the main landing screen. Posts are the social layer on top of the record catalog.
 // Includes a compose prompt that opens CreatePostModal, filter tabs (All / Following), and post cards with interactions.
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import Avatar from '../ui/Avatar';
 import AlbumArt from '../ui/AlbumArt';
 import Empty from '../ui/Empty';
@@ -102,7 +102,7 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
         )}
 
         {/* Caption */}
-        <p className="text-sm text-[#ccc] leading-[1.7] mb-3.5">
+        <p className="text-sm text-[#ccc] leading-[1.7] mb-3.5 line-clamp-4">
           {post.caption}
         </p>
 
@@ -112,7 +112,7 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
             {post.mediaType === "video" ? (
               <video src={post.mediaUrl} controls className="w-full block" />
             ) : (
-              <img src={post.mediaUrl} alt="" className="w-full block" onError={e => e.target.style.display = "none"} />
+              <img src={post.mediaUrl} alt="" className="w-full block max-h-[300px] sm:max-h-[400px] object-cover" onError={e => e.target.style.display = "none"} />
             )}
           </div>
         )}
@@ -211,22 +211,24 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
   const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
 
-  const filtered = (filter === "following"
-    ? posts.filter(p => following.includes(p.user) || p.user === currentUser)
-    : posts
-  ).filter(p => {
-    if (!q) return true;
-    const m = q.toLowerCase();
-    return (
-      p.caption?.toLowerCase().includes(m) ||
-      p.user?.toLowerCase().includes(m) ||
-      p.taggedRecord?.album?.toLowerCase().includes(m) ||
-      p.taggedRecord?.artist?.toLowerCase().includes(m)
-    );
-  });
+  const sorted = useMemo(() => {
+    const filtered = (filter === "following"
+      ? posts.filter(p => following.includes(p.user) || p.user === currentUser)
+      : posts
+    ).filter(p => {
+      if (!q) return true;
+      const m = q.toLowerCase();
+      return (
+        p.caption?.toLowerCase().includes(m) ||
+        p.user?.toLowerCase().includes(m) ||
+        p.taggedRecord?.album?.toLowerCase().includes(m) ||
+        p.taggedRecord?.artist?.toLowerCase().includes(m)
+      );
+    });
 
-  // Sort by createdAt descending (newest first)
-  const sorted = [...filtered].sort((a, b) => b.createdAt - a.createdAt);
+    // Sort by createdAt descending (newest first)
+    return [...filtered].sort((a, b) => b.createdAt - a.createdAt);
+  }, [posts, filter, following, currentUser, q]);
 
   return (
     <div className="max-w-[720px]">

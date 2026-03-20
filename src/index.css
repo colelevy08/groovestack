@@ -5,6 +5,9 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500;700&display=swap');
 
 @layer base {
+  *:focus-visible {
+    @apply outline-2 outline-offset-2 outline-gs-accent;
+  }
   *, *::before, *::after {
     box-sizing: border-box;
   }
@@ -30,7 +33,7 @@
     @apply bg-gradient-to-br from-gs-accent to-gs-indigo text-white font-bold border-none cursor-pointer transition-all duration-200 rounded-[10px];
   }
   .gs-btn-gradient:hover {
-    @apply opacity-90 shadow-lg shadow-gs-accent/20;
+    @apply opacity-90 shadow-xl shadow-gs-accent/20;
   }
   .gs-btn-gradient:active {
     @apply scale-[0.98];
@@ -45,6 +48,7 @@
   /* Card */
   .gs-card {
     @apply bg-gs-card border border-gs-border rounded-2xl overflow-hidden transition-all duration-200;
+    animation: fadeIn 0.2s ease-out;
   }
   .gs-card:hover {
     @apply -translate-y-0.5;

@@ -8,7 +8,7 @@ import { condColor } from '../utils/helpers';
 
 export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, onViewUser, onViewArtist }) {
   return (
-    <div className="gs-card group">
+    <div role="article" className="gs-card group">
       {/* Accent bar */}
       <div className="h-0.5" style={{ background: `linear-gradient(90deg,${r.accent},transparent)` }} />
       <div className="p-4">
@@ -29,14 +29,14 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
         <div className="flex gap-3 mb-3 cursor-pointer" onClick={() => onDetail(r)}>
           <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={68} />
           <div className="flex-1 min-w-0">
-            <div className="text-[15px] font-bold text-gs-text tracking-tight leading-tight mb-1 flex items-center gap-1.5">
+            <div className="text-[15px] font-bold text-gs-text tracking-tight leading-tight mb-1 flex items-center gap-1.5 truncate">
               {r.album}
               {r.verified && <span title="Verified vinyl" className="text-blue-500 text-[13px] shrink-0">✓</span>}
             </div>
             <div className="text-xs text-gs-muted mb-1.5">
               <button
                 onClick={e => { e.stopPropagation(); onViewArtist?.(r.artist); }}
-                className="bg-transparent border-none text-gs-muted text-xs p-0 cursor-pointer hover:text-neutral-300 transition-colors"
+                className="bg-transparent border-none text-gs-muted text-xs p-0 cursor-pointer hover:text-neutral-300 transition-colors truncate"
               >
                 {r.artist}
               </button>
@@ -49,7 +49,7 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
           </div>
           {r.forSale && (
             <div className="text-right shrink-0">
-              <div className="text-xl font-extrabold text-gs-text tracking-tight">${r.price}</div>
+              <div className="text-xl font-extrabold text-gs-text tracking-tight whitespace-nowrap">${r.price}</div>
               <button
                 onClick={e => { e.stopPropagation(); onBuy(r); }}
                 className="mt-1.5 px-3 py-1 rounded-[7px] text-black border-none cursor-pointer text-[10px] font-bold hover:opacity-90 transition-opacity"
@@ -78,7 +78,9 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
           <div className="flex gap-3">
             <button
               onClick={() => onLike(r.id)}
-              className="flex items-center gap-1 bg-transparent border-none cursor-pointer text-xs font-semibold transition-colors"
+              aria-label="Like"
+              aria-pressed={r.liked}
+              className="flex items-center gap-1 bg-transparent border-none cursor-pointer text-xs font-semibold transition-colors hover:scale-110"
               style={{ color: r.liked ? r.accent : '#555' }}
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill={r.liked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
@@ -88,6 +90,7 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
             </button>
             <button
               onClick={() => onComment(r)}
+              aria-label={`${r.comments.length} comments`}
               className="flex items-center gap-1 bg-transparent border-none cursor-pointer text-gs-dim text-xs font-semibold hover:text-gs-muted transition-colors"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -98,7 +101,9 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
           </div>
           <button
             onClick={() => onSave(r.id)}
-            className="bg-transparent border-none cursor-pointer text-xs transition-colors"
+            aria-label="Save"
+            aria-pressed={r.saved}
+            className="bg-transparent border-none cursor-pointer text-xs transition-colors hover:scale-110"
             style={{ color: r.saved ? "#f59e0b" : "#555" }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill={r.saved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">

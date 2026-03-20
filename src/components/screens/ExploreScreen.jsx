@@ -3,7 +3,7 @@
 // Both modes share the search bar and genre filtering.
 // When a genre is selected, subgenre pills appear for finer filtering.
 // When no search or genre filter is active (in browse mode), shows a "Collectors to Discover" row.
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Avatar from '../ui/Avatar';
 import AlbumArt from '../ui/AlbumArt';
 import Badge from '../ui/Badge';
@@ -28,21 +28,21 @@ export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart,
   const activeSubgenres = subgenres.filter(sg => records.some(r => r.tags?.includes(sg)));
 
   // Base filter: text search + genre + subgenre (shared by both modes)
-  const baseFiltered = records.filter(r => {
+  const baseFiltered = useMemo(() => records.filter(r => {
     const m = q.toLowerCase();
     return (
       (!m || r.album.toLowerCase().includes(m) || r.artist.toLowerCase().includes(m) || (r.user || "").toLowerCase().includes(m) || r.tags?.some(t => t.toLowerCase().includes(m))) &&
       (genre === "All" || r.tags?.includes(genre)) &&
       (!subgenre || r.tags?.includes(subgenre))
     );
-  });
+  }), [records, q, genre, subgenre]);
 
   // Shop mode: further filter to for-sale only, then sort
-  const shopRecords = [...baseFiltered.filter(r => r.forSale)].sort((a, b) =>
+  const shopRecords = useMemo(() => [...baseFiltered.filter(r => r.forSale)].sort((a, b) =>
     sort === "price-asc" ? a.price - b.price :
     sort === "price-desc" ? b.price - a.price :
     b.id - a.id
-  );
+  ), [baseFiltered, sort]);
 
   const suggestedUsers = Object.keys(USER_PROFILES).filter(u => u !== "yourhandle").slice(0, 10);
 
@@ -83,9 +83,19 @@ export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart,
         </svg>
         <input
           value={q} onChange={e => setQ(e.target.value)}
+          aria-label="Search records"
           placeholder={mode === "shop" ? "Search for-sale records..." : "Search albums, artists, users, genres..."}
-          className="w-full bg-gs-card border border-gs-border rounded-[10px] py-2.5 pr-3.5 pl-9 text-[#f0f0f0] text-[13px] outline-none font-sans focus:border-gs-accent/30"
+          className="w-full bg-gs-card border border-gs-border rounded-[10px] py-2.5 pr-8 pl-9 text-[#f0f0f0] text-[13px] outline-none font-sans focus:border-gs-accent/30"
         />
+        {q && (
+          <button
+            onClick={() => setQ("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 bg-transparent border-none text-gs-faint hover:text-gs-muted cursor-pointer p-0 text-sm leading-none"
+            aria-label="Clear search"
+          >
+            ×
+          </button>
+        )}
       </div>
 
       {/* Genre pills + sort (sort only in shop mode) */}

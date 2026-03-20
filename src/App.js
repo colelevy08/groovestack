@@ -3,7 +3,7 @@
 // State is persisted to localStorage on every change (currentUser, records, following, profile, dmMessages).
 // Navigation state (nav) determines which screen is rendered in the main content area.
 // Auth is managed via Supabase — shows AuthScreen when no session is active.
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import INITIAL_RECORDS from './constants/records';
 import INITIAL_POSTS from './constants/posts';
 import INITIAL_LISTENING from './constants/listening';
@@ -154,6 +154,7 @@ export default function App() {
 
   // ── Auth: logout ────────────────────────────────────────────────────────────
   const handleLogout = () => {
+    if (!window.confirm('Log out of Groovestack?')) return;
     signOut();
     setSession(null);
     setCurrentUser('');
@@ -426,9 +427,9 @@ export default function App() {
   const cardHandlers = { onLike, onSave, onComment, onBuy, onDetail, onViewUser, onViewArtist };
 
   // Compute who follows the current user by scanning USER_PROFILES followers arrays
-  const computedFollowers = Object.entries(USER_PROFILES)
+  const computedFollowers = useMemo(() => Object.entries(USER_PROFILES)
     .filter(([, p]) => (p.followers || []).includes(currentUser))
-    .map(([username]) => username);
+    .map(([username]) => username), [currentUser]);
 
   // ── Profile save with Supabase persistence ──────────────────────────────────
   const onProfileSave = async (p) => {

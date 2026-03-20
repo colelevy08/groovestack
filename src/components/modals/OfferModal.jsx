@@ -54,8 +54,8 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
         <div className="flex gap-3 items-center">
           <div className="w-[38px] h-[38px] rounded-full bg-[#1a1a1a] flex items-center justify-center text-base shrink-0">✨</div>
           <div className="flex-1">
-            <div className="text-sm font-bold text-gs-text">{target.wishlistItem.album}</div>
-            <div className="text-xs text-[#666] mt-0.5">{target.wishlistItem.artist}</div>
+            <div className="text-sm font-bold text-gs-text truncate">{target.wishlistItem.album}</div>
+            <div className="text-xs text-[#666] mt-0.5 truncate">{target.wishlistItem.artist}</div>
           </div>
           <span className="text-[11px] text-gs-accent font-mono">@{target.targetUser}</span>
         </div>
@@ -68,8 +68,8 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
           <div className="flex gap-3 items-center">
             <AlbumArt album={target.offeredRecord.album} artist={target.offeredRecord.artist} accent={target.offeredRecord.accent} size={38} />
             <div className="flex-1">
-              <div className="text-sm font-bold text-gs-text">{target.offeredRecord.album}</div>
-              <div className="text-xs text-[#666] mt-0.5">{target.offeredRecord.artist}</div>
+              <div className="text-sm font-bold text-gs-text truncate">{target.offeredRecord.album}</div>
+              <div className="text-xs text-[#666] mt-0.5 truncate">{target.offeredRecord.artist}</div>
             </div>
             <Badge label={target.offeredRecord.condition} color={condColor(target.offeredRecord.condition)} />
           </div>

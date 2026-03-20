@@ -2,6 +2,7 @@
 // Shows full details (label, full review, all tags) and all action buttons.
 // Clicking "Comments" closes this and opens CommentsModal; clicking "Buy" closes this and opens BuyModal.
 // Clicking the poster row closes this and opens UserProfileModal.
+import { useMemo } from 'react';
 import Modal from '../ui/Modal';
 import AlbumArt from '../ui/AlbumArt';
 import Stars from '../ui/Stars';
@@ -11,11 +12,9 @@ import { condColor } from '../../utils/helpers';
 import { USER_WISHLISTS } from '../../constants';
 
 export default function DetailModal({ open, onClose, record, onLike, onSave, onComment, onBuy, onViewUser, onViewArtist, onAddWishlistItem, currentUser, records, onOfferFromDetail, onVerifyRecord }) {
-  if (!record) return null;
-
   // When viewing your own record, find users who have it on their wishlist
-  const isOwn = record.user === currentUser;
-  const wantedBy = isOwn
+  const isOwn = record?.user === currentUser;
+  const wantedBy = useMemo(() => isOwn && record
     ? Object.entries(USER_WISHLISTS)
         .filter(([, items]) => items.some(
           w => w.album.toLowerCase() === record.album.toLowerCase() && w.artist.toLowerCase() === record.artist.toLowerCase()
@@ -24,7 +23,9 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
           username,
           wishlistItem: items.find(w => w.album.toLowerCase() === record.album.toLowerCase() && w.artist.toLowerCase() === record.artist.toLowerCase()),
         }))
-    : [];
+    : [], [isOwn, record?.album, record?.artist]);
+
+  if (!record) return null;
 
   return (
     <Modal open={open} onClose={onClose} title="Record Detail" width="520px">

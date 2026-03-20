@@ -2,7 +2,7 @@
 // Pass onRate to make the stars interactive (used in AddRecordModal for setting a rating).
 export default function Stars({ rating, onRate, size = 12 }) {
   return (
-    <div className="flex gap-0.5">
+    <div role="img" aria-label={`${rating} out of 5 stars`} className="flex gap-0.5">
       {[1, 2, 3, 4, 5].map(s => (
         <svg
           key={s} width={size} height={size} viewBox="0 0 24 24"

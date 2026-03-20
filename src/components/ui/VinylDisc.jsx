@@ -8,7 +8,7 @@ export default function VinylDisc({ accent, size = 72 }) {
   }).join(",");
 
   return (
-    <div style={{
+    <div className="hover:rotate-45 transition-transform duration-500" style={{
       width: size, height: size, borderRadius: "50%", flexShrink: 0,
       background: `conic-gradient(from 0deg,${grooves})`,
       display: "flex", alignItems: "center", justifyContent: "center",

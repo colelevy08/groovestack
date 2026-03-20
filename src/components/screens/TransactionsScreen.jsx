@@ -18,6 +18,7 @@ const statusColor = s => s === "pending" ? "#f59e0b" : s === "accepted" ? "#22c5
 
 export default function TransactionsScreen({ offers, purchases, cart, currentUser, records, profile, onBuy, onRemoveFromCart, onViewUser, onDetail, onAcceptOffer, onDeclineOffer }) {
   const [tab, setTab] = useState("offers sent");
+  const [acceptingId, setAcceptingId] = useState(null);
 
   const sentOffers = (offers || []).filter(o => o.from === currentUser);
   const receivedOffers = (offers || []).filter(o => o.to === currentUser);
@@ -30,7 +31,7 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-2.5 mb-[22px]">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-[22px]">
         {[
           { l: "Sent", v: sentOffers.length, c: "text-gs-accent" },
           { l: "Received", v: receivedOffers.length, c: "text-violet-500" },
@@ -77,7 +78,8 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
           : <div className="flex flex-col gap-2">
               {receivedOffers.map(o => (
                 <OfferRow key={o.id} offer={o} direction="received" onViewUser={onViewUser}
-                  onAccept={onAcceptOffer} onDecline={onDeclineOffer} profile={profile} />
+                  onAccept={onAcceptOffer} onDecline={onDeclineOffer} profile={profile}
+                  acceptingId={acceptingId} setAcceptingId={setAcceptingId} />
               ))}
             </div>
       )}
@@ -133,7 +135,7 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
                     <div className="flex gap-2 items-center shrink-0">
                       <Badge label={item.condition} color={condColor(item.condition)} />
                       <span className="text-base font-extrabold text-gs-text">${item.price}</span>
-                      <button onClick={() => onRemoveFromCart(item.id)} className="gs-btn-secondary py-1.5 px-2.5 text-[11px]">Remove</button>
+                      <button onClick={() => { if (window.confirm('Remove this item from your cart?')) onRemoveFromCart(item.id); }} className="gs-btn-secondary py-1.5 px-2.5 text-[11px]">Remove</button>
                       {stillForSale && (
                         <button onClick={() => onBuy(liveRecord)} className="gs-btn-gradient py-1.5 px-3.5 text-[11px]">Buy</button>
                       )}
@@ -179,7 +181,7 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
 }
 
 // Shared row component for sent/received offers
-function OfferRow({ offer, direction, onViewUser, onAccept, onDecline, profile }) {
+function OfferRow({ offer, direction, onViewUser, onAccept, onDecline, profile, acceptingId, setAcceptingId }) {
   const o = offer;
   const otherUser = direction === "sent" ? o.to : o.from;
   const typeLabel = offerTypeLabel(o.type);
@@ -238,14 +240,19 @@ function OfferRow({ offer, direction, onViewUser, onAccept, onDecline, profile }
       {canRespond && !confirming && (
         <div className="flex gap-2 mt-3 pt-3 border-t border-[#1a1a1a]">
           <button onClick={() => onDecline(o.id)} className="gs-btn-secondary flex-1 py-2 text-[11px]">Decline</button>
-          <button onClick={() => {
-            if (o.type === "trade" || o.type === "combo") {
-              setConfirming(true);
-            } else {
-              onAccept(o.id);
-            }
-          }} className="gs-btn-gradient flex-[2] py-2 text-[11px]">
-            Accept {o.type === "trade" ? "Trade" : o.type === "combo" ? "Combo" : "Offer"}
+          <button
+            disabled={acceptingId === o.id}
+            onClick={() => {
+              if (o.type === "trade" || o.type === "combo") {
+                setConfirming(true);
+              } else {
+                setAcceptingId(o.id);
+                onAccept(o.id);
+              }
+            }}
+            className={`gs-btn-gradient flex-[2] py-2 text-[11px] ${acceptingId === o.id ? 'opacity-60 cursor-not-allowed' : ''}`}
+          >
+            {acceptingId === o.id ? 'Accepting...' : `Accept ${o.type === "trade" ? "Trade" : o.type === "combo" ? "Combo" : "Offer"}`}
           </button>
         </div>
       )}

@@ -32,7 +32,7 @@ export default function AlbumArt({ album, artist, size = 72, accent = "#555" }) 
 
   return (
     <div
-      className="overflow-hidden shrink-0 bg-[#1a1a1a] border border-gs-border-hover relative"
+      className="overflow-hidden shrink-0 bg-[#1a1a1a] border border-gs-border-hover relative hover:scale-105 transition-transform duration-200"
       style={{ width: size, height: size, borderRadius: radius }}
     >
       {/* VinylDisc shows while image is loading */}

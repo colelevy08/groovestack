@@ -77,7 +77,7 @@ export default function UserProfilePage({ username, records, currentUser, follow
 
           <div className="text-xl font-extrabold text-gs-text tracking-tight mb-0.5">{p.displayName}</div>
           <div className="text-xs font-mono mb-3" style={{ color: p.accent || "#0ea5e9" }}>@{username}</div>
-          {p.bio && <p className="text-[13px] text-gs-muted leading-relaxed mb-3.5">{p.bio}</p>}
+          {p.bio && <p className="text-[13px] text-gs-muted leading-relaxed mb-3.5 line-clamp-3">{p.bio}</p>}
 
           <div className="flex gap-3.5 text-xs text-gs-dim mb-5 flex-wrap">
             {p.location && <span>📍 {p.location}</span>}
@@ -85,7 +85,7 @@ export default function UserProfilePage({ username, records, currentUser, follow
           </div>
 
           {/* Stats — 4 key numbers */}
-          <div className="grid grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             {[
               { l: "Records", v: userRecords.length, click: () => setTab("records") },
               { l: "For Sale", v: forSale.length, click: () => setTab("for sale") },

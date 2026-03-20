@@ -9,7 +9,7 @@ export default function UserChip({ username, onViewUser }) {
   return (
     <button
       onClick={e => { e.stopPropagation(); onViewUser(username); }}
-      className="bg-transparent border-none cursor-pointer p-0 flex items-center gap-1.5"
+      className="bg-transparent border-none cursor-pointer p-0 flex items-center gap-1.5 hover:bg-[#111] rounded-lg transition-colors"
     >
       <Avatar username={username} size={30} />
       <div className="text-left">

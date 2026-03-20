@@ -21,6 +21,7 @@ export default function Paginated({ records, handlers }) {
         <div className="text-center mt-6">
           <button
             onClick={() => setPage(p => p + 1)}
+            aria-label={`Load more, ${records.length - visible.length} remaining`}
             className="gs-btn-secondary px-7 py-2.5 text-[13px]"
           >
             Load more · {records.length - visible.length} remaining

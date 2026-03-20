@@ -290,7 +290,7 @@ function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate }) 
           ) : (
             <>
               {/* Top cards row */}
-              <div className="grid grid-cols-2 gap-2.5 mb-[18px]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-[18px]">
                 {/* Top Artist */}
                 <div className="bg-gs-card border border-gs-border rounded-[14px] overflow-hidden">
                   <div className="h-0.5 bg-gradient-to-r from-[#8b5cf6] to-transparent" />

@@ -299,7 +299,7 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
   };
 
   return (
-    <Modal open={open} onClose={() => { reset(); onClose(); }} title="Add Record to Collection" width="520px">
+    <Modal open={open} onClose={() => { if ((album.trim() || artist.trim()) && !window.confirm('Discard this record? Your entries will be lost.')) return; reset(); onClose(); }} title="Add Record to Collection" width="520px">
       {err && (
         <div className="bg-red-500/15 border border-red-500/25 rounded-lg px-3.5 py-2.5 text-red-400 text-[13px] mb-4">
           {err}
@@ -383,7 +383,7 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
       {/* ── Action buttons ── */}
       <div className="flex gap-2.5">
         <button
-          onClick={() => { reset(); onClose(); }}
+          onClick={() => { if ((album.trim() || artist.trim()) && !window.confirm('Discard this record? Your entries will be lost.')) return; reset(); onClose(); }}
           className="flex-1 p-[11px] bg-[#1a1a1a] border border-gs-border-hover rounded-[10px] text-gs-muted text-[13px] font-semibold cursor-pointer"
         >
           Cancel

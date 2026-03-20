@@ -3,6 +3,8 @@ export default function Toggle({ on, onToggle, label }) {
   return (
     <label className="flex items-center gap-2.5 cursor-pointer">
       <div
+        role="switch"
+        aria-checked={on}
         onClick={onToggle}
         className={`w-9 h-5 rounded-full relative transition-colors duration-200 cursor-pointer ${on ? 'bg-gs-accent' : 'bg-gs-border-hover'}`}
       >

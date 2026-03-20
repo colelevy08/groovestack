@@ -107,7 +107,7 @@ export default function BuyModal({ open, onClose, record, onPurchase, onAddToCar
           )}
           <FormInput label="FULL NAME" value={name} onChange={setName} placeholder="Jane Smith" />
           <FormInput label="STREET ADDRESS" value={street} onChange={setStreet} placeholder="123 Vinyl Lane, Apt 4" />
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <FormInput label="CITY" value={city} onChange={setCity} placeholder="Chicago" />
             <FormInput label="STATE" value={state} onChange={setState} placeholder="IL" />
             <FormInput label="ZIP" value={zip} onChange={setZip} placeholder="60601" />

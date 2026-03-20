@@ -29,7 +29,7 @@ export default function FollowingScreen({ following, records, currentUser, onFol
                   <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onViewUser(u)}>
                     <div className="text-sm font-bold text-gs-text">{p.displayName}</div>
                     <div className="text-[11px] text-gs-dim font-mono">@{u}</div>
-                    {p.bio && <div className="text-xs text-[#777] mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap">{p.bio}</div>}
+                    {p.bio && <div className="text-xs text-[#777] mt-0.5 line-clamp-2">{p.bio}</div>}
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-[11px] text-gs-dim mb-2">{uRecs.length} records</div>
@@ -53,7 +53,7 @@ export default function FollowingScreen({ following, records, currentUser, onFol
               <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onViewUser(u)}>
                 <div className="text-sm font-bold text-gs-text">{p.displayName}</div>
                 <div className="text-[11px] text-gs-dim font-mono">@{u}</div>
-                {p.bio && <div className="text-xs text-[#777] mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap">{p.bio}</div>}
+                {p.bio && <div className="text-xs text-[#777] mt-0.5 line-clamp-2">{p.bio}</div>}
                 <div className="flex gap-1.5 mt-1">
                   {p.favGenre && <span className="text-[10px] px-1.5 py-px rounded-full bg-[#1a1a1a] text-gs-dim border border-gs-border-hover">{p.favGenre}</span>}
                   <span className="text-[10px] px-1.5 py-px rounded-full bg-[#1a1a1a] text-gs-dim border border-gs-border-hover">{uRecs.length} records</span>

@@ -54,7 +54,7 @@ export default function DMModal({ open, onClose, currentUser, following, message
       className="gs-overlay fixed inset-0 flex items-center justify-center z-[1000]"
       onClick={e => e.target === e.currentTarget && onClose()}
     >
-      <div className="bg-gs-surface border border-gs-border rounded-[18px] w-[620px] max-w-[95vw] h-[540px] flex overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.85)]">
+      <div className="bg-gs-surface border border-gs-border rounded-[18px] w-full max-w-[min(620px,95vw)] h-[540px] flex overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.85)]">
         {/* Contact list */}
         <div className="w-[190px] border-r border-[#1a1a1a] flex flex-col">
           <div className="px-3.5 py-4 border-b border-[#1a1a1a]">

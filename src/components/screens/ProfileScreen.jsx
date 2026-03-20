@@ -66,14 +66,14 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
           </div>
           <div className="text-xl font-extrabold text-gs-text tracking-tight mb-0.5">{profile.displayName}</div>
           <div className="text-xs text-gs-accent font-mono mb-3">@{currentUser}</div>
-          {profile.bio && <p className="text-[13px] text-gs-muted leading-relaxed mb-3.5">{profile.bio}</p>}
+          {profile.bio && <p className="text-[13px] text-gs-muted leading-relaxed mb-3.5 line-clamp-3">{profile.bio}</p>}
           <div className="flex gap-3.5 text-xs text-gs-dim mb-5 flex-wrap">
             {profile.location && <span>📍 {profile.location}</span>}
             {profile.favGenre && <span>🎵 {profile.favGenre}</span>}
           </div>
 
           {/* Stats — 4 key numbers */}
-          <div className="grid grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             {[
               { l: "Records", v: mine.length, click: () => setTab("records") },
               { l: "For Sale", v: forSale.length, click: () => setTab("for sale") },
@@ -246,7 +246,7 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
                       <div className="text-[13px] font-bold text-gs-text">{w.album}</div>
                       <div className="text-[11px] text-[#666]">{w.artist}</div>
                     </div>
-                    <button onClick={e => { e.stopPropagation(); onRemoveWishlistItem(w.id); }} className="gs-btn-secondary px-3 py-[5px] rounded-[7px] text-[11px]">
+                    <button onClick={e => { e.stopPropagation(); if (window.confirm('Remove from wishlist?')) onRemoveWishlistItem(w.id); }} className="gs-btn-secondary px-3 py-[5px] rounded-[7px] text-[11px]">
                       Remove
                     </button>
                   </div>

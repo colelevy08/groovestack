@@ -90,7 +90,7 @@ export default function AuthScreen({ onAuth }) {
           <button
             type="submit"
             disabled={loading}
-            className={`w-full py-3.5 border-none rounded-[10px] text-sm font-bold cursor-pointer mt-2 transition-all duration-200 font-sans ${loading ? 'bg-[#1a1a1a] text-gs-dim cursor-not-allowed' : 'gs-btn-gradient text-white'}`}
+            className={`w-full py-3.5 border-none rounded-[10px] text-sm font-bold cursor-pointer mt-2 transition-all duration-200 font-sans ${loading ? 'bg-[#1a1a1a] text-gs-dim opacity-60 cursor-not-allowed' : 'gs-btn-gradient text-white'}`}
           >
             {loading
               ? (mode === "login" ? "Logging in..." : "Creating account...")

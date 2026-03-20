@@ -16,6 +16,7 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
   const [customAlbum, setCustomAlbum] = useState("");
   const [customArtist, setCustomArtist] = useState("");
   const [showMediaInput, setShowMediaInput] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const captionRef = useRef(null);
   const searchRef = useRef(null);
@@ -26,6 +27,7 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
       setShowTagSearch(false); setTagSearch(""); setTaggedRecord(null);
       setShowCustomTag(false); setCustomAlbum(""); setCustomArtist("");
       setShowMediaInput(false);
+      setIsSubmitting(false);
       setTimeout(() => captionRef.current?.focus(), 100);
     }
   }, [open]);
@@ -44,7 +46,8 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
   const canPost = caption.trim().length > 0;
 
   const handlePost = () => {
-    if (!canPost) return;
+    if (!canPost || isSubmitting) return;
+    setIsSubmitting(true);
     const tag = taggedRecord || (showCustomTag && customAlbum.trim() ? { album: customAlbum.trim(), artist: customArtist.trim() || "Unknown Artist" } : null);
     onSubmit({
       caption: caption.trim(),
@@ -99,8 +102,10 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
             onChange={e => setCaption(e.target.value)}
             placeholder="What's spinning? Share what you're listening to..."
             rows={4}
+            maxLength={500}
             className="w-full bg-[#111] border border-gs-border rounded-xl px-4 py-3.5 text-[#e0e0e0] text-sm leading-[1.6] resize-y outline-none font-sans min-h-[100px] focus:border-gs-accent/20"
           />
+          <div className="text-[10px] text-gs-faint text-right mt-1">{caption.length}/500</div>
 
           {/* Tagged record preview */}
           {taggedRecord && (
@@ -258,14 +263,14 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
           </span>
           <button
             onClick={handlePost}
-            disabled={!canPost}
+            disabled={!canPost || isSubmitting}
             className={`px-7 py-2.5 rounded-[10px] border-none font-bold text-[13px] transition-opacity duration-150 ${
-              canPost
+              canPost && !isSubmitting
                 ? 'gs-btn-gradient text-white cursor-pointer'
                 : 'bg-[#1a1a1a] text-gs-dim cursor-default'
             }`}
           >
-            Post
+            {isSubmitting ? 'Posting...' : 'Post'}
           </button>
         </div>
       </div>

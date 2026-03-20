@@ -1,14 +1,16 @@
 // Reusable styled text input with optional uppercase label.
 // Focus ring uses the accent color. Calls onChange with raw string value.
 export default function FormInput({ label, value, onChange, placeholder, type = "text", style = {} }) {
+  const id = label ? label.toLowerCase().replace(/\s+/g, '-') : undefined;
   return (
     <div className="mb-4">
       {label && (
-        <label className="gs-label block mb-1.5">
+        <label htmlFor={id} className="gs-label block mb-1.5">
           {label}
         </label>
       )}
       <input
+        id={id}
         type={type}
         value={value}
         onChange={e => onChange(e.target.value)}
