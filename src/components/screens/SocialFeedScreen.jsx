@@ -57,7 +57,8 @@ function TrendingCard({ post, rank, onViewUser, onDetail, records }) {
         </span>
         <span className="flex items-center gap-1">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-          {post.comments.length}
+          {/* Fix: use post.comments directly in TrendingCard (comments variable is only in PostCard) */}
+          {(post.comments || []).length}
         </span>
       </div>
     </div>
@@ -110,7 +111,9 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
     lastTapRef.current = now;
   }, [post.id, post.liked, onLikePost]);
 
-  const visibleComments = showAllComments ? post.comments : post.comments.slice(-2);
+  // Fix: guard against undefined comments array for safety
+  const comments = post.comments || [];
+  const visibleComments = showAllComments ? comments : comments.slice(-2);
 
   return (
     <div
@@ -227,8 +230,8 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
           {post.likes > 0 && (
             <span>{post.likes} like{post.likes !== 1 ? 's' : ''}</span>
           )}
-          {post.comments.length > 0 && (
-            <span>{post.comments.length} comment{post.comments.length !== 1 ? 's' : ''}</span>
+          {comments.length > 0 && (
+            <span>{comments.length} comment{comments.length !== 1 ? 's' : ''}</span>
           )}
           {post.bookmarked && (
             <span className="text-[#f59e0b]">Saved</span>
@@ -256,7 +259,7 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               </svg>
-              {post.comments.length}
+              {comments.length}
             </button>
             {/* Share button */}
             <button
@@ -286,14 +289,14 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
         </div>
 
         {/* Inline comment preview */}
-        {post.comments.length > 0 && (
+        {comments.length > 0 && (
           <div className="mt-3 border-t border-[#111] pt-2.5">
-            {post.comments.length > 2 && !showAllComments && (
+            {comments.length > 2 && !showAllComments && (
               <button
                 onClick={() => setShowAllComments(true)}
                 className="bg-transparent border-none text-gs-dim text-xs cursor-pointer mb-2 p-0 font-medium"
               >
-                View all {post.comments.length} comments
+                View all {comments.length} comments
               </button>
             )}
             {visibleComments.map(c => {

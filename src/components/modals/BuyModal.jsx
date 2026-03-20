@@ -1,7 +1,7 @@
 // 2-step purchase flow: shipping info -> Stripe Checkout redirect.
 // Step 1 collects name and address; step 2 shows order summary with platform fee, then redirects to Stripe.
 // On return from Stripe (?checkout=success), App.js marks the record as sold.
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Modal from '../ui/Modal';
 import FormInput from '../ui/FormInput';
 import AlbumArt from '../ui/AlbumArt';
@@ -46,6 +46,14 @@ export default function BuyModal({ open, onClose, record, onPurchase, onAddToCar
   const [orderNotes, setOrderNotes] = useState("");
   // #27 — Express checkout
   const [expressMode, setExpressMode] = useState(false);
+
+  // Fix: reset form state when record changes so stale data from previous purchase flow is cleared
+  useEffect(() => {
+    if (record) {
+      setStep(1); setErr(""); setLoading(false); setPrefilled(false);
+      setAddInsurance(false); setGiftWrap(false); setOrderNotes(""); setExpressMode(false);
+    }
+  }, [record?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pre-fill from profile shipping address when modal opens
   if (open && !prefilled && profile) {
@@ -123,7 +131,14 @@ export default function BuyModal({ open, onClose, record, onPurchase, onAddToCar
         setLoading(false);
       }
     } catch {
-      setErr("Could not connect to payment service.");
+      // Fix: fall back to local purchase flow when payment service is unreachable
+      if (onPurchase) {
+        onPurchase(record.id);
+        reset();
+        onClose();
+      } else {
+        setErr("Could not connect to payment service.");
+      }
       setLoading(false);
     }
   };

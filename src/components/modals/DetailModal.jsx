@@ -152,6 +152,12 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
   useEffect(() => {
     if (open && record) {
       injectJsonLd(recordToJsonLd(record));
+      // Fix: reset transient UI state when switching to a different record
+      setCopied(false);
+      setShowLightbox(false);
+      setShowNegotiate(false);
+      setOfferAmount('');
+      setAudioPlaying(false);
       // Load saved collector note from localStorage
       const savedNote = localStorage.getItem(`gs_note_${record.id}`);
       if (savedNote) {
@@ -381,8 +387,9 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
         </blockquote>
       )}
 
+      {/* Fix: guard against undefined tags (e.g. imported Discogs records may lack tags) */}
       <div className="flex gap-1.5 flex-wrap mb-5">
-        {record.tags.map(t => (
+        {(record.tags || []).map(t => (
           <span key={t} className="text-[11px] px-2.5 py-[3px] rounded-full bg-[#1a1a1a] text-[#666] border border-gs-border-hover">#{t}</span>
         ))}
       </div>
@@ -428,7 +435,8 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
           onClick={() => { onClose(); onComment(record); }}
           className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-[#1a1a1a] border border-gs-border-hover text-gs-muted text-xs font-semibold cursor-pointer"
         >
-          &#x1F4AC; {record.comments.length}
+          {/* Fix: guard against undefined comments array */}
+          &#x1F4AC; {(record.comments || []).length}
         </button>
         <button
           onClick={() => onSave(record.id)}

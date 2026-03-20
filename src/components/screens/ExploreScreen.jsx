@@ -160,7 +160,10 @@ function PriceHistogram({ records }) {
   );
 }
 
-export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart, onViewArtist, ...handlers }) {
+// Fix: destructure all used callbacks explicitly instead of relying on ...handlers spread
+// which caused onBuy/onViewUser/onViewArtist to appear in both explicit params and handlers
+// Fix: accept currentUser so OWNED badge works for the actual logged-in user
+export default function ExploreScreen({ records, currentUser, onViewUser, onBuy, onAddToCart, onViewArtist, onLike, onSave, onComment, onDetail, onDelete, ...handlers }) {
   const [q, setQ] = useState("");
   const [genre, setGenre] = useState("All");
   const [subgenre, setSubgenre] = useState(null);
@@ -213,8 +216,9 @@ export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart,
       persistRecentlyViewed(next);
       return next;
     });
-    handlers.onDetail?.(record);
-  }, [handlers]);
+    // Fix: use explicitly destructured onDetail instead of handlers.onDetail
+    onDetail?.(record);
+  }, [onDetail]);
 
   // Infinite scroll observer
   useEffect(() => {
@@ -344,7 +348,8 @@ export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart,
     );
   }, [baseFiltered, sort, mode]);
 
-  const suggestedUsers = Object.keys(USER_PROFILES).filter(u => u !== "yourhandle").slice(0, 10);
+  // Fix: filter out current user instead of hardcoded "yourhandle" for suggested collectors
+  const suggestedUsers = Object.keys(USER_PROFILES).filter(u => u !== currentUser).slice(0, 10);
 
   // When changing genre, clear subgenre
   const selectGenre = g => {
@@ -431,10 +436,11 @@ export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart,
   }, [recentlyViewedIds, records]);
 
   // Improvement 13: Collection overlap indicator
+  // Fix: use currentUser instead of hardcoded "yourhandle" so OWNED badges reflect actual user
   const myRecordAlbums = useMemo(() => {
-    const myRecs = records.filter(r => r.user === "yourhandle");
+    const myRecs = records.filter(r => r.user === currentUser);
     return new Set(myRecs.map(r => `${r.artist}::${r.album}`));
-  }, [records]);
+  }, [records, currentUser]);
 
   const isInMyCollection = useCallback((record) => {
     return myRecordAlbums.has(`${record.artist}::${record.album}`);
@@ -903,7 +909,7 @@ export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart,
                 )}
               </div>
             ) : (
-              <Paginated records={displayRecords} handlers={{ ...handlers, onDetail: trackView, onViewUser, onBuy, onViewArtist }} />
+              <Paginated records={displayRecords} handlers={{ onLike, onSave, onComment, onBuy, onDetail: trackView, onViewUser, onViewArtist }} />
             )
           ) : viewMode === "masonry" ? (
             /* Improvement 11: Masonry layout */

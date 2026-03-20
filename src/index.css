@@ -20,6 +20,16 @@
   --gs-dim: #555555;
   --gs-faint: #444444;
   --gs-subtle: #333333;
+
+  /* ── Chart color palette ── */
+  --gs-chart-1: #0ea5e9;
+  --gs-chart-2: #6366f1;
+  --gs-chart-3: #10b981;
+  --gs-chart-4: #f59e0b;
+  --gs-chart-5: #ef4444;
+  --gs-chart-6: #8b5cf6;
+  --gs-chart-7: #ec4899;
+  --gs-chart-8: #14b8a6;
 }
 
 /* ── Theme transition animation ────────────────────────────── */
@@ -314,6 +324,131 @@
     from { width: 100%; }
     to { width: 0%; }
   }
+
+  /* ── Improvement 1: Custom checkbox styling ── */
+  .gs-checkbox {
+    @apply appearance-none w-4 h-4 rounded border border-gs-border-hover bg-transparent cursor-pointer transition-all duration-150 relative;
+  }
+  .gs-checkbox:checked {
+    @apply bg-gs-accent border-gs-accent;
+  }
+  .gs-checkbox:checked::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 5px;
+    height: 9px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+
+  /* ── Improvement 2: Custom radio styling ── */
+  .gs-radio {
+    @apply appearance-none w-4 h-4 rounded-full border border-gs-border-hover bg-transparent cursor-pointer transition-all duration-150 relative;
+  }
+  .gs-radio:checked {
+    @apply border-gs-accent;
+  }
+  .gs-radio:checked::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--gs-accent);
+  }
+
+  /* ── Improvement 3: Progress bar utilities ── */
+  .gs-progress {
+    @apply w-full h-2 rounded-full bg-[#1a1a1a] overflow-hidden;
+  }
+  .gs-progress-bar {
+    @apply h-full rounded-full bg-gs-accent transition-all duration-300 ease-out;
+  }
+  .gs-progress-bar-striped {
+    background-image: linear-gradient(
+      45deg,
+      rgba(255, 255, 255, 0.1) 25%,
+      transparent 25%,
+      transparent 50%,
+      rgba(255, 255, 255, 0.1) 50%,
+      rgba(255, 255, 255, 0.1) 75%,
+      transparent 75%,
+      transparent
+    );
+    background-size: 1rem 1rem;
+    animation: progressStripe 0.6s linear infinite;
+  }
+
+  /* ── Improvement 4: Badge pulse animation for notifications ── */
+  .gs-badge-pulse {
+    @apply relative;
+  }
+  .gs-badge-pulse::after {
+    content: "";
+    @apply absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-red-500;
+    animation: badgePing 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  .gs-badge-pulse::before {
+    content: "";
+    @apply absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-red-500;
+  }
+
+  /* ── Improvement 5: Skeleton loading variants ── */
+  .gs-skeleton-text {
+    @apply gs-skeleton h-3 rounded;
+  }
+  .gs-skeleton-heading {
+    @apply gs-skeleton h-5 w-3/4 rounded;
+  }
+  .gs-skeleton-avatar {
+    @apply gs-skeleton w-10 h-10 rounded-full;
+  }
+  .gs-skeleton-thumbnail {
+    @apply gs-skeleton w-full aspect-square rounded-xl;
+  }
+  .gs-skeleton-button {
+    @apply gs-skeleton h-9 w-24 rounded-[10px];
+  }
+
+  /* ── Improvement 6: Mobile touch feedback ── */
+  .gs-touch-feedback {
+    -webkit-tap-highlight-color: transparent;
+    @apply transition-all duration-100;
+  }
+  .gs-touch-feedback:active {
+    @apply scale-[0.97] opacity-80;
+  }
+
+  /* ── Improvement 7: Animated underline for links ── */
+  .gs-link-underline {
+    @apply relative inline-block;
+    text-decoration: none;
+  }
+  .gs-link-underline::after {
+    content: "";
+    @apply absolute bottom-0 left-0 w-0 h-[1.5px] bg-gs-accent;
+    transition: width 0.25s ease-out;
+  }
+  .gs-link-underline:hover::after {
+    @apply w-full;
+  }
+
+  /* ── Improvement 8: Focus-within for form groups ── */
+  .gs-form-group {
+    @apply rounded-xl border border-gs-border p-3 transition-all duration-150;
+  }
+  .gs-form-group:focus-within {
+    @apply border-gs-accent;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+  }
+  [data-theme="light"] .gs-form-group:focus-within {
+    box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.1);
+  }
 }
 
 /* ── Sidebar collapse transition ─────────────────────────── */
@@ -404,4 +539,53 @@
 }
 .animate-slide-down {
   animation: slideDown 0.3s ease-out;
+}
+
+/* ── Improvement 9: High contrast mode support ── */
+@media (prefers-contrast: high) {
+  :root {
+    --gs-border: #444444;
+    --gs-border-subtle: #333333;
+    --gs-border-hover: #666666;
+    --gs-muted: #bbbbbb;
+    --gs-dim: #999999;
+    --gs-faint: #777777;
+  }
+  .gs-btn-gradient,
+  .gs-btn-secondary {
+    border: 2px solid currentColor !important;
+  }
+  .gs-card {
+    border-width: 2px !important;
+  }
+}
+
+/* ── Improvement 10: Smooth page transition classes ── */
+.gs-page-enter {
+  animation: pageFadeSlideIn 0.35s ease-out;
+}
+.gs-page-exit {
+  animation: pageFadeSlideOut 0.2s ease-in forwards;
+}
+@keyframes pageFadeSlideIn {
+  0% { opacity: 0; transform: translateX(8px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes pageFadeSlideOut {
+  0% { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(-8px); }
+}
+
+/* ── Badge ping keyframe ── */
+@keyframes badgePing {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+/* ── Progress stripe keyframe ── */
+@keyframes progressStripe {
+  0% { background-position: 1rem 0; }
+  100% { background-position: 0 0; }
 }

@@ -36,7 +36,8 @@ function sortRecords(records, sortKey) {
   }
 }
 
-export default function CollectionScreen({ records, currentUser, onAddRecord, ...handlers }) {
+// Fix: explicitly destructure batch/drag props that App.js passes, plus onDelete for bulk actions
+export default function CollectionScreen({ records, currentUser, onAddRecord, onDelete, batchMode: appBatchMode, batchSelected: appBatchSelected, onToggleBatchSelect, dragState, onDragStart, onDragOver, onDragEnd, ...handlers }) {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState("dateDesc");
   const [filterFormat, setFilterFormat] = useState("All");
@@ -139,11 +140,11 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, ..
   }, [mine]);
 
   // Bulk actions
+  // Fix: use the explicitly destructured onDelete prop instead of handlers.onDelete
   const handleBulkDelete = () => {
     if (selected.size === 0) return;
     if (window.confirm(`Remove ${selected.size} record(s) from your collection?`)) {
-      // Trigger delete for each selected record via handlers if available
-      selected.forEach(id => handlers.onDelete?.(id));
+      selected.forEach(id => onDelete?.(id));
       setSelected(new Set());
       setSelectMode(false);
     }
@@ -368,11 +369,13 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, ..
                 <span className="text-[10px] text-gs-faint font-mono">({groupRecords.length})</span>
                 <div className="flex-1 h-px bg-gs-border ml-2" />
               </div>
+              {/* Fix: connect App-level batch mode to card selection when active */}
               <Paginated
                 records={groupRecords}
                 handlers={{
                   ...handlers,
                   ...(selectMode ? { onSelect: toggleSelect, selected } : {}),
+                  ...(appBatchMode ? { onSelect: onToggleBatchSelect, selected: new Set(appBatchSelected) } : {}),
                 }}
               />
             </div>
@@ -384,6 +387,7 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, ..
           handlers={{
             ...handlers,
             ...(selectMode ? { onSelect: toggleSelect, selected } : {}),
+            ...(appBatchMode ? { onSelect: onToggleBatchSelect, selected: new Set(appBatchSelected) } : {}),
           }}
         />
       )}

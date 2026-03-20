@@ -37,6 +37,9 @@ import Confetti from './components/ui/Confetti';
 import OnboardingTour from './components/ui/OnboardingTour';
 import SwipeHandler from './components/ui/SwipeHandler';
 import KeyboardShortcutsHelp from './components/ui/KeyboardShortcutsHelp';
+// Improvement: Import CommandPalette and ImageLightbox components
+import CommandPalette from './components/ui/CommandPalette';
+import ImageLightbox from './components/ui/ImageLightbox';
 
 // ── Improvement #25: Multi-language prep (i18n structure) ───────────────────
 const TRANSLATIONS = {
@@ -92,6 +95,10 @@ const TransactionsScreen = lazy(() => import('./components/screens/TransactionsS
 const VinylBuddyScreen = lazy(() => import('./components/screens/VinylBuddyScreen'));
 const SettingsScreen = lazy(() => import('./components/screens/SettingsScreen'));
 const UserProfilePage = lazy(() => import('./components/screens/UserProfilePage'));
+// Lazy-loaded new screens (Improvement: Analytics, Messages, Wishlist)
+const AnalyticsScreen = lazy(() => import('./components/screens/AnalyticsScreen'));
+const MessagesScreen = lazy(() => import('./components/screens/MessagesScreen'));
+const WishlistScreen = lazy(() => import('./components/screens/WishlistScreen'));
 
 // Lazy loading fallback spinner — Improvement #11: includes top progress bar
 function ScreenLoader() {
@@ -188,6 +195,10 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem('gs_onboardingChecklist')) || { addedRecord: false, madePost: false, followedUser: false, customizedProfile: false, madeOffer: false }; } catch { return { addedRecord: false, madePost: false, followedUser: false, customizedProfile: false, madeOffer: false }; }
   });
 
+  // Fix: refs for undo/redo so keyboard shortcut effect always calls latest version
+  const handleUndoRef = useRef(null);
+  const handleRedoRef = useRef(null);
+
   // ── Improvement #17: Performance monitoring (render count) ────────────────
   const renderCount = useRef(0);
   renderCount.current += 1;
@@ -253,6 +264,14 @@ export default function App() {
   const [showAuth, setShowAuth] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [toast, setToast] = useState({ visible: false, msg: "" });
+
+  // ── ImageLightbox state ────────────────────────────────────────────────────
+  const [lightboxImage, setLightboxImage] = useState(null);
+
+  // ── Wishlist alert preferences (per-item price drop alerts) ───────────────
+  const [wishlistAlerts, setWishlistAlerts] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_wishlistAlerts')) || {}; } catch { return {}; }
+  });
 
   // ── Data sync indicator state ──────────────────────────────────────────────
   const [isSyncing, setIsSyncing] = useState(false);
@@ -424,6 +443,7 @@ export default function App() {
   useEffect(() => { localStorage.setItem('gs_profile', JSON.stringify(profile)); }, [profile]);
   useEffect(() => { localStorage.setItem('gs_dmMessages', JSON.stringify(dmMessages)); }, [dmMessages]);
   useEffect(() => { localStorage.setItem('gs_wishlist', JSON.stringify(wishlist)); }, [wishlist]);
+  useEffect(() => { localStorage.setItem('gs_wishlistAlerts', JSON.stringify(wishlistAlerts)); }, [wishlistAlerts]);
   useEffect(() => { localStorage.setItem('gs_offers', JSON.stringify(offers)); }, [offers]);
   useEffect(() => { localStorage.setItem('gs_purchases', JSON.stringify(purchases)); }, [purchases]);
   useEffect(() => { localStorage.setItem('gs_cart', JSON.stringify(cart)); }, [cart]);
@@ -519,7 +539,8 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '');
-      const validNavs = ['Social', 'Marketplace', 'Collection', 'Activity', 'Vinyl Buddy', 'Profile', 'Settings'];
+      // Fix: validNavs now matches all actual rendered screens including Following, Analytics, Messages, Wishlist
+      const validNavs = ['Social', 'Marketplace', 'Collection', 'Activity', 'Vinyl Buddy', 'Profile', 'Settings', 'Following', 'Analytics', 'Messages', 'Wishlist'];
       if (hash && validNavs.includes(hash)) {
         if (!session && hash !== 'Marketplace') return;
         setNav(hash);
@@ -580,6 +601,8 @@ export default function App() {
     }
     // Improvement #18: Accessibility announcement on page change
     setA11yAnnouncement(`Navigated to ${nav}`);
+    // Analytics: track screen visits (including Analytics, Messages, Wishlist)
+    setActivityLog(log => [{ id: Date.now(), action: 'screen_visit', detail: nav, time: new Date().toISOString() }, ...log].slice(0, 200));
     return () => clearTimeout(timer);
   }, [nav]);
 
@@ -587,11 +610,12 @@ export default function App() {
   // Check if any modal is open (used to suppress non-Escape shortcuts)
   const anyModalOpen = showAdd || !!commentRecord || !!buyRecord || !!detailRecord ||
     showEditProfile || !!viewingUser || showDMs || showNotifs || !!offerTarget ||
-    showCreatePost || !!viewingArtist || !!verifyingRecord || showAuth || showShortcutsHelp || showCommandPalette;
+    showCreatePost || !!viewingArtist || !!verifyingRecord || showAuth || showShortcutsHelp || showCommandPalette || !!lightboxImage;
   const isGuestForShortcuts = !session; // Derived early so keyboard effect can reference it
 
   useEffect(() => {
-    const NAV_KEYS = ['Social', 'Marketplace', 'Collection', 'Activity', 'Vinyl Buddy', 'Profile'];
+    // Nav keys for keyboard shortcuts (1-9) including new screens
+    const NAV_KEYS = ['Social', 'Marketplace', 'Collection', 'Activity', 'Vinyl Buddy', 'Profile', 'Analytics', 'Messages', 'Wishlist'];
     const handler = (e) => {
       // Escape — close any open modal or dismiss toast
       if (e.key === 'Escape') {
@@ -614,6 +638,7 @@ export default function App() {
         if (showCreatePost) { setShowCreatePost(false); return; }
         if (viewingArtist) { setViewingArtist(null); return; }
         if (verifyingRecord) { setVerifyingRecord(null); return; }
+        if (lightboxImage) { setLightboxImage(null); return; }
         return;
       }
 
@@ -645,8 +670,8 @@ export default function App() {
             return;
           case 'z':
             e.preventDefault();
-            // Improvement #5: Undo/Redo
-            if (e.shiftKey) { if (typeof handleRedo === 'function') handleRedo(); } else { if (typeof handleUndo === 'function') handleUndo(); }
+            // Fix: use refs for undo/redo to avoid stale closure in keyboard effect
+            if (e.shiftKey) { handleRedoRef.current?.(); } else { handleUndoRef.current?.(); }
             return;
           case '/':
             e.preventDefault();
@@ -669,8 +694,8 @@ export default function App() {
         }
       }
 
-      // Number keys 1-6 for tab navigation (skip when typing in inputs)
-      if (!isInput && e.key >= '1' && e.key <= '6') {
+      // Number keys 1-9 for tab navigation (skip when typing in inputs)
+      if (!isInput && e.key >= '1' && e.key <= '9') {
         const idx = parseInt(e.key, 10) - 1;
         const target = NAV_KEYS[idx];
         if (target) {
@@ -682,7 +707,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [showGlobalSearch, showChangelog, showAuth, showAdd, commentRecord, buyRecord, detailRecord, showEditProfile, viewingUser, showDMs, showNotifs, offerTarget, showCreatePost, viewingArtist, verifyingRecord, showShortcutsHelp, showCommandPalette, anyModalOpen, isGuestForShortcuts, toast.visible]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [showGlobalSearch, showChangelog, showAuth, showAdd, commentRecord, buyRecord, detailRecord, showEditProfile, viewingUser, showDMs, showNotifs, offerTarget, showCreatePost, viewingArtist, verifyingRecord, showShortcutsHelp, showCommandPalette, anyModalOpen, isGuestForShortcuts, toast.visible, lightboxImage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Poll Vinyl Buddy server for new listening sessions ───────────────────
   useEffect(() => {
@@ -739,7 +764,17 @@ export default function App() {
 
   const onRemoveWishlistItem = (id) => {
     setWishlist(w => w.filter(item => item.id !== id));
+    setWishlistAlerts(alerts => { const next = { ...alerts }; delete next[id]; return next; });
     showToast("Removed from wishlist");
+  };
+
+  // Toggle price-drop alert for a wishlist item
+  const onToggleWishlistAlert = (id) => {
+    setWishlistAlerts(alerts => {
+      const enabled = !alerts[id];
+      showToast(enabled ? "Alert enabled for this item" : "Alert disabled");
+      return { ...alerts, [id]: enabled };
+    });
   };
 
   // ── Offer actions ──────────────────────────────────────────────────────────
@@ -910,6 +945,16 @@ export default function App() {
     pushUndo('add record', () => setRecords(rs => rs.filter(rec => rec.id !== r.id)), () => setRecords(rs => [r, ...rs]));
   };
 
+  // Fix: onDelete handler — used by CollectionScreen bulk delete
+  const onDelete = (id) => {
+    const deleted = records.find(r => r.id === id);
+    setRecords(rs => rs.filter(r => r.id !== id));
+    if (deleted) {
+      pushUndo('delete record', () => setRecords(rs => [deleted, ...rs]), () => setRecords(rs => rs.filter(r => r.id !== deleted.id)));
+      logActivity('delete_record', deleted.album);
+    }
+  };
+
   const onVerifyRecord = r => setVerifyingRecord(r);
   const onRecordVerified = id => {
     setRecords(rs => rs.map(r => r.id === id ? { ...r, verified: true } : r));
@@ -964,8 +1009,12 @@ export default function App() {
   const onViewUser = u => setViewingUser(u);
   const onViewArtist = name => setViewingArtist(name);
 
+  // ImageLightbox callback — opens full-screen image viewer
+  const onViewImage = (src, alt) => setLightboxImage({ src, alt: alt || '' });
+
   // Convenience bundle spread into ExploreScreen, CollectionScreen, and ProfileScreen
-  const cardHandlers = { onLike, onSave, onComment, onBuy, onDetail, onViewUser, onViewArtist };
+  // Fix: include onDelete so CollectionScreen bulk delete works
+  const cardHandlers = { onLike, onSave, onComment, onBuy, onDetail, onViewUser, onViewArtist, onDelete };
 
   // ── Memoized computed values ──────────────────────────────────────────────
   const myRecords = useMemo(() => records.filter(r => r.user === currentUser), [records, currentUser]); // eslint-disable-line no-unused-vars
@@ -1013,23 +1062,29 @@ export default function App() {
     dispatchUndo({ type: 'PUSH', entry: { action, undoFn, redoFn, time: Date.now() } });
   };
 
-  const handleUndo = () => {
+  // Fix: wrap in useCallback so keyboard shortcut effect can reference stable functions
+  const handleUndo = useCallback(() => {
     if (undoState.past.length === 0) return;
     const entry = undoState.past[undoState.past.length - 1];
     entry.undoFn();
     dispatchUndo({ type: 'UNDO' });
     showToast(`Undone: ${entry.action}`);
     setA11yAnnouncement(`Undone: ${entry.action}`);
-  };
+  }, [undoState.past]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleRedo = () => {
+  // Fix: wrap in useCallback so keyboard shortcut effect can reference stable functions
+  const handleRedo = useCallback(() => {
     if (undoState.future.length === 0) return;
     const entry = undoState.future[0];
     entry.redoFn();
     dispatchUndo({ type: 'REDO' });
     showToast(`Redone: ${entry.action}`);
     setA11yAnnouncement(`Redone: ${entry.action}`);
-  };
+  }, [undoState.future]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fix: keep refs in sync so keyboard effect always calls the latest handler
+  handleUndoRef.current = handleUndo;
+  handleRedoRef.current = handleRedo;
 
   // ── Improvement #1: Command palette results (fuzzy search) ────────────────
   const commandPaletteResults = useMemo(() => {
@@ -1058,6 +1113,9 @@ export default function App() {
       { label: 'View Collection', action: () => { setShowCommandPalette(false); setNav('Collection'); }, icon: 'C' },
       { label: 'View Marketplace', action: () => { setShowCommandPalette(false); setNav('Marketplace'); }, icon: 'M' },
       { label: 'Import from Discogs', action: () => { setShowCommandPalette(false); setShowDiscogsImport(true); }, icon: 'D' },
+      { label: 'View Analytics', action: () => { setShowCommandPalette(false); setNav('Analytics'); }, icon: 'A' },
+      { label: 'View Messages', action: () => { setShowCommandPalette(false); setNav('Messages'); }, icon: 'G' },
+      { label: 'View Wishlist', action: () => { setShowCommandPalette(false); setNav('Wishlist'); }, icon: 'W' },
     ];
     const matchedActions = allActions.filter(a => fuzzyMatch(a.label, q));
     return { records: matchedRecords, users: matchedUsers, posts: matchedPosts, actions: matchedActions };
@@ -1202,12 +1260,16 @@ export default function App() {
     setOnboardingChecklist(c => ({ ...c, addedRecord: true }));
   };
 
-  // ── Improvement #10: Breadcrumb computation ───────────────────────────────
+  // ── Improvement #10: Breadcrumb computation (updated for new screens) ────
   const breadcrumbs = useMemo(() => {
+    const BREADCRUMB_ICONS = { Analytics: 'chart', Messages: 'envelope', Wishlist: 'heart' };
     const crumbs = [{ label: 'Home', nav: 'Social' }];
     if (viewingUserProfile) {
       crumbs.push({ label: nav, nav });
       crumbs.push({ label: `@${viewingUserProfile}`, nav: null });
+    } else if (BREADCRUMB_ICONS[nav]) {
+      // New screens get a parent breadcrumb pointing back to Social
+      crumbs.push({ label: nav, nav: null });
     } else {
       crumbs.push({ label: nav, nav: null });
     }
@@ -1233,7 +1295,8 @@ export default function App() {
   }
 
   // ── Swipe navigation for mobile (#26) ────────────────────────────────────
-  const NAV_ORDER = ["Social", "Marketplace", "Collection", "Vinyl Buddy", "Profile"];
+  // Fix: added Activity screen so swipe navigation works from/to the transactions view
+  const NAV_ORDER = ["Social", "Marketplace", "Collection", "Activity", "Vinyl Buddy", "Profile", "Analytics", "Messages", "Wishlist"];
   const swipeLeft = () => {
     const idx = NAV_ORDER.indexOf(nav);
     if (idx < NAV_ORDER.length - 1) {
@@ -1289,95 +1352,23 @@ export default function App() {
         </div>
       )}
 
-      {/* Improvement #1: Command Palette (Cmd+K) */}
-      {showCommandPalette && (
-        <div className="fixed inset-0 bg-black/70 z-[2000] flex items-start justify-center pt-[15vh] backdrop-blur-sm animate-fade-in" onClick={e => { if (e.target === e.currentTarget) { setShowCommandPalette(false); setCommandQuery(''); } }}>
-          <div className="bg-gs-bg border border-gs-border rounded-xl w-full max-w-[560px] shadow-2xl overflow-hidden">
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-gs-border">
-              <svg className="w-4 h-4 text-gs-dim flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-              <input
-                ref={commandInputRef}
-                type="text"
-                value={commandQuery}
-                onChange={e => setCommandQuery(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && commandQuery.trim()) {
-                    saveRecentSearch(commandQuery);
-                  }
-                }}
-                placeholder={t('commandPalette', userPreferences.language)}
-                className="flex-1 bg-transparent text-gs-text text-sm outline-none placeholder:text-gs-dim"
-                autoFocus
-              />
-              <kbd className="text-[10px] text-gs-dim bg-gs-surface px-1.5 py-0.5 rounded border border-gs-border">ESC</kbd>
-            </div>
-            <div className="max-h-[400px] overflow-y-auto p-2">
-              {/* Recent searches when empty */}
-              {!commandQuery && recentSearches.length > 0 && (
-                <div className="mb-2">
-                  <div className="text-[10px] uppercase tracking-wider text-gs-dim px-2 py-1">Recent Searches</div>
-                  {recentSearches.slice(0, 5).map((s, i) => (
-                    <button key={i} onClick={() => setCommandQuery(s)} className="w-full text-left px-3 py-1.5 text-sm text-gs-muted hover:bg-gs-surface rounded transition-colors">
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {/* Actions */}
-              {commandPaletteResults.actions.length > 0 && (
-                <div className="mb-2">
-                  <div className="text-[10px] uppercase tracking-wider text-gs-dim px-2 py-1">Actions</div>
-                  {commandPaletteResults.actions.map((a, i) => (
-                    <button key={i} onClick={a.action} className="w-full text-left px-3 py-2 text-sm text-gs-text hover:bg-gs-surface rounded flex items-center gap-2 transition-colors">
-                      <span className="w-5 h-5 rounded bg-gs-accent/20 text-gs-accent flex items-center justify-center text-[10px] font-bold">{a.icon}</span>
-                      {a.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {/* Records */}
-              {commandPaletteResults.records.length > 0 && (
-                <div className="mb-2">
-                  <div className="text-[10px] uppercase tracking-wider text-gs-dim px-2 py-1">Records</div>
-                  {commandPaletteResults.records.map(r => (
-                    <button key={r.id} onClick={() => { setShowCommandPalette(false); setCommandQuery(''); setDetailRecord(r); }} className="w-full text-left px-3 py-2 text-sm text-gs-text hover:bg-gs-surface rounded flex items-center gap-2 transition-colors">
-                      <span className="w-5 h-5 rounded-full flex-shrink-0" style={{ background: r.accent || '#666' }} />
-                      <span className="truncate">{r.album}</span>
-                      <span className="text-gs-dim text-xs ml-auto truncate">{r.artist}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {/* Users */}
-              {commandPaletteResults.users.length > 0 && (
-                <div className="mb-2">
-                  <div className="text-[10px] uppercase tracking-wider text-gs-dim px-2 py-1">Users</div>
-                  {commandPaletteResults.users.map(u => (
-                    <button key={u} onClick={() => { setShowCommandPalette(false); setCommandQuery(''); setViewingUser(u); }} className="w-full text-left px-3 py-2 text-sm text-gs-text hover:bg-gs-surface rounded transition-colors">
-                      @{u}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {/* Posts */}
-              {commandPaletteResults.posts.length > 0 && (
-                <div className="mb-2">
-                  <div className="text-[10px] uppercase tracking-wider text-gs-dim px-2 py-1">Posts</div>
-                  {commandPaletteResults.posts.map(p => (
-                    <button key={p.id} onClick={() => { setShowCommandPalette(false); setCommandQuery(''); setNav('Social'); }} className="w-full text-left px-3 py-2 text-sm text-gs-muted hover:bg-gs-surface rounded truncate transition-colors">
-                      {p.caption}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {/* No results */}
-              {commandQuery && commandPaletteResults.records.length === 0 && commandPaletteResults.users.length === 0 && commandPaletteResults.posts.length === 0 && commandPaletteResults.actions.length === 0 && (
-                <div className="text-center py-8 text-gs-dim text-sm">{t('noResults', userPreferences.language)}</div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Improvement: CommandPalette component (replaces inline palette) */}
+      <CommandPalette
+        open={showCommandPalette}
+        onClose={() => { setShowCommandPalette(false); setCommandQuery(''); }}
+        query={commandQuery}
+        onQueryChange={setCommandQuery}
+        results={commandPaletteResults}
+        recentSearches={recentSearches}
+        onSaveSearch={saveRecentSearch}
+        onSelectRecord={r => { setShowCommandPalette(false); setCommandQuery(''); setDetailRecord(r); }}
+        onSelectUser={u => { setShowCommandPalette(false); setCommandQuery(''); setViewingUser(u); }}
+        onSelectPost={() => { setShowCommandPalette(false); setCommandQuery(''); setNav('Social'); }}
+        onSelectAction={action => action()}
+        inputRef={commandInputRef}
+        placeholder={t('commandPalette', userPreferences.language)}
+        noResultsText={t('noResults', userPreferences.language)}
+      />
 
       {/* Improvement #29: Discogs import modal */}
       {showDiscogsImport && (
@@ -1434,6 +1425,13 @@ export default function App() {
         globalSearch={globalSearch} setGlobalSearch={setGlobalSearch}
         unreadCount={unreadCount}
         cartCount={cartCount}
+        messageBadgeCount={unreadCount}
+        extraNavItems={[
+          { id: "Analytics", label: "Analytics", icon: "chart", shortcut: "7" },
+          { id: "Messages", label: "Messages", icon: "envelope", shortcut: "8", badge: unreadCount },
+          { id: "Wishlist", label: "Wishlist", icon: "heart", shortcut: "9" },
+        ]}
+        onCommandPalette={() => { setShowCommandPalette(true); setCommandQuery(''); }}
       />
 
       <main id="main-content" className={`gs-main ml-[196px] px-10 py-[26px] max-w-[1400px] ${isFullScreen ? 'ml-0' : ''}`} role="main">
@@ -1623,7 +1621,8 @@ export default function App() {
                 onViewUser={onViewUser} onDetail={onDetail} onViewArtist={onViewArtist}
               />
             )}
-            {nav === "Marketplace" && <ExploreScreen records={records} onAddToCart={onAddToCart} onViewArtist={onViewArtist} {...cardHandlers} />}
+            {/* Fix: pass currentUser so ExploreScreen "OWNED" badges work for the actual user */}
+            {nav === "Marketplace" && <ExploreScreen records={records} currentUser={currentUser} onAddToCart={onAddToCart} onViewArtist={onViewArtist} {...cardHandlers} />}
             {nav === "Following" && (
               <FollowingScreen
                 following={following} records={records} currentUser={currentUser}
@@ -1686,6 +1685,40 @@ export default function App() {
                 onImportDiscogs={() => setShowDiscogsImport(true)}
               />
             )}
+            {nav === "Analytics" && (
+              <AnalyticsScreen
+                records={records}
+                purchases={purchases}
+                currentUser={currentUser}
+                activityLog={activityLog}
+                listeningHistory={listeningHistory}
+              />
+            )}
+            {nav === "Messages" && (
+              <MessagesScreen
+                messages={dmMessages}
+                setMessages={setDmMessages}
+                currentUser={currentUser}
+                users={Object.keys(USER_PROFILES)}
+                following={following}
+                onViewUser={onViewUser}
+                onViewImage={onViewImage}
+              />
+            )}
+            {nav === "Wishlist" && (
+              <WishlistScreen
+                records={records}
+                currentUser={currentUser}
+                wishlist={wishlist}
+                wishlistAlerts={wishlistAlerts}
+                onAddWishlistItem={onAddWishlistItem}
+                onRemoveWishlistItem={onRemoveWishlistItem}
+                onToggleWishlistAlert={onToggleWishlistAlert}
+                onDetail={onDetail}
+                onViewUser={onViewUser}
+                onViewImage={onViewImage}
+              />
+            )}
           </>
         )}
         </div>
@@ -1708,6 +1741,7 @@ export default function App() {
         record={buyRecord} onPurchase={onPurchase} onAddToCart={onAddToCart}
         profile={profile}
       />
+      {/* Fix: pass onViewRecord so "Similar Records" buttons in DetailModal are connected */}
       <DetailModal
         open={!!detailRecord} onClose={() => setDetailRecord(null)}
         record={detailRecord} onLike={onLike} onSave={onSave} onViewUser={onViewUser} onViewArtist={onViewArtist}
@@ -1716,6 +1750,8 @@ export default function App() {
         onAddWishlistItem={onAddWishlistItem}
         currentUser={currentUser} records={records} onOfferFromDetail={onOfferFromDetail}
         onVerifyRecord={onVerifyRecord}
+        onViewRecord={r => setDetailRecord(r)}
+        onViewImage={onViewImage}
       />
       <ProfileEditModal
         open={showEditProfile} onClose={() => setShowEditProfile(false)}
@@ -1796,6 +1832,14 @@ export default function App() {
           </button>
         </div>
       )}
+
+      {/* ImageLightbox — full-screen image viewer */}
+      <ImageLightbox
+        open={!!lightboxImage}
+        src={lightboxImage?.src}
+        alt={lightboxImage?.alt}
+        onClose={() => setLightboxImage(null)}
+      />
 
       {/* Improvement #16: Global error handling — unhandled promise rejection notice */}
       {/* Handled via ErrorBoundary wrapper + inline try/catch in actions */}

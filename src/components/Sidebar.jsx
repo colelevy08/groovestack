@@ -4,17 +4,31 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import Avatar from './ui/Avatar';
 
+const APP_VERSION = '1.4.0';
+
+/* ── Nav item definitions with section grouping ──────────── */
 const NAV_ITEMS = [
-  { id: "Social",      label: "Feed",     path: "M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z", shortcut: "1" },
-  { id: "Marketplace", label: "Shop",     path: "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z", shortcut: "2" },
-  { id: "Collection",  label: "Crate",    path: "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10", shortcut: "3" },
-  { id: "Activity",    label: "Activity", path: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01", shortcut: "4" },
-  { id: "Vinyl Buddy", label: "Buddy",    path: "M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z", shortcut: "5" },
-  { id: "Profile",     label: "Me",       path: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z", shortcut: "6" },
-  { id: "Settings",    label: "Settings", path: "M12 15a3 3 0 100-6 3 3 0 000 6z M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z", shortcut: "\u2318," },
+  // Browse section
+  { id: "Marketplace", label: "Shop",      section: "Browse", path: "M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z", shortcut: "1" },
+  { id: "Social",      label: "Feed",      section: "Browse", path: "M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z", shortcut: "2" },
+  { id: "Vinyl Buddy", label: "Buddy",     section: "Browse", path: "M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z", shortcut: "3" },
+  // My Stuff section
+  { id: "Collection",  label: "Crate",     section: "My Stuff", path: "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10", shortcut: "4" },
+  { id: "wishlist",    label: "Wishlist",   section: "My Stuff", path: "M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z", shortcut: "9" },
+  { id: "messages",    label: "Messages",   section: "My Stuff", path: "M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z", shortcut: "8" },
+  { id: "analytics",   label: "Analytics",  section: "My Stuff", path: "M18 20V10M12 20V4M6 20v-6", shortcut: "7" },
+  { id: "Activity",    label: "Activity",   section: "My Stuff", path: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01", shortcut: "5" },
+  // Account section
+  { id: "Profile",     label: "Me",        section: "Account", path: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z", shortcut: "6" },
+  { id: "Settings",    label: "Settings",  section: "Account", path: "M12 15a3 3 0 100-6 3 3 0 000 6z M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z", shortcut: "\u2318," },
 ];
 
-const MOBILE_TABS = NAV_ITEMS.filter(n => ["Social", "Marketplace", "Collection", "Vinyl Buddy", "Profile"].includes(n.id));
+const SECTIONS = ["Browse", "My Stuff", "Account"];
+
+const MOBILE_TABS = NAV_ITEMS.filter(n => ["Social", "Marketplace", "Collection", "messages", "Profile"].includes(n.id));
+
+const SIDEBAR_ORDER_KEY = 'gs-sidebar-nav-order';
+const SIDEBAR_WIDTH_KEY = 'gs-sidebar-width';
 
 /* ── Status options ────────────────────────────────────────── */
 const STATUS_OPTIONS = [
@@ -28,13 +42,40 @@ const STATUS_OPTIONS = [
 function getProfileCompletion(profile) {
   if (!profile) return 0;
   let filled = 0;
-  let total = 5;
+  const total = 5;
   if (profile.displayName) filled++;
   if (profile.avatarUrl) filled++;
   if (profile.bio) filled++;
   if (profile.location) filled++;
   if (profile.favoriteGenre) filled++;
   return Math.round((filled / total) * 100);
+}
+
+/* ── Load saved nav order from localStorage ───────────────── */
+function loadNavOrder() {
+  try {
+    const saved = localStorage.getItem(SIDEBAR_ORDER_KEY);
+    if (saved) {
+      const order = JSON.parse(saved);
+      if (Array.isArray(order) && order.length === NAV_ITEMS.length) {
+        const reordered = order.map(id => NAV_ITEMS.find(n => n.id === id)).filter(Boolean);
+        if (reordered.length === NAV_ITEMS.length) return reordered;
+      }
+    }
+  } catch { /* ignore */ }
+  return NAV_ITEMS;
+}
+
+/* ── Load saved sidebar width from localStorage ───────────── */
+function loadSavedWidth() {
+  try {
+    const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (saved) {
+      const w = parseInt(saved, 10);
+      if (w >= 140 && w <= 320) return w;
+    }
+  } catch { /* ignore */ }
+  return null;
 }
 
 export default function Sidebar({
@@ -59,6 +100,12 @@ export default function Sidebar({
   userStatus = 'online',
   onStatusChange,
   onCommandPalette,
+  /* Props for 15 new improvements */
+  messagesUnreadCount = 0,
+  wishlistCount = 0,
+  hasNewAnalyticsData = false,
+  recordsCount = 0,
+  followersCount = 0,
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [hoveredNav, setHoveredNav] = useState(null);
@@ -70,10 +117,34 @@ export default function Sidebar({
   /* Improvement: Recently viewed records expanded */
   const [recentExpanded, setRecentExpanded] = useState(false);
 
-  /* Improvement: Sidebar resize handle */
-  const [customWidth, setCustomWidth] = useState(null);
+  /* Improvement 15: Sidebar width persistence to localStorage */
+  const [customWidth, setCustomWidth] = useState(() => loadSavedWidth());
   const resizeRef = useRef(null);
   const isDragging = useRef(false);
+
+  /* Improvement 6: Nav item reordering (drag to customize sidebar order) */
+  const [navItems, setNavItems] = useState(() => loadNavOrder());
+  const [dragIdx, setDragIdx] = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+
+  /* Improvement 14: Smooth scroll to active nav item on mobile */
+  const mobileBarRef = useRef(null);
+  const activeTabRef = useRef(null);
+
+  useEffect(() => {
+    if (activeTabRef.current && mobileBarRef.current) {
+      activeTabRef.current.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }, [nav]);
+
+  /* Persist sidebar width changes */
+  useEffect(() => {
+    if (customWidth !== null) {
+      try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(customWidth)); } catch { /* ignore */ }
+    } else {
+      try { localStorage.removeItem(SIDEBAR_WIDTH_KEY); } catch { /* ignore */ }
+    }
+  }, [customWidth]);
 
   /* Close status dropdown on outside click */
   useEffect(() => {
@@ -108,6 +179,38 @@ export default function Sidebar({
     document.addEventListener('mouseup', onUp);
   }, []);
 
+  /* Improvement 6: Drag reorder handlers */
+  const handleDragStart = useCallback((idx) => {
+    setDragIdx(idx);
+  }, []);
+
+  const handleDragOver = useCallback((e, idx) => {
+    e.preventDefault();
+    setDragOverIdx(idx);
+  }, []);
+
+  const handleDrop = useCallback((idx) => {
+    if (dragIdx === null || dragIdx === idx) {
+      setDragIdx(null);
+      setDragOverIdx(null);
+      return;
+    }
+    setNavItems(prev => {
+      const updated = [...prev];
+      const [moved] = updated.splice(dragIdx, 1);
+      updated.splice(idx, 0, moved);
+      try { localStorage.setItem(SIDEBAR_ORDER_KEY, JSON.stringify(updated.map(n => n.id))); } catch { /* ignore */ }
+      return updated;
+    });
+    setDragIdx(null);
+    setDragOverIdx(null);
+  }, [dragIdx]);
+
+  const handleDragEnd = useCallback(() => {
+    setDragIdx(null);
+    setDragOverIdx(null);
+  }, []);
+
   const sidebarW = collapsed ? 'w-[56px]' : (customWidth ? '' : 'w-[196px]');
   const sidebarStyle = (!collapsed && customWidth) ? { width: `${customWidth}px` } : {};
 
@@ -121,13 +224,113 @@ export default function Sidebar({
   /* Improvement: Profile completion */
   const profileCompletion = getProfileCompletion(profile);
 
+  /* Improvement 13: Theme-aware sidebar background */
+  const sidebarBg = darkMode ? 'bg-gs-sidebar' : 'bg-white';
+  const sidebarBorder = darkMode ? 'border-gs-border-subtle' : 'border-gray-200';
+  const sidebarText = darkMode ? 'text-gs-dim' : 'text-gray-600';
+  const sidebarHoverBg = darkMode ? 'hover:bg-[#111]' : 'hover:bg-gray-100';
+  const sidebarHoverText = darkMode ? 'hover:text-gs-muted' : 'hover:text-gray-900';
+  const sectionLabelColor = darkMode ? 'text-gs-faint' : 'text-gray-400';
+  const sidebarSurfaceBg = darkMode ? 'bg-gs-surface' : 'bg-gray-50';
+
+  /* Group nav items by section for rendering */
+  const groupedNav = SECTIONS.map(section => ({
+    section,
+    items: navItems.filter(item => item.section === section),
+  }));
+
+  /* Helper to get badge for a nav item */
+  const renderBadge = (id) => {
+    if (id === "Marketplace" && cartCount > 0) {
+      return (
+        <span className="ml-auto bg-amber-500/15 text-amber-400 border border-amber-500/25 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+          {cartCount}
+        </span>
+      );
+    }
+    if (id === "Social" && unreadCount > 0) {
+      return (
+        <span className="ml-auto min-w-[18px] h-[18px] rounded-full bg-red-500 text-[9px] font-extrabold text-white flex items-center justify-center px-1 animate-pulse">
+          {unreadCount > 99 ? '99+' : unreadCount}
+        </span>
+      );
+    }
+    if (id === "messages" && messagesUnreadCount > 0) {
+      return (
+        <span className="ml-auto min-w-[18px] h-[18px] rounded-full bg-red-500 text-[9px] font-extrabold text-white flex items-center justify-center px-1 animate-pulse">
+          {messagesUnreadCount > 99 ? '99+' : messagesUnreadCount}
+        </span>
+      );
+    }
+    if (id === "wishlist" && wishlistCount > 0) {
+      return (
+        <span className="ml-auto bg-pink-500/15 text-pink-400 border border-pink-500/25 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+          {wishlistCount}
+        </span>
+      );
+    }
+    if (id === "analytics" && hasNewAnalyticsData) {
+      return (
+        <span className="ml-auto w-2 h-2 rounded-full bg-gs-accent shrink-0 animate-pulse" />
+      );
+    }
+    return null;
+  };
+
+  /* Helper: collapsed-mode badge dots */
+  const renderCollapsedBadge = (id) => {
+    if (id === "messages" && messagesUnreadCount > 0) {
+      return (
+        <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] rounded-full bg-red-500 text-[8px] font-extrabold text-white flex items-center justify-center px-0.5">
+          {messagesUnreadCount > 99 ? '99+' : messagesUnreadCount}
+        </span>
+      );
+    }
+    if (id === "wishlist" && wishlistCount > 0) {
+      return (
+        <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] rounded-full bg-pink-500 text-[8px] font-extrabold text-white flex items-center justify-center px-0.5">
+          {wishlistCount}
+        </span>
+      );
+    }
+    if (id === "analytics" && hasNewAnalyticsData) {
+      return (
+        <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-gs-accent animate-pulse" />
+      );
+    }
+    if (id === "Social" && unreadCount > 0) {
+      return (
+        <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] rounded-full bg-red-500 text-[8px] font-extrabold text-white flex items-center justify-center px-0.5">
+          {unreadCount > 99 ? '99+' : unreadCount}
+        </span>
+      );
+    }
+    if (id === "Marketplace" && cartCount > 0) {
+      return (
+        <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] rounded-full bg-amber-500 text-[8px] font-extrabold text-white flex items-center justify-center px-0.5">
+          {cartCount}
+        </span>
+      );
+    }
+    return null;
+  };
+
+  /* Get tooltip label for collapsed nav items (Improvement 9) */
+  const getTooltipLabel = (item) => {
+    let label = item.id;
+    if (item.id === "messages") label = "Messages";
+    if (item.id === "wishlist") label = "Wishlist";
+    if (item.id === "analytics") label = "Analytics";
+    return label;
+  };
+
   return (
     <>
       {/* ── Desktop sidebar ──────────────────────────────────── */}
-      {/* Improvement: Smooth collapse animation with transition */}
+      {/* Improvement 13: Theme-aware styling with smooth collapse animation */}
       <nav
         aria-label="Main navigation"
-        className={`gs-sidebar-desktop fixed left-0 top-0 bottom-0 ${sidebarW} bg-gs-sidebar border-r border-gs-border-subtle flex flex-col py-5 z-[100] transition-[width] duration-300 ease-in-out`}
+        className={`gs-sidebar-desktop fixed left-0 top-0 bottom-0 ${sidebarW} ${sidebarBg} border-r ${sidebarBorder} flex flex-col py-5 z-[100] transition-[width,background-color,border-color] duration-300 ease-in-out`}
         style={sidebarStyle}
       >
         {/* Logo + notifications + collapse toggle */}
@@ -143,7 +346,7 @@ export default function Sidebar({
             )}
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            {/* Improvement: Notification bell visible in collapsed mode too */}
+            {/* Notification bell visible in collapsed mode too */}
             <button onClick={onNotifClick} aria-label="Notifications" data-tooltip="Notifications" className="gs-tooltip relative bg-transparent border-none cursor-pointer text-gs-dim p-1 hover:text-gs-muted transition-colors">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -183,13 +386,13 @@ export default function Sidebar({
                 value={globalSearch}
                 onChange={e => setGlobalSearch(e.target.value)}
                 placeholder="Search..."
-                className="w-full bg-gs-card border border-[#222] rounded-lg py-1.5 pl-8 pr-8 text-neutral-100 text-[12px] outline-none font-sans placeholder:text-gs-faint focus:border-gs-accent/40 focus:ring-1 focus:ring-gs-accent/20 transition-all"
+                className={`w-full ${darkMode ? 'bg-gs-card border-[#222] text-neutral-100 focus:border-gs-accent/40 focus:ring-gs-accent/20' : 'bg-gray-50 border-gray-200 text-gray-900 focus:border-indigo-400 focus:ring-indigo-200'} border rounded-lg py-1.5 pl-8 pr-8 text-[12px] outline-none font-sans placeholder:text-gs-faint focus:ring-1 transition-all`}
               />
-              {/* Improvement: More prominent Cmd+K trigger */}
+              {/* Cmd+K trigger */}
               {onCommandPalette ? (
                 <button
                   onClick={onCommandPalette}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 bg-[#1a1a1a] border border-gs-border rounded px-1 py-0.5 text-gs-faint text-[10px] font-mono cursor-pointer hover:text-gs-muted hover:border-gs-border-hover transition-colors"
+                  className={`absolute right-1.5 top-1/2 -translate-y-1/2 ${darkMode ? 'bg-[#1a1a1a] border-gs-border' : 'bg-white border-gray-200'} border rounded px-1 py-0.5 text-gs-faint text-[10px] font-mono cursor-pointer hover:text-gs-muted hover:border-gs-border-hover transition-colors`}
                   title="Open command palette"
                   type="button"
                 >
@@ -204,82 +407,119 @@ export default function Sidebar({
           </div>
         )}
 
-        {/* Nav links */}
-        {/* Improvement: Active tab indicator with sliding animation */}
-        <nav className={`flex-1 ${collapsed ? 'px-1' : 'px-2'} space-y-0.5 overflow-y-auto transition-[padding] duration-300 relative`}>
-          {NAV_ITEMS.map(({ id, path, shortcut }) => {
-            const active = nav === id;
-            const guestAllowed = id === "Marketplace";
-            const dimmed = isGuest && !guestAllowed;
-            const isHovered = hoveredNav === id;
+        {/* Improvement 12: User stats summary */}
+        {!collapsed && !isGuest && (recordsCount > 0 || followersCount > 0) && (
+          <div className={`mx-3 mb-3 px-3 py-2 rounded-lg ${darkMode ? 'bg-[#111] border border-gs-border-subtle' : 'bg-gray-50 border border-gray-200'} flex items-center gap-4`}>
+            <div className="text-center flex-1">
+              <div className={`text-sm font-bold ${darkMode ? 'text-neutral-200' : 'text-gray-900'}`}>{recordsCount}</div>
+              <div className={`text-[9px] font-medium uppercase tracking-wider ${sectionLabelColor}`}>Records</div>
+            </div>
+            <div className={`w-px h-6 ${darkMode ? 'bg-gs-border-subtle' : 'bg-gray-200'}`} />
+            <div className="text-center flex-1">
+              <div className={`text-sm font-bold ${darkMode ? 'text-neutral-200' : 'text-gray-900'}`}>{followersCount}</div>
+              <div className={`text-[9px] font-medium uppercase tracking-wider ${sectionLabelColor}`}>Followers</div>
+            </div>
+          </div>
+        )}
+
+        {/* Improvement 11: Quick Add button */}
+        {!collapsed && !isGuest && onAddRecord && (
+          <div className="px-3 pb-3">
+            <button
+              onClick={onAddRecord}
+              className="gs-btn-gradient w-full py-2 text-xs flex items-center justify-center gap-1.5"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              Quick Add
+            </button>
+          </div>
+        )}
+
+        {/* Nav links — grouped by section with dividers (Improvements 4, 5) */}
+        <nav className={`flex-1 ${collapsed ? 'px-1' : 'px-2'} overflow-y-auto transition-[padding] duration-300 relative`}>
+          {groupedNav.map(({ section, items }, sectionIdx) => {
+            if (items.length === 0) return null;
             return (
-              <button
-                key={id}
-                onClick={() => setNav(id)}
-                onMouseEnter={() => setHoveredNav(id)}
-                onMouseLeave={() => setHoveredNav(null)}
-                aria-current={active ? "page" : undefined}
-                className={`gs-nav-item group relative ${active ? 'gs-nav-item-active' : ''} ${dimmed ? 'opacity-40 text-gs-subtle' : 'text-gs-dim hover:text-gs-muted hover:bg-[#111] hover:translate-x-0.5'} ${collapsed ? 'justify-center px-0' : ''} transition-all duration-200 ease-out`}
-              >
-                {/* Improvement: Sliding active indicator bar */}
-                {active && (
-                  <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full bg-gs-accent transition-all duration-300 ease-out" />
-                )}
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 transition-transform duration-150 group-hover:scale-110">
-                  <path d={path} />
-                </svg>
+              <div key={section}>
+                {/* Improvement 5: Section divider with label */}
                 {!collapsed && (
-                  <>
-                    <span className="gs-sidebar-label">{id}</span>
-                    {/* Cart badge on Marketplace */}
-                    {id === "Marketplace" && cartCount > 0 && (
-                      <span className="ml-auto bg-amber-500/15 text-amber-400 border border-amber-500/25 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-                        {cartCount}
-                      </span>
-                    )}
-                    {/* Unread badge on Social */}
-                    {id === "Social" && unreadCount > 0 && (
-                      <span className="ml-auto min-w-[18px] h-[18px] rounded-full bg-red-500 text-[9px] font-extrabold text-white flex items-center justify-center px-1 animate-pulse">
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                      </span>
-                    )}
-                    {dimmed && (
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="ml-auto opacity-40">
-                        <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0110 0v4" />
-                      </svg>
-                    )}
-                    {/* Keyboard shortcut badge — visible on hover */}
-                    {shortcut && !dimmed && id !== "Marketplace" && id !== "Social" && cartCount === 0 && (
-                      <span className={`gs-kbd ml-auto transition-opacity duration-150 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>{shortcut}</span>
-                    )}
-                  </>
+                  <div className={`flex items-center gap-2 px-2.5 ${sectionIdx === 0 ? 'pt-0 pb-1.5' : 'pt-3 pb-1.5'}`}>
+                    <span className={`text-[9px] font-semibold uppercase tracking-widest ${sectionLabelColor} whitespace-nowrap`}>{section}</span>
+                    <div className={`flex-1 h-px ${darkMode ? 'bg-gs-border-subtle' : 'bg-gray-200'}`} />
+                  </div>
                 )}
-              </button>
+                {collapsed && sectionIdx > 0 && (
+                  <div className={`mx-2 my-2 h-px ${darkMode ? 'bg-gs-border-subtle' : 'bg-gray-200'}`} />
+                )}
+                <div className="space-y-0.5">
+                  {items.map((item) => {
+                    const { id, path, shortcut } = item;
+                    const globalIdx = navItems.indexOf(item);
+                    const active = nav === id;
+                    const guestAllowed = id === "Marketplace";
+                    const dimmed = isGuest && !guestAllowed;
+                    const isHovered = hoveredNav === id;
+                    const badge = renderBadge(id);
+                    const hasBadge = badge !== null;
+                    return (
+                      <button
+                        key={id}
+                        draggable={!collapsed}
+                        onDragStart={() => handleDragStart(globalIdx)}
+                        onDragOver={(e) => handleDragOver(e, globalIdx)}
+                        onDrop={() => handleDrop(globalIdx)}
+                        onDragEnd={handleDragEnd}
+                        onClick={() => setNav(id)}
+                        onMouseEnter={() => setHoveredNav(id)}
+                        onMouseLeave={() => setHoveredNav(null)}
+                        aria-current={active ? "page" : undefined}
+                        title={collapsed ? getTooltipLabel(item) : undefined}
+                        data-tooltip={collapsed ? getTooltipLabel(item) : undefined}
+                        className={`gs-nav-item group relative ${active ? 'gs-nav-item-active' : ''} ${dimmed ? `opacity-40 text-gs-subtle` : `${sidebarText} ${sidebarHoverText} ${sidebarHoverBg} hover:translate-x-0.5`} ${collapsed ? 'justify-center px-0 gs-tooltip' : ''} ${dragOverIdx === globalIdx ? 'ring-1 ring-gs-accent/40' : ''} transition-all duration-200 ease-out`}
+                      >
+                        {/* Sliding active indicator bar */}
+                        {active && (
+                          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full bg-gs-accent transition-all duration-300 ease-out" />
+                        )}
+                        <div className="relative shrink-0">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 transition-transform duration-150 group-hover:scale-110">
+                            <path d={path} />
+                          </svg>
+                          {/* Collapsed-mode badges */}
+                          {collapsed && renderCollapsedBadge(id)}
+                        </div>
+                        {!collapsed && (
+                          <>
+                            <span className="gs-sidebar-label">{item.label}</span>
+                            {/* Badges */}
+                            {badge}
+                            {dimmed && (
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="ml-auto opacity-40">
+                                <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0110 0v4" />
+                              </svg>
+                            )}
+                            {/* Improvement 8: Keyboard shortcut badge — visible on hover */}
+                            {shortcut && !dimmed && !hasBadge && (
+                              <span className={`gs-kbd ml-auto transition-opacity duration-150 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>{shortcut}</span>
+                            )}
+                          </>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
 
-          {/* "What's New" link */}
-          {!collapsed && (
-            <button
-              onClick={() => alert('What\'s New — coming soon!')}
-              className="gs-nav-item text-gs-dim hover:text-gs-muted hover:bg-[#111] hover:translate-x-0.5 transition-all duration-150 group"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 transition-transform duration-150 group-hover:scale-110">
-                <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
-              </svg>
-              <span className="gs-sidebar-label">What&apos;s New</span>
-              {hasNewUpdates && (
-                <span className="w-2 h-2 rounded-full bg-gs-accent ml-auto shrink-0 animate-pulse" />
-              )}
-            </button>
-          )}
-
-          {/* Improvement: Recently viewed records */}
+          {/* Recently viewed records */}
           {!collapsed && recentRecords.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-gs-border-subtle">
+            <div className={`mt-3 pt-3 border-t ${sidebarBorder}`}>
               <button
                 onClick={() => setRecentExpanded(prev => !prev)}
-                className="w-full flex items-center justify-between px-2.5 py-1 bg-transparent border-none cursor-pointer text-gs-faint text-[10px] font-semibold uppercase tracking-wider hover:text-gs-dim transition-colors"
+                className={`w-full flex items-center justify-between px-2.5 py-1 bg-transparent border-none cursor-pointer ${sectionLabelColor} text-[10px] font-semibold uppercase tracking-wider hover:text-gs-dim transition-colors`}
               >
                 <span>Recently Viewed</span>
                 <svg
@@ -295,9 +535,9 @@ export default function Sidebar({
                     <button
                       key={record.id || idx}
                       onClick={() => setNav("Collection")}
-                      className="w-full flex items-center gap-2 px-2.5 py-1.5 bg-transparent border-none cursor-pointer text-gs-dim text-[11px] rounded-md hover:bg-[#111] hover:text-gs-muted transition-colors text-left"
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 bg-transparent border-none cursor-pointer ${sidebarText} text-[11px] rounded-md ${sidebarHoverBg} ${sidebarHoverText} transition-colors text-left`}
                     >
-                      <div className="w-6 h-6 rounded bg-[#1a1a1a] border border-gs-border-subtle flex items-center justify-center shrink-0 overflow-hidden">
+                      <div className={`w-6 h-6 rounded ${darkMode ? 'bg-[#1a1a1a] border-gs-border-subtle' : 'bg-gray-100 border-gray-200'} border flex items-center justify-center shrink-0 overflow-hidden`}>
                         {record.coverUrl ? (
                           <img src={record.coverUrl} alt="" className="w-full h-full object-cover" />
                         ) : (
@@ -308,7 +548,7 @@ export default function Sidebar({
                       </div>
                       <div className="min-w-0">
                         <div className="truncate font-medium">{record.title || 'Unknown'}</div>
-                        <div className="text-[9px] text-gs-faint truncate">{record.artist || ''}</div>
+                        <div className={`text-[9px] ${sectionLabelColor} truncate`}>{record.artist || ''}</div>
                       </div>
                     </button>
                   ))}
@@ -321,33 +561,10 @@ export default function Sidebar({
         {/* Bottom actions — hidden for guests */}
         {!isGuest && (
           <div className={`${collapsed ? 'px-1' : 'px-2'} pb-2 space-y-1.5 transition-[padding] duration-300`}>
-            {!collapsed ? (
+            {collapsed && (
               <>
-                <button onClick={onAddRecord} className="gs-btn-gradient w-full py-2.5 text-xs">
-                  + Add Record
-                </button>
-                <button onClick={onMessages} className="gs-btn-secondary w-full py-2 text-xs flex items-center justify-center gap-1.5 relative">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-                  Messages
-                  {unreadCount > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] rounded-full bg-red-500 text-[9px] font-extrabold text-white flex items-center justify-center px-1 animate-pulse">
-                      {unreadCount > 99 ? '99+' : unreadCount}
-                    </span>
-                  )}
-                </button>
-              </>
-            ) : (
-              <>
-                <button onClick={onAddRecord} className="gs-btn-gradient gs-tooltip w-full py-2 flex items-center justify-center" title="Add Record" data-tooltip="Add Record" aria-label="Add Record">
+                <button onClick={onAddRecord} className="gs-btn-gradient gs-tooltip w-full py-2 flex items-center justify-center" title="Quick Add" data-tooltip="Quick Add" aria-label="Quick Add Record">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                </button>
-                <button onClick={onMessages} className="gs-btn-secondary gs-tooltip w-full py-2 flex items-center justify-center relative" title="Messages" data-tooltip="Messages" aria-label="Messages">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-                  {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] rounded-full bg-red-500 text-[8px] font-extrabold text-white flex items-center justify-center px-0.5">
-                      {unreadCount > 99 ? '99+' : unreadCount}
-                    </span>
-                  )}
                 </button>
               </>
             )}
@@ -356,7 +573,7 @@ export default function Sidebar({
             {!collapsed && onToggleNotifSound && (
               <button
                 onClick={onToggleNotifSound}
-                className="w-full py-1.5 px-2.5 bg-transparent border-none text-gs-faint text-[10px] font-medium cursor-pointer font-mono text-left flex items-center gap-1.5 hover:text-gs-dim transition-colors"
+                className={`w-full py-1.5 px-2.5 bg-transparent border-none ${sectionLabelColor} text-[10px] font-medium cursor-pointer font-mono text-left flex items-center gap-1.5 hover:text-gs-dim transition-colors`}
                 title={notifSoundEnabled ? "Mute notification sounds" : "Unmute notification sounds"}
               >
                 {notifSoundEnabled ? (
@@ -372,14 +589,14 @@ export default function Sidebar({
               </button>
             )}
 
-            {/* Improvement: Storage usage indicator */}
+            {/* Storage usage indicator */}
             {!collapsed && storageUsedMB > 0 && (
               <div className="px-2.5 py-1.5">
-                <div className="flex items-center justify-between text-[9px] text-gs-faint mb-1">
+                <div className={`flex items-center justify-between text-[9px] ${sectionLabelColor} mb-1`}>
                   <span>Storage</span>
                   <span>{storageUsedMB}MB / {storageLimitMB}MB</span>
                 </div>
-                <div className="h-1 bg-[#1a1a1a] rounded-full overflow-hidden">
+                <div className={`h-1 ${darkMode ? 'bg-[#1a1a1a]' : 'bg-gray-200'} rounded-full overflow-hidden`}>
                   <div
                     className={`h-full rounded-full transition-all duration-500 ${storageBarColor}`}
                     style={{ width: `${storagePercent}%` }}
@@ -388,11 +605,11 @@ export default function Sidebar({
               </div>
             )}
 
-            {/* Improvement: Theme toggle */}
+            {/* Theme toggle */}
             {!collapsed && onToggleTheme && (
               <button
                 onClick={onToggleTheme}
-                className="w-full py-1.5 px-2.5 bg-transparent border-none text-gs-faint text-[10px] font-medium cursor-pointer font-mono text-left flex items-center gap-1.5 hover:text-gs-dim transition-colors"
+                className={`w-full py-1.5 px-2.5 bg-transparent border-none ${sectionLabelColor} text-[10px] font-medium cursor-pointer font-mono text-left flex items-center gap-1.5 hover:text-gs-dim transition-colors`}
                 title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
               >
                 {darkMode ? (
@@ -410,8 +627,45 @@ export default function Sidebar({
           </div>
         )}
 
+        {/* Improvement 7: Sidebar footer with app version and What's New */}
+        <div className={`${collapsed ? 'px-1' : 'px-3'} py-2 border-t ${sidebarBorder} transition-[padding] duration-300`}>
+          {!collapsed ? (
+            <div className="flex items-center justify-between">
+              <span className={`text-[9px] font-mono ${sectionLabelColor}`}>v{APP_VERSION}</span>
+              <button
+                onClick={() => alert('Changelog — coming soon!')}
+                className={`text-[10px] font-medium ${sectionLabelColor} hover:text-gs-accent bg-transparent border-none cursor-pointer transition-colors flex items-center gap-1`}
+                type="button"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+                </svg>
+                What&apos;s New
+                {hasNewUpdates && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-gs-accent shrink-0 animate-pulse" />
+                )}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => alert('Changelog — coming soon!')}
+              className="gs-tooltip w-full flex items-center justify-center bg-transparent border-none cursor-pointer text-gs-faint hover:text-gs-accent p-1 transition-colors"
+              title={`v${APP_VERSION} — What's New`}
+              data-tooltip={`v${APP_VERSION}`}
+              type="button"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+              </svg>
+              {hasNewUpdates && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-gs-accent animate-pulse" />
+              )}
+            </button>
+          )}
+        </div>
+
         {/* User / guest section */}
-        <div className={`${collapsed ? 'px-1' : 'px-2'} pt-3 mx-2 border-t border-gs-border-subtle transition-[padding] duration-300`}>
+        <div className={`${collapsed ? 'px-1' : 'px-2'} pt-3 mx-2 border-t ${sidebarBorder} transition-[padding] duration-300`}>
           {isGuest ? (
             <div className="space-y-1.5">
               {!collapsed ? (
@@ -434,26 +688,26 @@ export default function Sidebar({
               <div className="relative" ref={statusRef}>
                 <button
                   onClick={() => setNav("Profile")}
-                  className={`flex items-center gap-2.5 py-2 w-full bg-transparent border-none cursor-pointer rounded-lg hover:bg-[#111] transition-colors ${collapsed ? 'px-0 justify-center' : 'px-2.5'}`}
+                  className={`flex items-center gap-2.5 py-2 w-full bg-transparent border-none cursor-pointer rounded-lg ${sidebarHoverBg} transition-colors ${collapsed ? 'px-0 justify-center' : 'px-2.5'}`}
                 >
-                  {/* Improvement: Online status dot on avatar */}
+                  {/* Online status dot on avatar */}
                   <div className="relative shrink-0">
                     <Avatar username={currentUser} size={collapsed ? 28 : 30} src={profile.avatarUrl} />
-                    <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-gs-sidebar ${currentStatus.color} transition-colors duration-200`} />
+                    <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 ${darkMode ? 'border-gs-sidebar' : 'border-white'} ${currentStatus.color} transition-colors duration-200`} />
                   </div>
                   {!collapsed && (
                     <div className="text-left min-w-0 flex-1">
-                      <div className="text-xs font-semibold text-neutral-200 truncate">{profile.displayName}</div>
-                      <div className="text-[10px] text-gs-faint font-mono truncate">@{currentUser}</div>
+                      <div className={`text-xs font-semibold ${darkMode ? 'text-neutral-200' : 'text-gray-900'} truncate`}>{profile.displayName}</div>
+                      <div className={`text-[10px] ${sectionLabelColor} font-mono truncate`}>@{currentUser}</div>
                       {/* User status message */}
                       {statusMessage && (
-                        <div className="text-[9px] text-gs-dim truncate mt-0.5 italic">{statusMessage}</div>
+                        <div className={`text-[9px] ${sidebarText} truncate mt-0.5 italic`}>{statusMessage}</div>
                       )}
                     </div>
                   )}
                 </button>
 
-                {/* Improvement: Status selector */}
+                {/* Status selector */}
                 {!collapsed && onStatusChange && (
                   <button
                     onClick={() => setStatusOpen(prev => !prev)}
@@ -469,12 +723,12 @@ export default function Sidebar({
 
                 {/* Status dropdown */}
                 {statusOpen && onStatusChange && (
-                  <div className="absolute bottom-full left-0 right-0 mb-1 bg-gs-surface border border-gs-border rounded-lg shadow-xl overflow-hidden z-50 animate-fade-in">
+                  <div className={`absolute bottom-full left-0 right-0 mb-1 ${sidebarSurfaceBg} border ${sidebarBorder} rounded-lg shadow-xl overflow-hidden z-50 animate-fade-in`}>
                     {STATUS_OPTIONS.map(opt => (
                       <button
                         key={opt.id}
                         onClick={() => { onStatusChange(opt.id); setStatusOpen(false); }}
-                        className={`w-full flex items-center gap-2 px-3 py-2 bg-transparent border-none cursor-pointer text-[11px] font-medium text-left hover:bg-[#111] transition-colors ${userStatus === opt.id ? 'text-gs-text' : 'text-gs-dim'}`}
+                        className={`w-full flex items-center gap-2 px-3 py-2 bg-transparent border-none cursor-pointer text-[11px] font-medium text-left ${sidebarHoverBg} transition-colors ${userStatus === opt.id ? (darkMode ? 'text-gs-text' : 'text-gray-900') : sidebarText}`}
                       >
                         <div className={`w-2 h-2 rounded-full ${opt.color}`} />
                         {opt.label}
@@ -489,7 +743,7 @@ export default function Sidebar({
                 )}
               </div>
 
-              {/* Improvement: Profile completion percentage */}
+              {/* Profile completion percentage */}
               {!collapsed && profileCompletion < 100 && (
                 <div className="px-2.5 py-1.5">
                   <button
@@ -497,11 +751,11 @@ export default function Sidebar({
                     className="w-full bg-transparent border-none cursor-pointer p-0 text-left"
                     type="button"
                   >
-                    <div className="flex items-center justify-between text-[9px] text-gs-faint mb-1">
+                    <div className={`flex items-center justify-between text-[9px] ${sectionLabelColor} mb-1`}>
                       <span>Profile</span>
                       <span className="text-gs-accent">{profileCompletion}%</span>
                     </div>
-                    <div className="h-1 bg-[#1a1a1a] rounded-full overflow-hidden">
+                    <div className={`h-1 ${darkMode ? 'bg-[#1a1a1a]' : 'bg-gray-200'} rounded-full overflow-hidden`}>
                       <div
                         className="h-full rounded-full bg-gs-accent transition-all duration-500"
                         style={{ width: `${profileCompletion}%` }}
@@ -514,7 +768,7 @@ export default function Sidebar({
               {!collapsed && onLogout && (
                 <button
                   onClick={onLogout}
-                  className="w-full py-2 px-2.5 bg-transparent border-none text-gs-faint text-[11px] font-medium cursor-pointer mt-1 font-mono text-center hover:text-red-400 transition-colors"
+                  className={`w-full py-2 px-2.5 bg-transparent border-none ${sectionLabelColor} text-[11px] font-medium cursor-pointer mt-1 font-mono text-center hover:text-red-400 transition-colors`}
                 >
                   Log out
                 </button>
@@ -523,7 +777,7 @@ export default function Sidebar({
           )}
         </div>
 
-        {/* Improvement: Sidebar resize handle */}
+        {/* Sidebar resize handle (Improvement 15: persists width to localStorage) */}
         {!collapsed && (
           <div
             ref={resizeRef}
@@ -534,8 +788,12 @@ export default function Sidebar({
         )}
       </nav>
 
-      {/* ── Mobile bottom tab bar ────────────────────────────── */}
-      <nav aria-label="Mobile navigation" className="gs-mobile-bar hidden fixed bottom-0 left-0 right-0 bg-gs-sidebar border-t border-gs-border-subtle justify-around items-center z-[100] px-1 pt-1.5 pb-[env(safe-area-inset-bottom,6px)]">
+      {/* ── Mobile bottom tab bar (Improvement 14: smooth scroll to active) ── */}
+      <nav
+        ref={mobileBarRef}
+        aria-label="Mobile navigation"
+        className="gs-mobile-bar hidden fixed bottom-0 left-0 right-0 bg-gs-sidebar border-t border-gs-border-subtle justify-around items-center z-[100] px-1 pt-1.5 pb-[env(safe-area-inset-bottom,6px)] overflow-x-auto"
+      >
         {MOBILE_TABS.map(({ id, label, path }) => {
           const active = nav === id;
           const guestLocked = isGuest && id !== "Marketplace";
@@ -543,6 +801,7 @@ export default function Sidebar({
           return (
             <button
               key={id}
+              ref={active ? activeTabRef : undefined}
               onClick={() => isGuestProfile ? onSignIn() : setNav(id)}
               className={`flex flex-col items-center gap-0.5 bg-transparent border-none cursor-pointer min-w-[56px] py-1.5 transition-all duration-200 ease-out relative ${active ? 'text-gs-accent scale-105' : guestLocked && !isGuestProfile ? 'text-gs-subtle opacity-40' : 'text-gs-dim'}`}
             >
@@ -550,7 +809,7 @@ export default function Sidebar({
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d={path} />
                 </svg>
-                {/* Unread badge on Social (messages related) */}
+                {/* Unread badge on Social */}
                 {id === "Social" && unreadCount > 0 && (
                   <span className="absolute -top-1 -right-2 min-w-[14px] h-[14px] rounded-full bg-red-500 text-[7px] font-extrabold text-white flex items-center justify-center px-0.5">
                     {unreadCount > 99 ? '99+' : unreadCount}
@@ -562,11 +821,17 @@ export default function Sidebar({
                     {cartCount}
                   </span>
                 )}
+                {/* Messages badge on mobile */}
+                {id === "messages" && messagesUnreadCount > 0 && (
+                  <span className="absolute -top-1 -right-2 min-w-[14px] h-[14px] rounded-full bg-red-500 text-[7px] font-extrabold text-white flex items-center justify-center px-0.5">
+                    {messagesUnreadCount > 99 ? '99+' : messagesUnreadCount}
+                  </span>
+                )}
               </div>
               <span className={`text-[10px] font-sans leading-tight ${active ? "font-bold" : "font-medium"}`}>
                 {isGuestProfile ? "Sign In" : label}
               </span>
-              {/* Improvement: Active indicator dot with transition */}
+              {/* Active indicator dot */}
               {active && <div className="w-1 h-1 rounded-full bg-gs-accent transition-all duration-300" />}
             </button>
           );

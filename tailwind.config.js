@@ -19,6 +19,26 @@ module.exports = {
           dim: 'var(--gs-dim, #555555)',
           faint: 'var(--gs-faint, #444444)',
           subtle: 'var(--gs-subtle, #333333)',
+          /* Improvement 11: Extended color palette */
+          success: '#10b981',
+          warning: '#f59e0b',
+          danger: '#ef4444',
+          info: '#06b6d4',
+          'accent-light': '#38bdf8',
+          'accent-dark': '#0369a1',
+          'indigo-light': '#818cf8',
+          'indigo-dark': '#4338ca',
+        },
+        /* Improvement 12: Chart colors mapped to Tailwind classes */
+        chart: {
+          1: 'var(--gs-chart-1, #0ea5e9)',
+          2: 'var(--gs-chart-2, #6366f1)',
+          3: 'var(--gs-chart-3, #10b981)',
+          4: 'var(--gs-chart-4, #f59e0b)',
+          5: 'var(--gs-chart-5, #ef4444)',
+          6: 'var(--gs-chart-6, #8b5cf6)',
+          7: 'var(--gs-chart-7, #ec4899)',
+          8: 'var(--gs-chart-8, #14b8a6)',
         },
       },
       fontFamily: {
@@ -30,6 +50,37 @@ module.exports = {
         '88': '22rem',
         '100': '25rem',
         '120': '30rem',
+      },
+      /* Improvement 13: Aspect ratio extensions */
+      aspectRatio: {
+        'album': '1 / 1',
+        'cover-art': '1 / 1',
+        'banner': '3 / 1',
+        'card': '4 / 3',
+        'wide': '16 / 9',
+        'ultrawide': '21 / 9',
+      },
+      /* Improvement 14: Backdrop blur/brightness utilities */
+      backdropBlur: {
+        xs: '2px',
+        '2xl': '40px',
+        '3xl': '64px',
+      },
+      backdropBrightness: {
+        15: '.15',
+        25: '.25',
+        175: '1.75',
+      },
+      /* Improvement 15: Grid template columns/rows for layout areas */
+      gridTemplateColumns: {
+        'sidebar': '240px 1fr',
+        'sidebar-collapsed': '64px 1fr',
+        'catalog': 'repeat(auto-fill, minmax(180px, 1fr))',
+        'catalog-lg': 'repeat(auto-fill, minmax(220px, 1fr))',
+      },
+      gridTemplateRows: {
+        'layout': 'auto 1fr auto',
+        'card': 'auto 1fr auto',
       },
       animation: {
         'fade-in': 'fadeIn 0.2s ease-out',

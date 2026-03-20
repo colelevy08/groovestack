@@ -12,6 +12,23 @@
     <meta name="keywords" content="vinyl, records, collecting, trading, music, crate digging, marketplace, community" />
     <meta name="author" content="GrooveStack" />
 
+    <!-- Improvement 16: Microsoft tile meta -->
+    <meta name="msapplication-TileColor" content="#080808" />
+    <meta name="msapplication-TileImage" content="%PUBLIC_URL%/logo192.png" />
+    <meta name="msapplication-config" content="none" />
+
+    <!-- Improvement 17: Preconnect and DNS prefetch hints -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+    <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
+
+    <!-- Improvement 18: Additional comprehensive meta tags -->
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="GrooveStack" />
+
     <!-- Open Graph — iMessage, social link previews -->
     <meta property="og:title" content="GrooveStack — Your Vinyl Record Community" />
     <meta property="og:description" content="Collect, trade, verify, and discover vinyl records with a global community of crate diggers." />
@@ -33,6 +50,8 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="GrooveStack" />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <!-- Improvement 19: Apple splash screen for PWA -->
+    <link rel="apple-touch-startup-image" href="%PUBLIC_URL%/og-image.png" />
 
     <!-- Structured Data — JSON-LD for vinyl record app -->
     <script type="application/ld+json">
@@ -61,7 +80,13 @@
     <title>GrooveStack — Vinyl Record Community</title>
   </head>
   <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <!-- Improvement 20: Enhanced noscript fallback -->
+    <noscript>
+      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; text-align: center; padding: 3rem 1.5rem; max-width: 480px; margin: 0 auto;">
+        <h1 style="font-size: 1.5rem; margin-bottom: 0.75rem;">GrooveStack</h1>
+        <p style="color: #666; line-height: 1.6;">JavaScript is required to use GrooveStack. Please enable JavaScript in your browser settings and reload this page to access your vinyl record collection.</p>
+      </div>
+    </noscript>
     <div id="root"></div>
   </body>
 </html>
