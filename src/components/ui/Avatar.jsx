@@ -1,6 +1,7 @@
 // Circular user avatar — shows a custom image (via src prop), profile avatarUrl, or initials as fallback.
 // Looks up the user's accent color and avatarUrl from USER_PROFILES via getProfile.
-// Supports online status indicator, size variants, hover card preview, and gradient fallback.
+// Supports online status indicator, size variants, hover card preview, gradient fallback,
+// group avatar stacking, edit overlay, and loading skeleton.
 import { useState } from 'react';
 import { getProfile, getInitials } from '../../utils/helpers';
 
@@ -24,8 +25,58 @@ function usernameGradient(username) {
   return [`hsl(${h1}, 60%, 35%)`, `hsl(${h2}, 60%, 45%)`];
 }
 
-export default function Avatar({ username, size, onClick, src, sizeVariant, online, showHoverCard }) {
+// Improvement 4: Group avatar stacking component
+export function AvatarGroup({ users, max = 4, size, sizeVariant = 'sm', onOverflowClick }) {
+  const displayed = users.slice(0, max);
+  const overflow = users.length - max;
+  const resolvedSize = sizeVariant ? (SIZE_MAP[sizeVariant] || SIZE_MAP.sm) : (size || 28);
+
+  return (
+    <div className="flex items-center" style={{ paddingLeft: resolvedSize * 0.3 }}>
+      {displayed.map((user, i) => (
+        <div
+          key={typeof user === 'string' ? user : user.username}
+          className="relative rounded-full border-2 border-gs-bg"
+          style={{
+            marginLeft: i === 0 ? 0 : -(resolvedSize * 0.3),
+            zIndex: displayed.length - i,
+          }}
+        >
+          <Avatar
+            username={typeof user === 'string' ? user : user.username}
+            src={typeof user === 'object' ? user.src : undefined}
+            sizeVariant={sizeVariant}
+            size={size}
+          />
+        </div>
+      ))}
+      {overflow > 0 && (
+        <div
+          className="relative rounded-full border-2 border-gs-bg flex items-center justify-center bg-[#2a2a2a] text-gs-muted font-mono font-bold shrink-0"
+          style={{
+            width: resolvedSize,
+            height: resolvedSize,
+            marginLeft: -(resolvedSize * 0.3),
+            zIndex: 0,
+            fontSize: resolvedSize * 0.3,
+            cursor: onOverflowClick ? 'pointer' : 'default',
+          }}
+          onClick={onOverflowClick}
+          role={onOverflowClick ? 'button' : undefined}
+          tabIndex={onOverflowClick ? 0 : undefined}
+          onKeyDown={onOverflowClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOverflowClick(e); } } : undefined}
+          aria-label={`${overflow} more users`}
+        >
+          +{overflow}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function Avatar({ username, size, onClick, src, sizeVariant, online, showHoverCard, editable, onEdit, loading }) {
   const [hovered, setHovered] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
   const p = getProfile(username);
   const accent = p.accent || "#0ea5e9";
   const initials = getInitials(username) || (p.displayName || username).slice(0, 2).toUpperCase();
@@ -40,7 +91,7 @@ export default function Avatar({ username, size, onClick, src, sizeVariant, onli
 
   const baseStyle = {
     width: resolvedSize, height: resolvedSize, borderRadius: "50%",
-    cursor: onClick ? "pointer" : "default", flexShrink: 0,
+    cursor: onClick || editable ? "pointer" : "default", flexShrink: 0,
     transition: "opacity 0.15s", overflow: "hidden",
     position: 'relative',
   };
@@ -73,15 +124,50 @@ export default function Avatar({ username, size, onClick, src, sizeVariant, onli
     </div>
   ) : null;
 
+  // Improvement 5: Edit overlay on hover when editable
+  const EditOverlay = editable && hovered ? (
+    <div
+      className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center animate-fade-in"
+      onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
+      role="button"
+      aria-label="Edit avatar"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onEdit?.(); } }}
+    >
+      <svg width={resolvedSize * 0.35} height={resolvedSize * 0.35} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+      </svg>
+    </div>
+  ) : null;
+
+  // Improvement 6: Loading skeleton state
+  if (loading) {
+    return (
+      <div
+        style={{ width: resolvedSize, height: resolvedSize, borderRadius: '50%', flexShrink: 0 }}
+        className="overflow-hidden"
+      >
+        <div
+          className="w-full h-full rounded-full"
+          style={{
+            background: 'linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%)',
+            backgroundSize: '200% 100%',
+            animation: 'shimmer 1.8s ease-in-out infinite',
+          }}
+        />
+      </div>
+    );
+  }
+
   const wrapperProps = {
-    onClick,
+    onClick: editable ? onEdit : onClick,
     onMouseEnter: (e) => {
-      if (onClick) e.currentTarget.style.opacity = "0.75";
-      if (showHoverCard) setHovered(true);
+      if (onClick || editable) e.currentTarget.style.opacity = "0.75";
+      if (showHoverCard || editable) setHovered(true);
     },
     onMouseLeave: (e) => {
       e.currentTarget.style.opacity = "1";
-      if (showHoverCard) setHovered(false);
+      if (showHoverCard || editable) setHovered(false);
     },
     style: { ...baseStyle, display: 'inline-block', position: 'relative' },
   };
@@ -89,7 +175,24 @@ export default function Avatar({ username, size, onClick, src, sizeVariant, onli
   if (imgSrc) {
     return (
       <div {...wrapperProps}>
-        <img src={imgSrc} alt={`${p.displayName || username}'s avatar`} className="w-full h-full object-cover block rounded-full" />
+        {/* Shimmer while image loads */}
+        {!imgLoaded && (
+          <div
+            className="absolute inset-0 rounded-full"
+            style={{
+              background: 'linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%)',
+              backgroundSize: '200% 100%',
+              animation: 'shimmer 1.8s ease-in-out infinite',
+            }}
+          />
+        )}
+        <img
+          src={imgSrc}
+          alt={`${p.displayName || username}'s avatar`}
+          className={`w-full h-full object-cover block rounded-full transition-opacity duration-200 ${imgLoaded ? 'opacity-100' : 'opacity-0'}`}
+          onLoad={() => setImgLoaded(true)}
+        />
+        {EditOverlay}
         {StatusDot}
         {HoverCard}
       </div>
@@ -113,6 +216,7 @@ export default function Avatar({ username, size, onClick, src, sizeVariant, onli
       >
         {initials}
       </div>
+      {EditOverlay}
       {StatusDot}
       {HoverCard}
     </div>

@@ -25,6 +25,12 @@ module.exports = {
         sans: ["'DM Sans'", '-apple-system', 'sans-serif'],
         mono: ["'DM Mono'", 'monospace'],
       },
+      spacing: {
+        '18': '4.5rem',
+        '88': '22rem',
+        '100': '25rem',
+        '120': '30rem',
+      },
       animation: {
         'fade-in': 'fadeIn 0.2s ease-out',
         'slide-up': 'slideUp 0.25s ease-out',
@@ -41,6 +47,9 @@ module.exports = {
         'shimmer': 'shimmer 1.8s ease-in-out infinite',
         'spin-slow': 'spinSlow 8s linear infinite',
         'mode-switch': 'modeSwitch 0.35s ease-out',
+        'bounce-in': 'bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55)',
+        'fade-in-up': 'fadeInUp 0.4s ease-out',
+        'rotate-in': 'rotateIn 0.4s ease-out',
       },
       keyframes: {
         fadeIn: {
@@ -99,6 +108,20 @@ module.exports = {
         modeSwitch: {
           '0%': { opacity: '0', transform: 'translateY(8px) scale(0.98)' },
           '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+        bounceIn: {
+          '0%': { opacity: '0', transform: 'scale(0.3)' },
+          '50%': { opacity: '1', transform: 'scale(1.05)' },
+          '70%': { transform: 'scale(0.9)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
+        fadeInUp: {
+          '0%': { opacity: '0', transform: 'translateY(20px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        rotateIn: {
+          '0%': { opacity: '0', transform: 'rotate(-10deg) scale(0.9)' },
+          '100%': { opacity: '1', transform: 'rotate(0deg) scale(1)' },
         },
         doubleTapHeart: {
           '0%': { opacity: '0', transform: 'translate(-50%, -50%) scale(0)' },

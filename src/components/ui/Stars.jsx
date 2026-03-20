@@ -1,12 +1,58 @@
-// 5-star rating display. Filled stars are amber; empty stars are dim.
+// Star rating display. Filled stars are amber; empty stars are dim.
 // Pass onRate to make the stars interactive (used in AddRecordModal for setting a rating).
-// Supports half-star ratings (e.g., 3.5), hover preview, and rating count display.
-import { useState } from 'react';
+// Supports half-star ratings (e.g., 3.5), hover preview, rating count display,
+// animated fill on change, accessible labels per star, custom max rating, and size responsive variants.
+import { useState, useRef, useEffect } from 'react';
 
-export default function Stars({ rating, onRate, size = 12, count, showCount }) {
+// Improvement 10: Size responsive variants
+const SIZE_VARIANTS = {
+  xs: 10,
+  sm: 12,
+  md: 16,
+  lg: 20,
+  xl: 28,
+};
+
+export default function Stars({
+  rating,
+  onRate,
+  size = 12,
+  sizeVariant,
+  count,
+  showCount,
+  maxStars = 5,  // Improvement 9: Custom max rating
+  animated = true, // Improvement 7: Animated fill on change
+}) {
   const [hoverRating, setHoverRating] = useState(null);
+  const [animatingStars, setAnimatingStars] = useState(new Set());
+  const prevRatingRef = useRef(rating);
+
+  // Resolve size from variant or raw value
+  const resolvedSize = sizeVariant ? (SIZE_VARIANTS[sizeVariant] || size) : size;
 
   const displayRating = hoverRating != null ? hoverRating : rating;
+
+  // Improvement 7: Animate stars that changed fill state
+  useEffect(() => {
+    if (!animated || prevRatingRef.current === rating) return;
+    const prev = prevRatingRef.current || 0;
+    const newAnimating = new Set();
+    const starCount = Math.max(Math.ceil(prev), Math.ceil(rating));
+    for (let i = 1; i <= starCount; i++) {
+      const wasFilled = prev >= i - 0.5;
+      const isFilled = rating >= i - 0.5;
+      if (wasFilled !== isFilled) {
+        newAnimating.add(i);
+      }
+    }
+    if (newAnimating.size > 0) {
+      setAnimatingStars(newAnimating);
+      const timer = setTimeout(() => setAnimatingStars(new Set()), 400);
+      prevRatingRef.current = rating;
+      return () => clearTimeout(timer);
+    }
+    prevRatingRef.current = rating;
+  }, [rating, animated]);
 
   const handleMouseMove = (starIndex, e) => {
     if (!onRate) return;
@@ -24,27 +70,50 @@ export default function Stars({ rating, onRate, size = 12, count, showCount }) {
     onRate(isHalf ? starIndex - 0.5 : starIndex);
   };
 
+  // Build array from 1 to maxStars
+  const stars = Array.from({ length: maxStars }, (_, i) => i + 1);
+
   return (
     <div
-      role="img"
-      aria-label={`${rating} out of 5 stars`}
+      role={onRate ? 'radiogroup' : 'img'}
+      aria-label={`${rating} out of ${maxStars} stars`}
       className="flex items-center gap-0.5"
       onMouseLeave={() => setHoverRating(null)}
     >
-      {[1, 2, 3, 4, 5].map(s => {
+      {stars.map(s => {
         const fill = getFillType(s, displayRating);
+        const isAnimating = animatingStars.has(s);
+
+        // Improvement 8: Accessible label per star
+        const starLabel = onRate
+          ? `Rate ${s} out of ${maxStars} star${s !== 1 ? 's' : ''}`
+          : `${s} star${s !== 1 ? 's' : ''}`;
+
         return (
           <svg
             key={s}
-            width={size}
-            height={size}
+            width={resolvedSize}
+            height={resolvedSize}
             viewBox="0 0 24 24"
             className={onRate ? "cursor-pointer" : "cursor-default"}
             onMouseMove={onRate ? (e) => handleMouseMove(s, e) : undefined}
             onClick={onRate ? (e) => handleClick(s, e) : undefined}
-            style={{ transition: 'transform 0.1s' }}
+            role={onRate ? 'radio' : undefined}
+            aria-checked={onRate ? fill === 'full' : undefined}
+            aria-label={starLabel}
+            tabIndex={onRate ? 0 : undefined}
+            onKeyDown={onRate ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRate(s); }
+              if (e.key === 'ArrowRight' && s < maxStars) { e.preventDefault(); onRate(s + 1); }
+              if (e.key === 'ArrowLeft' && s > 1) { e.preventDefault(); onRate(s - 1); }
+            } : undefined}
+            style={{
+              transition: 'transform 0.15s',
+              transform: isAnimating ? 'scale(1.3)' : 'scale(1)',
+              animation: isAnimating ? 'starPop 0.4s ease-out' : undefined,
+            }}
             onMouseEnter={onRate ? (e) => { e.currentTarget.style.transform = 'scale(1.15)'; } : undefined}
-            onMouseLeave={onRate ? (e) => { e.currentTarget.style.transform = 'scale(1)'; } : undefined}
+            onMouseLeave={onRate ? (e) => { e.currentTarget.style.transform = isAnimating ? 'scale(1.3)' : 'scale(1)'; } : undefined}
           >
             <defs>
               <linearGradient id={`star-half-${s}`}>
@@ -61,6 +130,9 @@ export default function Stars({ rating, onRate, size = 12, count, showCount }) {
               }
               stroke={fill === 'empty' ? '#444' : '#f59e0b'}
               strokeWidth="2"
+              style={{
+                transition: 'fill 0.2s, stroke 0.2s',
+              }}
             />
           </svg>
         );
@@ -68,6 +140,16 @@ export default function Stars({ rating, onRate, size = 12, count, showCount }) {
       {showCount && count != null && (
         <span className="text-gs-muted text-[11px] font-mono ml-1.5">({count})</span>
       )}
+
+      {/* Inline keyframes for star pop animation */}
+      <style>{`
+        @keyframes starPop {
+          0% { transform: scale(1); }
+          40% { transform: scale(1.4); }
+          70% { transform: scale(0.9); }
+          100% { transform: scale(1); }
+        }
+      `}</style>
     </div>
   );
 }

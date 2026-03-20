@@ -1,5 +1,5 @@
 // Reusable search bar with icon, clear button, keyboard shortcut hint, suggestions dropdown,
-// recent searches (localStorage), and debounced input.
+// recent searches (localStorage), debounced input, filter chips, and loading spinner.
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
 const STORAGE_KEY = 'gs-recent-searches';
@@ -30,6 +30,10 @@ export default function SearchBar({
   onSelect,
   className = '',
   autoFocus = false,
+  loading = false,             // Improvement 25: Loading spinner
+  filters = [],                // Improvement 24: Filter chips config - array of { key, label, options?, active? }
+  activeFilters = {},          // Current active filter values - { [key]: value }
+  onFilterChange,              // Callback when a filter changes - (key, value) => void
 }) {
   const [focused, setFocused] = useState(false);
   const [recentSearches, setRecentSearches] = useState(getRecentSearches);
@@ -105,6 +109,14 @@ export default function SearchBar({
     setRecentSearches([]);
   }, []);
 
+  // Improvement 24: Toggle a filter chip
+  const handleFilterToggle = useCallback((filterKey, filterValue) => {
+    if (!onFilterChange) return;
+    const current = activeFilters[filterKey];
+    // Toggle off if same value, otherwise set
+    onFilterChange(filterKey, current === filterValue ? null : filterValue);
+  }, [activeFilters, onFilterChange]);
+
   // Filter suggestions based on debounced value
   const filteredSuggestions = useMemo(() => {
     if (!debounced.trim()) return [];
@@ -114,18 +126,30 @@ export default function SearchBar({
 
   const showDropdown = focused && (filteredSuggestions.length > 0 || (recentSearches.length > 0 && !value));
 
+  // Count active filters
+  const activeFilterCount = Object.values(activeFilters).filter(Boolean).length;
+
   return (
     <div ref={wrapperRef} className={`relative ${className}`}>
       {/* Input container */}
       <div className="relative flex items-center">
-        {/* Search icon */}
-        <svg
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-gs-dim pointer-events-none"
-          width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-          strokeLinecap="round" strokeLinejoin="round"
-        >
-          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-        </svg>
+        {/* Improvement 25: Search icon or loading spinner */}
+        {loading ? (
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-gs-dim pointer-events-none animate-spin"
+            width="14" height="14" viewBox="0 0 24 24" fill="none"
+          >
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="31.4" strokeDashoffset="10" strokeLinecap="round" />
+          </svg>
+        ) : (
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-gs-dim pointer-events-none"
+            width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+            strokeLinecap="round" strokeLinejoin="round"
+          >
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+          </svg>
+        )}
 
         <input
           ref={inputRef}
@@ -137,6 +161,7 @@ export default function SearchBar({
           placeholder={placeholder}
           autoFocus={autoFocus}
           className="w-full bg-gs-card border border-gs-border rounded-[10px] py-2.5 pl-9 pr-20 text-[#f0f0f0] text-[13px] outline-none font-sans transition-all duration-150 focus:border-gs-accent/30 focus:ring-1 focus:ring-gs-accent/20 placeholder:text-gs-faint"
+          aria-label="Search"
         />
 
         {/* Right side: clear button or keyboard hint */}
@@ -156,6 +181,63 @@ export default function SearchBar({
           )}
         </div>
       </div>
+
+      {/* Improvement 24: Filter chips row */}
+      {filters.length > 0 && (
+        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+          {activeFilterCount > 0 && (
+            <button
+              onClick={() => {
+                if (onFilterChange) {
+                  filters.forEach(f => onFilterChange(f.key, null));
+                }
+              }}
+              className="text-[10px] text-gs-faint hover:text-gs-muted bg-transparent border-none cursor-pointer font-mono px-1 transition-colors"
+              aria-label="Clear all filters"
+            >
+              Clear
+            </button>
+          )}
+          {filters.map(filter => {
+            // Simple toggle chip (no sub-options)
+            if (!filter.options) {
+              const isActive = activeFilters[filter.key];
+              return (
+                <button
+                  key={filter.key}
+                  onClick={() => handleFilterToggle(filter.key, !isActive ? true : null)}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border cursor-pointer transition-all duration-150 ${
+                    isActive
+                      ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent'
+                      : 'bg-transparent border-gs-border text-gs-dim hover:border-gs-border-hover hover:text-gs-muted'
+                  }`}
+                >
+                  {filter.icon && <span className="flex items-center">{filter.icon}</span>}
+                  {filter.label}
+                </button>
+              );
+            }
+
+            // Chip with options (renders multiple sub-chips)
+            return filter.options.map(opt => {
+              const isActive = activeFilters[filter.key] === opt.value;
+              return (
+                <button
+                  key={`${filter.key}-${opt.value}`}
+                  onClick={() => handleFilterToggle(filter.key, opt.value)}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium border cursor-pointer transition-all duration-150 ${
+                    isActive
+                      ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent'
+                      : 'bg-transparent border-gs-border text-gs-dim hover:border-gs-border-hover hover:text-gs-muted'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            });
+          })}
+        </div>
+      )}
 
       {/* Dropdown */}
       {showDropdown && (

@@ -188,3 +188,145 @@ export function validateEmail(email) {
   if (!email || typeof email !== "string") return false;
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
+
+/**
+ * Convert a string to a URL-friendly slug.
+ *
+ * @param {string} str - The input string.
+ * @returns {string} Slugified string.
+ */
+export function slugify(str) {
+  return String(str)
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/[\s_]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Return a human-readable relative time string (e.g. "3 minutes ago").
+ *
+ * @param {Date|string|number} date - The date to compare against now.
+ * @returns {string} Relative time string.
+ */
+export function relativeTime(date) {
+  const now = Date.now();
+  const then = new Date(date).getTime();
+  const seconds = Math.round((now - then) / 1000);
+
+  if (seconds < 5) return "just now";
+  if (seconds < 60) return `${seconds} seconds ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} ${days === 1 ? "day" : "days"} ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} ${months === 1 ? "month" : "months"} ago`;
+  const years = Math.floor(months / 12);
+  return `${years} ${years === 1 ? "year" : "years"} ago`;
+}
+
+/**
+ * Split an array into chunks of the given size.
+ *
+ * @param {Array} arr  - The array to chunk.
+ * @param {number} size - Maximum chunk size.
+ * @returns {Array[]} Array of chunks.
+ */
+export function chunk(arr, size) {
+  if (!arr || size < 1) return [];
+  const result = [];
+  for (let i = 0; i < arr.length; i += size) {
+    result.push(arr.slice(i, i + size));
+  }
+  return result;
+}
+
+/**
+ * Format a number in compact notation (e.g. 1200 -> "1.2K").
+ *
+ * @param {number} num - The number to format.
+ * @returns {string} Compact formatted string.
+ */
+export function formatCompact(num) {
+  if (num == null || isNaN(num)) return "0";
+  const abs = Math.abs(num);
+  if (abs >= 1e9) return `${(num / 1e9).toFixed(1).replace(/\.0$/, "")}B`;
+  if (abs >= 1e6) return `${(num / 1e6).toFixed(1).replace(/\.0$/, "")}M`;
+  if (abs >= 1e3) return `${(num / 1e3).toFixed(1).replace(/\.0$/, "")}K`;
+  return String(num);
+}
+
+/**
+ * Parse URL query string into an object.
+ *
+ * @param {string} queryString - The query string (with or without leading ?).
+ * @returns {Object} Parsed key-value pairs.
+ */
+export function parseQuery(queryString) {
+  const str = queryString.startsWith("?") ? queryString.slice(1) : queryString;
+  if (!str) return {};
+  const result = {};
+  for (const pair of str.split("&")) {
+    const [key, ...rest] = pair.split("=");
+    result[decodeURIComponent(key)] = decodeURIComponent(rest.join("="));
+  }
+  return result;
+}
+
+/**
+ * Build a query string from an object.
+ *
+ * @param {Object} params - Key-value pairs.
+ * @returns {string} Query string with leading "?", or empty string if no params.
+ */
+export function buildQuery(params) {
+  const entries = Object.entries(params).filter(
+    ([, v]) => v !== undefined && v !== null && v !== ""
+  );
+  if (entries.length === 0) return "";
+  return "?" + entries
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
+}
+
+/**
+ * Set an item in localStorage with an optional expiry (in milliseconds).
+ *
+ * @param {string} key   - Storage key.
+ * @param {*}      value - Value to store (will be JSON-serialized).
+ * @param {number} [ttl] - Time-to-live in milliseconds. Omit for no expiry.
+ */
+export function setStorageItem(key, value, ttl) {
+  const item = { value };
+  if (ttl) item.expiry = Date.now() + ttl;
+  try {
+    localStorage.setItem(key, JSON.stringify(item));
+  } catch {
+    // Storage full or unavailable — silently fail
+  }
+}
+
+/**
+ * Get an item from localStorage, returning null if expired or missing.
+ *
+ * @param {string} key - Storage key.
+ * @returns {*} The stored value, or null.
+ */
+export function getStorageItem(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const item = JSON.parse(raw);
+    if (item.expiry && Date.now() > item.expiry) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return item.value;
+  } catch {
+    return null;
+  }
+}

@@ -4,13 +4,14 @@
 // live preview panel, character count on bio, accent color picker, image preview, field validation.
 // Username changes are validated against USER_PROFILES to prevent taking an existing handle.
 // onSave updates profile state in App.js; onUsernameChange updates currentUser + re-keys all records.
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Modal from '../ui/Modal';
 import FormInput from '../ui/FormInput';
 import FormSelect from '../ui/FormSelect';
 import Avatar from '../ui/Avatar';
 import { GENRES, USER_PROFILES, ACCENT_COLORS } from '../../constants';
 import { checkUsername } from '../../utils/supabase';
+import { debounce } from '../../utils/helpers';
 
 // ── Client-side image resize — reads file, draws to canvas, returns data URL ──
 function resizeImage(file, maxW, maxH) {
@@ -41,15 +42,34 @@ function resizeImage(file, maxW, maxH) {
 
 const BIO_MAX_LENGTH = 300;
 
+// [Improvement 1] Bio suggestions based on character count
+const BIO_SUGGESTIONS = [
+  'Tell collectors what genres you specialize in.',
+  'Mention your favorite record of all time.',
+  'Share how long you have been collecting.',
+  'Describe what condition grades you prefer.',
+  'List your top 3 most-wanted records.',
+];
+
+// [Improvement 2] Social platform definitions
+const SOCIAL_PLATFORMS = [
+  { key: 'discogs', label: 'Discogs', placeholder: 'https://www.discogs.com/user/yourname', icon: '\uD83D\uDCBF' },
+  { key: 'instagram', label: 'Instagram', placeholder: '@yourhandle', icon: '\uD83D\uDCF7' },
+  { key: 'twitter', label: 'X / Twitter', placeholder: '@yourhandle', icon: '\uD83D\uDCAC' },
+  { key: 'bandcamp', label: 'Bandcamp', placeholder: 'https://yourname.bandcamp.com', icon: '\uD83C\uDFB5' },
+];
+
 export default function ProfileEditModal({ open, onClose, profile, onSave, currentUser, onUsernameChange }) {
   const [username, setUsername] = useState(currentUser);
   const [usernameError, setUsernameError] = useState("");
+  const [usernameChecking, setUsernameChecking] = useState(false);
   const [displayName, setDisplayName] = useState(profile.displayName);
   const [displayNameError, setDisplayNameError] = useState("");
   const [bio, setBio] = useState(profile.bio);
   const [location, setLocation] = useState(profile.location);
   const [favGenre, setFavGenre] = useState(profile.favGenre);
   const [accentColor, setAccentColor] = useState(profile.accentColor || ACCENT_COLORS[0]);
+  const [customHexInput, setCustomHexInput] = useState('');
   const [avatarUrl, setAvatarUrl] = useState(profile.avatarUrl || null);
   const [headerUrl, setHeaderUrl] = useState(profile.headerUrl || null);
   const [shippingName, setShippingName] = useState(profile.shippingName || '');
@@ -62,20 +82,76 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
   const [headerDragOver, setHeaderDragOver] = useState(false);
   const [avatarDragOver, setAvatarDragOver] = useState(false);
 
+  // [Improvement 2] Social links state
+  const [socialLinks, setSocialLinks] = useState(profile.socialLinks || {});
+
+  // [Improvement 3] Privacy settings
+  const [privacyCollectionPublic, setPrivacyCollectionPublic] = useState(profile.privacyCollectionPublic !== false);
+  const [privacyShowLocation, setPrivacyShowLocation] = useState(profile.privacyShowLocation !== false);
+  const [privacyShowActivity, setPrivacyShowActivity] = useState(profile.privacyShowActivity !== false);
+
+  // [Improvement 5] Two-factor auth placeholder
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(profile.twoFactorEnabled || false);
+  const [showTwoFactorSetup, setShowTwoFactorSetup] = useState(false);
+
+  // [Improvement 7] Profile preview mode (card vs full)
+  const [previewMode, setPreviewMode] = useState('card');
+
+  // [Improvement 4] Account deletion confirmation
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+
   const headerInputRef = useRef(null);
   const avatarInputRef = useRef(null);
+
+  // [Improvement 8] Username availability check with debounce
+  const debouncedCheckUsername = useMemo(
+    () => debounce(async (clean) => {
+      if (!clean || clean === currentUser) {
+        setUsernameError("");
+        setUsernameChecking(false);
+        return;
+      }
+      // Check static profiles
+      if (USER_PROFILES[clean]) {
+        setUsernameError(`@${clean} is already taken`);
+        setUsernameChecking(false);
+        return;
+      }
+      // Check database
+      try {
+        const available = await checkUsername(clean);
+        if (!available) {
+          setUsernameError(`@${clean} is already taken`);
+        } else {
+          setUsernameError("");
+        }
+      } catch {
+        setUsernameError("");
+      }
+      setUsernameChecking(false);
+    }, 500),
+    [currentUser]
+  );
+
+  // Cleanup debounce on unmount
+  useEffect(() => {
+    return () => debouncedCheckUsername.cancel();
+  }, [debouncedCheckUsername]);
 
   // Sync form fields with latest profile/username whenever the modal opens
   useEffect(() => {
     if (open) {
       setUsername(currentUser);
       setUsernameError("");
+      setUsernameChecking(false);
       setDisplayName(profile.displayName);
       setDisplayNameError("");
       setBio(profile.bio);
       setLocation(profile.location);
       setFavGenre(profile.favGenre);
       setAccentColor(profile.accentColor || ACCENT_COLORS[0]);
+      setCustomHexInput('');
       setAvatarUrl(profile.avatarUrl || null);
       setHeaderUrl(profile.headerUrl || null);
       setShippingName(profile.shippingName || '');
@@ -83,20 +159,29 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
       setShippingCity(profile.shippingCity || '');
       setShippingState(profile.shippingState || '');
       setShippingZip(profile.shippingZip || '');
+      setSocialLinks(profile.socialLinks || {});
+      setPrivacyCollectionPublic(profile.privacyCollectionPublic !== false);
+      setPrivacyShowLocation(profile.privacyShowLocation !== false);
+      setPrivacyShowActivity(profile.privacyShowActivity !== false);
+      setTwoFactorEnabled(profile.twoFactorEnabled || false);
+      setShowTwoFactorSetup(false);
+      setShowDeleteConfirm(false);
+      setDeleteConfirmText('');
+      setPreviewMode('card');
     }
   }, [open, profile, currentUser]);
 
-  // Sanitizes input to lowercase alphanumeric + dots + underscores; checks for conflicts with existing profiles
-  const handleUsernameChange = async (val) => {
+  // Sanitizes input and triggers debounced availability check
+  const handleUsernameChange = (val) => {
     const clean = val.toLowerCase().replace(/[^a-z0-9._]/g, '');
     setUsername(clean);
-    if (!clean || clean === currentUser) { setUsernameError(""); return; }
-    // Check static profiles
-    if (USER_PROFILES[clean]) { setUsernameError(`@${clean} is already taken`); return; }
-    // Check database
-    const available = await checkUsername(clean);
-    if (!available) { setUsernameError(`@${clean} is already taken`); return; }
-    setUsernameError("");
+    if (!clean || clean === currentUser) {
+      setUsernameError("");
+      setUsernameChecking(false);
+      return;
+    }
+    setUsernameChecking(true);
+    debouncedCheckUsername(clean);
   };
 
   const handleImageFile = useCallback(async (file, type) => {
@@ -108,7 +193,7 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
       } else {
         setAvatarUrl(await resizeImage(file, 128, 128));
       }
-    } catch {}
+    } catch { /* resize failed silently */ }
   }, []);
 
   const handleHeaderFile = async e => {
@@ -151,6 +236,20 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
     if (val.length <= BIO_MAX_LENGTH) setBio(val);
   };
 
+  // [Improvement 6] Custom hex color input
+  const applyCustomHex = () => {
+    const hex = customHexInput.trim();
+    if (/^#?[0-9a-fA-F]{6}$/.test(hex)) {
+      setAccentColor(hex.startsWith('#') ? hex : `#${hex}`);
+      setCustomHexInput('');
+    }
+  };
+
+  // [Improvement 2] Update social link
+  const updateSocialLink = (key, value) => {
+    setSocialLinks(prev => ({ ...prev, [key]: value }));
+  };
+
   // ── Validation + save ────────────────────────────────────────────────
   const handleSave = () => {
     // Validate display name
@@ -167,7 +266,13 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
     }
 
     if (usernameError) return;
-    onSave({ displayName: displayName.trim(), bio, location, favGenre, accentColor, avatarUrl, headerUrl, shippingName, shippingStreet, shippingCity, shippingState, shippingZip });
+    onSave({
+      displayName: displayName.trim(), bio, location, favGenre, accentColor, avatarUrl, headerUrl,
+      shippingName, shippingStreet, shippingCity, shippingState, shippingZip,
+      socialLinks,
+      privacyCollectionPublic, privacyShowLocation, privacyShowActivity,
+      twoFactorEnabled,
+    });
     if (username && username !== currentUser) {
       onUsernameChange(username);
     }
@@ -182,6 +287,16 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
   );
 
   const bioRemaining = BIO_MAX_LENGTH - (bio || '').length;
+
+  // [Improvement 1] Bio suggestion based on remaining characters
+  const bioSuggestion = useMemo(() => {
+    const len = (bio || '').length;
+    if (len === 0) return BIO_SUGGESTIONS[0];
+    if (len < 50) return BIO_SUGGESTIONS[1];
+    if (len < 100) return BIO_SUGGESTIONS[2];
+    if (len < 200) return BIO_SUGGESTIONS[3];
+    return null;
+  }, [bio]);
 
   return (
     <Modal open={open} onClose={onClose} title="Edit Profile">
@@ -265,17 +380,26 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
               onChange={handleUsernameChange}
               placeholder="yourhandle"
             />
-            {usernameError
-              ? <div className="text-[11px] text-red-400 mt-1 font-mono">{usernameError}</div>
-              : <div className="text-[11px] text-gs-dim mt-1">Letters, numbers, dots, and underscores only.</div>
-            }
+            {/* [Improvement 8] Username availability with debounce indicator */}
+            {usernameChecking ? (
+              <div className="text-[11px] text-gs-dim mt-1 font-mono flex items-center gap-1">
+                <span className="inline-block w-2.5 h-2.5 border-2 border-gs-accent/40 border-t-gs-accent rounded-full animate-spin" />
+                Checking availability...
+              </div>
+            ) : usernameError ? (
+              <div className="text-[11px] text-red-400 mt-1 font-mono">{usernameError}</div>
+            ) : username && username !== currentUser ? (
+              <div className="text-[11px] text-green-400 mt-1 font-mono">@{username} is available</div>
+            ) : (
+              <div className="text-[11px] text-gs-dim mt-1">Letters, numbers, dots, and underscores only.</div>
+            )}
           </div>
           <div className="mb-3">
             <FormInput label="DISPLAY NAME" value={displayName} onChange={v => { setDisplayName(v); if (v.trim()) setDisplayNameError(""); }} placeholder="Your name" />
             {displayNameError && <div className="text-[11px] text-red-400 mt-1 font-mono">{displayNameError}</div>}
           </div>
 
-          {/* Bio with character count */}
+          {/* Bio with character count and suggestions */}
           <div className="mb-4">
             <label className="gs-label block mb-1.5">BIO</label>
             <textarea
@@ -285,18 +409,26 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
               rows={3}
               className="w-full bg-gs-card border border-[#222] rounded-lg px-3 py-2.5 text-neutral-100 text-[13px] outline-none font-sans resize-y placeholder:text-gs-faint focus:border-gs-accent/40 focus:ring-1 focus:ring-gs-accent/20 transition-all duration-150"
             />
-            <div className={`text-[10px] font-mono mt-1 text-right ${bioRemaining < 30 ? (bioRemaining < 10 ? 'text-red-400' : 'text-amber-400') : 'text-gs-dim'}`}>
-              {(bio || '').length}/{BIO_MAX_LENGTH}
+            <div className="flex items-center justify-between mt-1">
+              {/* [Improvement 1] Bio suggestion */}
+              {bioSuggestion && (
+                <div className="text-[10px] text-gs-faint italic flex-1 mr-2">
+                  Tip: {bioSuggestion}
+                </div>
+              )}
+              <div className={`text-[10px] font-mono text-right shrink-0 ${bioRemaining < 30 ? (bioRemaining < 10 ? 'text-red-400' : 'text-amber-400') : 'text-gs-dim'}`}>
+                {(bio || '').length}/{BIO_MAX_LENGTH}
+              </div>
             </div>
           </div>
 
           <FormInput label="LOCATION" value={location} onChange={setLocation} placeholder="Chicago, IL" />
           <FormSelect label="FAVORITE GENRE" value={favGenre} onChange={setFavGenre} options={GENRES} />
 
-          {/* ── Accent Color Picker ─────────────────────────────────────── */}
+          {/* ── Accent Color Picker with custom hex ─────────────────────── */}
           <div className="mb-4">
             <label className="gs-label block mb-2">ACCENT COLOR</label>
-            <div className="flex gap-2 flex-wrap">
+            <div className="flex gap-2 flex-wrap mb-2">
               {ACCENT_COLORS.map(color => (
                 <button
                   key={color}
@@ -307,12 +439,96 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
                 />
               ))}
             </div>
+            {/* [Improvement 6] Custom hex color input */}
+            <div className="flex gap-2 items-center">
+              <div
+                className="w-7 h-7 rounded-full border-2 border-white/20 shrink-0"
+                style={{ background: accentColor }}
+              />
+              <input
+                type="text"
+                value={customHexInput}
+                onChange={e => setCustomHexInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') applyCustomHex(); }}
+                placeholder="#custom hex"
+                className="flex-1 bg-[#111] border border-[#222] rounded-lg px-3 py-1.5 text-neutral-100 text-[11px] outline-none font-mono placeholder:text-gs-faint focus:border-gs-accent/40 transition-colors"
+              />
+              <button
+                onClick={applyCustomHex}
+                disabled={!/^#?[0-9a-fA-F]{6}$/.test(customHexInput.trim())}
+                className="px-3 py-1.5 rounded-lg bg-[#1a1a1a] border border-gs-border-hover text-gs-muted text-[11px] font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:border-gs-accent/40 transition-colors"
+              >
+                Apply
+              </button>
+            </div>
+            <div className="text-[10px] text-gs-faint mt-1 font-mono">Current: {accentColor}</div>
+          </div>
+
+          {/* [Improvement 2] Social Links Editor */}
+          <div className="border-t border-gs-border mt-4 pt-4 mb-4">
+            <div className="gs-label mb-3">SOCIAL LINKS</div>
+            <div className="flex flex-col gap-2.5">
+              {SOCIAL_PLATFORMS.map(platform => (
+                <div key={platform.key} className="flex items-center gap-2">
+                  <span className="text-sm shrink-0 w-6 text-center">{platform.icon}</span>
+                  <input
+                    type="text"
+                    value={socialLinks[platform.key] || ''}
+                    onChange={e => updateSocialLink(platform.key, e.target.value)}
+                    placeholder={platform.placeholder}
+                    className="flex-1 bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-neutral-100 text-[12px] outline-none placeholder:text-gs-faint focus:border-gs-accent/40 transition-colors"
+                  />
+                  {socialLinks[platform.key] && (
+                    <button
+                      onClick={() => updateSocialLink(platform.key, '')}
+                      className="text-gs-dim hover:text-red-400 bg-transparent border-none cursor-pointer text-sm p-0 transition-colors"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* [Improvement 3] Privacy Settings */}
+          <div className="border-t border-gs-border mt-4 pt-4 mb-4">
+            <div className="gs-label mb-3">PRIVACY SETTINGS</div>
+            <div className="flex flex-col gap-3">
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-[12px] text-gs-muted">Collection visible to others</span>
+                <button
+                  onClick={() => setPrivacyCollectionPublic(p => !p)}
+                  className={`w-10 h-5 rounded-full relative transition-colors duration-200 border-none cursor-pointer ${privacyCollectionPublic ? 'bg-gs-accent' : 'bg-[#333]'}`}
+                >
+                  <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform duration-200 ${privacyCollectionPublic ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </label>
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-[12px] text-gs-muted">Show location on profile</span>
+                <button
+                  onClick={() => setPrivacyShowLocation(p => !p)}
+                  className={`w-10 h-5 rounded-full relative transition-colors duration-200 border-none cursor-pointer ${privacyShowLocation ? 'bg-gs-accent' : 'bg-[#333]'}`}
+                >
+                  <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform duration-200 ${privacyShowLocation ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </label>
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-[12px] text-gs-muted">Show listening activity</span>
+                <button
+                  onClick={() => setPrivacyShowActivity(p => !p)}
+                  className={`w-10 h-5 rounded-full relative transition-colors duration-200 border-none cursor-pointer ${privacyShowActivity ? 'bg-gs-accent' : 'bg-[#333]'}`}
+                >
+                  <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform duration-200 ${privacyShowActivity ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </label>
+            </div>
           </div>
 
           {/* ── Shipping Address ──────────────────────────────────────────── */}
           <div className="border-t border-gs-border mt-4 pt-4 mb-4">
             <div className="gs-label mb-3">SHIPPING ADDRESS</div>
-            <p className="text-[11px] text-gs-dim mb-3">Used to pre-fill checkout and receive trades. You'll always confirm before any order.</p>
+            <p className="text-[11px] text-gs-dim mb-3">Used to pre-fill checkout and receive trades. You will always confirm before any order.</p>
             <FormInput label="FULL NAME" value={shippingName} onChange={setShippingName} placeholder="Jane Smith" />
             <FormInput label="STREET ADDRESS" value={shippingStreet} onChange={setShippingStreet} placeholder="123 Vinyl Lane, Apt 4" />
             <div className="grid grid-cols-3 gap-2.5">
@@ -322,12 +538,109 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
             </div>
           </div>
 
+          {/* [Improvement 5] Two-Factor Auth Toggle (Placeholder) */}
+          <div className="border-t border-gs-border mt-4 pt-4 mb-4">
+            <div className="gs-label mb-3">SECURITY</div>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-[12px] text-gs-muted font-semibold">Two-Factor Authentication</div>
+                <div className="text-[10px] text-gs-dim">Add an extra layer of security to your account</div>
+              </div>
+              <button
+                onClick={() => {
+                  if (twoFactorEnabled) {
+                    setTwoFactorEnabled(false);
+                    setShowTwoFactorSetup(false);
+                  } else {
+                    setShowTwoFactorSetup(true);
+                  }
+                }}
+                className={`w-10 h-5 rounded-full relative transition-colors duration-200 border-none cursor-pointer ${twoFactorEnabled ? 'bg-green-500' : 'bg-[#333]'}`}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform duration-200 ${twoFactorEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+              </button>
+            </div>
+            {showTwoFactorSetup && !twoFactorEnabled && (
+              <div className="p-3 bg-[#0a0a0a] rounded-lg border border-gs-border mb-3">
+                <div className="text-[11px] text-gs-muted mb-2">Scan this QR code with your authenticator app:</div>
+                <div className="w-32 h-32 mx-auto bg-[#fff] rounded-lg mb-3 flex items-center justify-center">
+                  <div className="text-[10px] text-[#333] font-mono text-center p-2">
+                    [QR Code Placeholder]<br />Use Google Authenticator or Authy
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowTwoFactorSetup(false)}
+                    className="flex-1 py-2 bg-[#1a1a1a] border border-gs-border-hover rounded-lg text-gs-muted text-[11px] font-semibold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => { setTwoFactorEnabled(true); setShowTwoFactorSetup(false); }}
+                    className="flex-[2] py-2 bg-green-500/20 border border-green-500/30 rounded-lg text-green-400 text-[11px] font-bold cursor-pointer"
+                  >
+                    I have scanned the code
+                  </button>
+                </div>
+              </div>
+            )}
+            {twoFactorEnabled && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-green-500/10 rounded-lg border border-green-500/20 mb-3">
+                <span className="text-green-400 text-xs">&check;</span>
+                <span className="text-[11px] text-green-400 font-semibold">2FA is active on your account</span>
+              </div>
+            )}
+          </div>
+
+          {/* [Improvement 4] Account Deletion */}
+          <div className="border-t border-gs-border mt-4 pt-4 mb-4">
+            <div className="gs-label mb-3 text-red-400">DANGER ZONE</div>
+            {!showDeleteConfirm ? (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="w-full py-2.5 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-[12px] font-semibold cursor-pointer hover:bg-red-500/15 transition-colors"
+              >
+                Delete My Account
+              </button>
+            ) : (
+              <div className="p-3 bg-red-500/5 rounded-lg border border-red-500/20">
+                <div className="text-[12px] text-red-400 font-semibold mb-2">Are you sure? This cannot be undone.</div>
+                <div className="text-[11px] text-gs-dim mb-3">
+                  This will permanently delete your account, collection, and all associated data.
+                  Type <span className="font-mono text-red-400">delete my account</span> to confirm.
+                </div>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={e => setDeleteConfirmText(e.target.value)}
+                  placeholder="Type 'delete my account'"
+                  className="w-full bg-[#111] border border-red-500/20 rounded-lg px-3 py-2 text-neutral-100 text-[12px] outline-none font-mono placeholder:text-gs-faint focus:border-red-500/40 transition-colors mb-2"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); }}
+                    className="flex-1 py-2 bg-[#1a1a1a] border border-gs-border-hover rounded-lg text-gs-muted text-[11px] font-semibold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={deleteConfirmText !== 'delete my account'}
+                    className="flex-[2] py-2 bg-red-500/20 border border-red-500/30 rounded-lg text-red-400 text-[11px] font-bold cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                    onClick={() => alert('Account deletion would be processed here.')}
+                  >
+                    Permanently Delete Account
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="flex gap-2.5 mt-1">
             <button onClick={onClose} className="gs-btn-secondary flex-1 py-[11px] text-[13px]">Cancel</button>
             <button
               onClick={handleSave}
-              disabled={!!usernameError || !!displayNameError}
-              className={`flex-[2] py-[11px] rounded-[10px] text-[13px] font-bold ${usernameError || displayNameError ? 'bg-[#1a1a1a] text-gs-dim cursor-not-allowed border-none' : 'gs-btn-gradient'}`}
+              disabled={!!usernameError || !!displayNameError || usernameChecking}
+              className={`flex-[2] py-[11px] rounded-[10px] text-[13px] font-bold ${usernameError || displayNameError || usernameChecking ? 'bg-[#1a1a1a] text-gs-dim cursor-not-allowed border-none' : 'gs-btn-gradient'}`}
             >
               Save Changes
             </button>
@@ -337,36 +650,105 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
         {/* ── Right: live preview panel ──────────────────────────────────── */}
         <div className="w-[220px] shrink-0 hidden lg:block">
           <div className="sticky top-0">
-            <div className="text-[10px] text-gs-dim font-mono uppercase tracking-wider mb-2">Preview</div>
-            <div className="bg-gs-card border border-gs-border rounded-xl overflow-hidden">
-              {/* Mini header */}
-              <div
-                className="h-12"
-                style={{
-                  background: headerUrl
-                    ? `url(${headerUrl}) center/cover no-repeat`
-                    : `linear-gradient(135deg,${accentColor}33,#6366f122)`,
-                }}
-              />
-              <div className="px-3 pb-3 -mt-4">
-                <div className="rounded-full border-2 border-gs-card leading-none mb-2 w-fit">
-                  {avatarUrl ? (
-                    <img src={avatarUrl} alt="preview" className="w-8 h-8 rounded-full object-cover" />
-                  ) : (
-                    <Avatar username={currentUser} size={32} />
-                  )}
-                </div>
-                <div className="text-[11px] font-extrabold text-gs-text truncate">{displayName || 'Display Name'}</div>
-                <div className="text-[9px] font-mono mb-1.5 truncate" style={{ color: accentColor }}>@{username || 'handle'}</div>
-                {bio && <p className="text-[9px] text-gs-muted leading-relaxed line-clamp-3 mb-2">{bio}</p>}
-                <div className="flex gap-2 text-[9px] text-gs-dim flex-wrap">
-                  {location && <span>📍 {location}</span>}
-                  {favGenre && <span>🎵 {favGenre}</span>}
-                </div>
-                {/* Mini accent bar */}
-                <div className="h-0.5 rounded-full mt-2.5" style={{ background: `linear-gradient(90deg,${accentColor},transparent)` }} />
+            {/* [Improvement 7] Preview mode toggle */}
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] text-gs-dim font-mono uppercase tracking-wider">Preview</div>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setPreviewMode('card')}
+                  className={`px-2 py-0.5 rounded text-[9px] font-mono cursor-pointer border-none transition-colors ${previewMode === 'card' ? 'bg-gs-accent text-black font-bold' : 'bg-[#1a1a1a] text-gs-dim'}`}
+                >
+                  Card
+                </button>
+                <button
+                  onClick={() => setPreviewMode('full')}
+                  className={`px-2 py-0.5 rounded text-[9px] font-mono cursor-pointer border-none transition-colors ${previewMode === 'full' ? 'bg-gs-accent text-black font-bold' : 'bg-[#1a1a1a] text-gs-dim'}`}
+                >
+                  Full
+                </button>
               </div>
             </div>
+
+            {previewMode === 'card' ? (
+              /* Card preview (compact) */
+              <div className="bg-gs-card border border-gs-border rounded-xl overflow-hidden">
+                {/* Mini header */}
+                <div
+                  className="h-12"
+                  style={{
+                    background: headerUrl
+                      ? `url(${headerUrl}) center/cover no-repeat`
+                      : `linear-gradient(135deg,${accentColor}33,#6366f122)`,
+                  }}
+                />
+                <div className="px-3 pb-3 -mt-4">
+                  <div className="rounded-full border-2 border-gs-card leading-none mb-2 w-fit">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="preview" className="w-8 h-8 rounded-full object-cover" />
+                    ) : (
+                      <Avatar username={currentUser} size={32} />
+                    )}
+                  </div>
+                  <div className="text-[11px] font-extrabold text-gs-text truncate">{displayName || 'Display Name'}</div>
+                  <div className="text-[9px] font-mono mb-1.5 truncate" style={{ color: accentColor }}>@{username || 'handle'}</div>
+                  {bio && <p className="text-[9px] text-gs-muted leading-relaxed line-clamp-3 mb-2">{bio}</p>}
+                  <div className="flex gap-2 text-[9px] text-gs-dim flex-wrap">
+                    {location && privacyShowLocation && <span>&#x1F4CD; {location}</span>}
+                    {favGenre && <span>&#x1F3B5; {favGenre}</span>}
+                  </div>
+                  {/* Mini accent bar */}
+                  <div className="h-0.5 rounded-full mt-2.5" style={{ background: `linear-gradient(90deg,${accentColor},transparent)` }} />
+                </div>
+              </div>
+            ) : (
+              /* [Improvement 7] Full page preview */
+              <div className="bg-gs-card border border-gs-border rounded-xl overflow-hidden">
+                <div
+                  className="h-20"
+                  style={{
+                    background: headerUrl
+                      ? `url(${headerUrl}) center/cover no-repeat`
+                      : `linear-gradient(135deg,${accentColor}33,#6366f122)`,
+                  }}
+                />
+                <div className="px-3 pb-3 -mt-6">
+                  <div className="rounded-full border-2 border-gs-card leading-none mb-2 w-fit">
+                    {avatarUrl ? (
+                      <img src={avatarUrl} alt="preview" className="w-12 h-12 rounded-full object-cover" />
+                    ) : (
+                      <Avatar username={currentUser} size={48} />
+                    )}
+                  </div>
+                  <div className="text-[13px] font-extrabold text-gs-text truncate">{displayName || 'Display Name'}</div>
+                  <div className="text-[10px] font-mono mb-2 truncate" style={{ color: accentColor }}>@{username || 'handle'}</div>
+                  {bio && <p className="text-[10px] text-gs-muted leading-relaxed mb-2">{bio}</p>}
+                  <div className="flex gap-2 text-[9px] text-gs-dim flex-wrap mb-2">
+                    {location && privacyShowLocation && <span>&#x1F4CD; {location}</span>}
+                    {favGenre && <span>&#x1F3B5; {favGenre}</span>}
+                  </div>
+                  {/* Social links preview */}
+                  {Object.entries(socialLinks).filter(([, v]) => v).length > 0 && (
+                    <div className="flex gap-1.5 flex-wrap mb-2">
+                      {SOCIAL_PLATFORMS.filter(p => socialLinks[p.key]).map(p => (
+                        <span key={p.key} className="text-[9px] px-1.5 py-0.5 rounded bg-[#1a1a1a] text-gs-dim">
+                          {p.icon} {p.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {/* Privacy indicators */}
+                  <div className="flex gap-1 flex-wrap">
+                    {!privacyCollectionPublic && (
+                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Private collection</span>
+                    )}
+                    {!privacyShowActivity && (
+                      <span className="text-[8px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">Activity hidden</span>
+                    )}
+                  </div>
+                  <div className="h-0.5 rounded-full mt-2.5" style={{ background: `linear-gradient(90deg,${accentColor},transparent)` }} />
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

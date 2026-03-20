@@ -1,17 +1,31 @@
 // Album art component — drop-in replacement for VinylDisc.
 // Fetches real album cover art via iTunes Search API, falls back to VinylDisc while loading or on error.
-// Supports lazy loading with IntersectionObserver, blur-up placeholder, click to expand, and skeleton shimmer.
+// Supports lazy loading with IntersectionObserver, blur-up placeholder, click to expand, skeleton shimmer,
+// vinyl record peek animation on hover, responsive sizes, and broken image fallback art.
 import { useState, useEffect, useRef, useCallback } from 'react';
 import VinylDisc from './VinylDisc';
 import { getCoverUrl } from '../../utils/coverArt';
 
-export default function AlbumArt({ album, artist, size = 72, accent = "#555", expandable, priority = false }) {
+// Improvement 1: Responsive size presets for different contexts
+const SIZE_PRESETS = {
+  thumb: 48,
+  sm: 72,
+  md: 120,
+  lg: 200,
+  xl: 300,
+};
+
+export default function AlbumArt({ album, artist, size = 72, sizePreset, accent = "#555", expandable, priority = false }) {
   const [url, setUrl] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
   const [inView, setInView] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const containerRef = useRef(null);
+
+  // Improvement 2: Resolve size from preset or raw value
+  const resolvedSize = sizePreset ? (SIZE_PRESETS[sizePreset] || size) : size;
 
   // Lazy loading with IntersectionObserver (skip for priority/above-the-fold images #16)
   useEffect(() => {
@@ -76,14 +90,24 @@ export default function AlbumArt({ album, artist, size = 72, accent = "#555", ex
     }
   }, [expandable, url, loaded]);
 
+  // Improvement 3: Keyboard support for expanded lightbox (Escape to close)
+  useEffect(() => {
+    if (!expanded) return;
+    const handler = (e) => {
+      if (e.key === 'Escape') setExpanded(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [expanded]);
+
   // Show VinylDisc as fallback while loading, on error, or if no art found
   if (!inView || (!url && !errored)) {
-    const radius = Math.round(size * 0.18);
+    const radius = Math.round(resolvedSize * 0.18);
     return (
       <div
         ref={containerRef}
         className="overflow-hidden shrink-0 relative"
-        style={{ width: size, height: size, borderRadius: radius }}
+        style={{ width: resolvedSize, height: resolvedSize, borderRadius: radius }}
       >
         {/* Skeleton shimmer while waiting to load */}
         <div
@@ -97,26 +121,58 @@ export default function AlbumArt({ album, artist, size = 72, accent = "#555", ex
         />
         {!inView && (
           <div className="absolute inset-0 flex items-center justify-center">
-            <VinylDisc accent={accent} size={size} />
+            <VinylDisc accent={accent} size={resolvedSize} />
           </div>
         )}
       </div>
     );
   }
 
+  // Improvement 3: Broken image fallback with music note icon instead of just VinylDisc
   if (!url || errored) {
-    return <VinylDisc accent={accent} size={size} />;
+    const radius = Math.round(resolvedSize * 0.18);
+    return (
+      <div
+        className="overflow-hidden shrink-0 relative flex items-center justify-center bg-[#1a1a1a] border border-gs-border"
+        style={{ width: resolvedSize, height: resolvedSize, borderRadius: radius }}
+      >
+        <svg
+          width={resolvedSize * 0.4}
+          height={resolvedSize * 0.4}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#444"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M9 18V5l12-2v13" />
+          <circle cx="6" cy="18" r="3" fill="#333" stroke="#444" />
+          <circle cx="18" cy="16" r="3" fill="#333" stroke="#444" />
+        </svg>
+        {album && (
+          <span
+            className="absolute bottom-1 left-1 right-1 text-center text-gs-faint truncate"
+            style={{ fontSize: Math.max(8, resolvedSize * 0.1) }}
+          >
+            {album}
+          </span>
+        )}
+      </div>
+    );
   }
 
-  const radius = Math.round(size * 0.18);
+  const radius = Math.round(resolvedSize * 0.18);
 
   return (
     <>
       <div
         ref={containerRef}
         className={`overflow-hidden shrink-0 bg-[#1a1a1a] border border-gs-border-hover relative hover:scale-105 transition-transform duration-200 ${expandable ? 'cursor-pointer' : ''}`}
-        style={{ width: size, height: size, borderRadius: radius }}
+        style={{ width: resolvedSize, height: resolvedSize, borderRadius: radius }}
         onClick={handleClick}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
       >
         {/* Blur-up placeholder while image is loading */}
         {!loaded && (
@@ -129,7 +185,7 @@ export default function AlbumArt({ album, artist, size = 72, accent = "#555", ex
                 aria-hidden="true"
               />
             ) : (
-              <VinylDisc accent={accent} size={size} />
+              <VinylDisc accent={accent} size={resolvedSize} />
             )}
           </div>
         )}
@@ -140,6 +196,36 @@ export default function AlbumArt({ album, artist, size = 72, accent = "#555", ex
           onError={() => setErrored(true)}
           className={`w-full h-full object-cover transition-opacity duration-[250ms] ${loaded ? "opacity-100" : "opacity-0"}`}
         />
+
+        {/* Improvement 1: Vinyl record peek animation on hover */}
+        {loaded && hovered && (
+          <div
+            className="absolute pointer-events-none"
+            style={{
+              right: -resolvedSize * 0.25,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              width: resolvedSize * 0.85,
+              height: resolvedSize * 0.85,
+              transition: 'right 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              animation: 'vinylPeek 0.35s ease-out forwards',
+            }}
+          >
+            <svg
+              width="100%"
+              height="100%"
+              viewBox="0 0 100 100"
+              style={{ filter: 'drop-shadow(-2px 0 4px rgba(0,0,0,0.5))' }}
+            >
+              <circle cx="50" cy="50" r="48" fill="#111" stroke="#222" strokeWidth="1" />
+              <circle cx="50" cy="50" r="38" fill="none" stroke="#1a1a1a" strokeWidth="0.5" />
+              <circle cx="50" cy="50" r="28" fill="none" stroke="#1a1a1a" strokeWidth="0.5" />
+              <circle cx="50" cy="50" r="18" fill="none" stroke="#1a1a1a" strokeWidth="0.5" />
+              <circle cx="50" cy="50" r="8" fill="#222" stroke="#333" strokeWidth="1" />
+              <circle cx="50" cy="50" r="2" fill={accent} />
+            </svg>
+          </div>
+        )}
       </div>
 
       {/* Full-size expanded preview overlay */}
@@ -147,6 +233,8 @@ export default function AlbumArt({ album, artist, size = 72, accent = "#555", ex
         <div
           className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-[2000] animate-fade-in cursor-pointer"
           onClick={() => setExpanded(false)}
+          role="dialog"
+          aria-label={`${album || 'Album'} cover preview`}
         >
           <div className="relative animate-slide-up max-w-[90vw] max-h-[90vh]">
             <img
@@ -168,6 +256,14 @@ export default function AlbumArt({ album, artist, size = 72, accent = "#555", ex
           </div>
         </div>
       )}
+
+      {/* Inline styles for vinyl peek animation */}
+      <style>{`
+        @keyframes vinylPeek {
+          from { right: ${-resolvedSize * 0.6}px; opacity: 0; }
+          to { right: ${-resolvedSize * 0.25}px; opacity: 1; }
+        }
+      `}</style>
     </>
   );
 }

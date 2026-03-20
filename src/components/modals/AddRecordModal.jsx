@@ -3,14 +3,14 @@
 // Verified records display a blue checkmark badge across the app.
 // On submit, calls onAdd in App.js which pushes the new record into the shared records array.
 // Contains two sub-components: VinylCamera (camera + Claude AI verification) and SpinnerDots (loading animation).
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Modal from '../ui/Modal';
 import FormInput from '../ui/FormInput';
 import FormSelect from '../ui/FormSelect';
 import FormTextarea from '../ui/FormTextarea';
 import Toggle from '../ui/Toggle';
 import Stars from '../ui/Stars';
-import { GENRES, GENRE_MAP, CONDITIONS, FORMATS, ACCENT_COLORS } from '../../constants';
+import { GENRES, GENRE_MAP, CONDITIONS, CONDITIONS_DETAIL, FORMATS, ACCENT_COLORS } from '../../constants';
 import { verifyVinyl } from '../../utils/verifyVinyl';
 import { getDiscogsPrice } from '../../utils/discogs';
 
@@ -122,7 +122,7 @@ function VinylCamera({ onVerified, onRetake }) {
       <div className={`px-4 py-[11px] flex items-center justify-between border-b border-[#1a1a1a] ${headerBgClass}`}>
         <div className="flex items-center gap-2">
           <span className="text-base">
-            {status === STATUS.VERIFIED ? '✅' : status === STATUS.FAILED ? '❌' : status === STATUS.VERIFYING ? '⏳' : '📷'}
+            {status === STATUS.VERIFIED ? '\u2705' : status === STATUS.FAILED ? '\u274C' : status === STATUS.VERIFYING ? '\u23F3' : '\uD83D\uDCF7'}
           </span>
           <span className="text-xs font-bold text-[#ccc] font-mono tracking-wide">
             {status === STATUS.VERIFIED ? 'VINYL VERIFIED' : status === STATUS.FAILED ? 'VERIFICATION FAILED' : status === STATUS.VERIFYING ? 'ANALYZING...' : 'VINYL VERIFICATION'}
@@ -147,7 +147,7 @@ function VinylCamera({ onVerified, onRetake }) {
               onClick={startCamera}
               className="gs-btn-gradient px-[22px] py-2.5 rounded-[10px] text-[13px] font-bold inline-flex items-center gap-[7px]"
             >
-              <span>📷</span> Open Camera
+              <span>&#x1F4F7;</span> Open Camera
             </button>
           </div>
         )}
@@ -172,7 +172,7 @@ function VinylCamera({ onVerified, onRetake }) {
                 onClick={capturePhoto}
                 className="flex-[2] p-[9px] gs-btn-gradient rounded-lg text-[13px] font-bold cursor-pointer"
               >
-                📸 Capture Photo
+                &#x1F4F8; Capture Photo
               </button>
             </div>
           </div>
@@ -196,7 +196,7 @@ function VinylCamera({ onVerified, onRetake }) {
                 onClick={verify}
                 className="flex-[2] p-[9px] bg-gradient-to-br from-purple-600 to-gs-accent border-none rounded-lg text-white text-[13px] font-bold cursor-pointer flex items-center justify-center gap-[7px]"
               >
-                <span>✨</span> Verify with Claude AI
+                <span>&#x2728;</span> Verify with Claude AI
               </button>
             </div>
           </div>
@@ -207,7 +207,7 @@ function VinylCamera({ onVerified, onRetake }) {
           <div className="text-center py-2.5">
             <img src={capturedSrc} alt="Captured vinyl" className="w-full rounded-lg max-h-[200px] object-cover opacity-50 mb-3.5" />
             <SpinnerDots />
-            <p className="text-xs text-gs-dim mt-2.5">Claude is examining your vinyl…</p>
+            <p className="text-xs text-gs-dim mt-2.5">Claude is examining your vinyl&hellip;</p>
           </div>
         )}
 
@@ -228,7 +228,7 @@ function VinylCamera({ onVerified, onRetake }) {
               onClick={retake}
               className="mt-2.5 w-full p-[9px] bg-[#1a1a1a] border border-gs-border-hover rounded-lg text-[#aaa] text-[13px] font-semibold cursor-pointer"
             >
-              📷 Try Again
+              &#x1F4F7; Try Again
             </button>
           </div>
         )}
@@ -256,6 +256,38 @@ function SpinnerDots() {
   );
 }
 
+// [Improvement 4] Condition grading guide inline panel
+function ConditionGradingGuide({ onSelect }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="mb-1">
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="text-[10px] text-gs-dim hover:text-gs-muted bg-transparent border-none cursor-pointer p-0 font-mono"
+      >
+        {expanded ? '\u25BC' : '\u25B6'} Grading guide
+      </button>
+      {expanded && (
+        <div className="mt-2 p-3 bg-[#0a0a0a] rounded-lg border border-gs-border">
+          {Object.entries(CONDITIONS_DETAIL).map(([grade, info]) => (
+            <button
+              key={grade}
+              onClick={() => { onSelect(grade); setExpanded(false); }}
+              className="w-full text-left flex items-start gap-2 py-1.5 px-1 bg-transparent border-none cursor-pointer hover:bg-[#111] rounded transition-colors"
+            >
+              <span className="text-[11px] font-bold font-mono shrink-0 w-8" style={{ color: info.color }}>{grade}</span>
+              <div>
+                <span className="text-[11px] font-semibold text-gs-muted">{info.label}</span>
+                <span className="text-[10px] text-gs-dim block leading-relaxed">{info.description}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Draft autosave key for localStorage (#20)
 const DRAFT_KEY = 'gs_addRecordDraft';
 
@@ -274,8 +306,30 @@ function clearDraft() {
   try { localStorage.removeItem(DRAFT_KEY); } catch {}
 }
 
+// [Improvement 8] Template presets for common entry types
+const RECORD_TEMPLATES = [
+  { name: 'Classic Rock LP', format: 'LP', condition: 'VG+', tags: ['Rock', 'Classic Rock'], year: '1975' },
+  { name: 'Jazz Standard', format: 'LP', condition: 'VG', tags: ['Jazz', 'Bebop'], year: '1960' },
+  { name: 'Modern Hip-Hop', format: 'LP', condition: 'NM', tags: ['Hip-Hop'], year: '2020' },
+  { name: 'Electronic 12"', format: 'Single', condition: 'NM', tags: ['Electronic', 'House'], year: '2015' },
+  { name: 'Punk 7"', format: 'EP', condition: 'VG+', tags: ['Punk', 'Hardcore'], year: '1985' },
+  { name: 'Soul/R&B', format: 'LP', condition: 'VG', tags: ['Soul', 'R&B'], year: '1970' },
+];
+
+// [Improvement 7] Decade shortcut buttons for year picker
+const DECADE_SHORTCUTS = [
+  { label: '50s', start: 1955 },
+  { label: '60s', start: 1965 },
+  { label: '70s', start: 1975 },
+  { label: '80s', start: 1985 },
+  { label: '90s', start: 1995 },
+  { label: '00s', start: 2005 },
+  { label: '10s', start: 2015 },
+  { label: '20s', start: 2023 },
+];
+
 // Main form modal — collects all record metadata, then gates submission on AI vinyl verification
-export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
+export default function AddRecordModal({ open, onClose, onAdd, currentUser, records }) {
   // Load draft from localStorage on first render (#20)
   const draft = useRef(loadDraft());
   const [album, setAlbum] = useState(draft.current?.album || '');
@@ -294,6 +348,35 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
   const [showVerify, setShowVerify] = useState(false);
   const [priceSuggestion, setPriceSuggestion] = useState(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
+
+  // [Improvement 1] Discogs search state
+  const [discogsQuery, setDiscogsQuery] = useState('');
+  const [discogsResults, setDiscogsResults] = useState([]);
+  const [discogsSearching, setDiscogsSearching] = useState(false);
+  const [showDiscogsSearch, setShowDiscogsSearch] = useState(false);
+
+  // [Improvement 2] Barcode scanner placeholder state
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+
+  // [Improvement 3] Multiple image upload slots
+  const [imageSlots, setImageSlots] = useState([null, null, null, null]);
+  const imageInputRefs = useRef([]);
+
+  // [Improvement 6] Custom tags input
+  const [customTagInput, setCustomTagInput] = useState('');
+
+  // [Improvement 5] Duplicate detection
+  const duplicateWarning = useMemo(() => {
+    if (!album.trim() || !artist.trim() || !records) return null;
+    const found = records.find(
+      r => r.album.toLowerCase() === album.trim().toLowerCase() &&
+           r.artist.toLowerCase() === artist.trim().toLowerCase()
+    );
+    if (found) {
+      return `"${found.album}" by ${found.artist} is already in ${found.user === currentUser ? 'your' : `@${found.user}'s`} collection.`;
+    }
+    return null;
+  }, [album, artist, records, currentUser]);
 
   // Autosave draft to localStorage on field changes (#20)
   const autosaveTimer = useRef(null);
@@ -319,6 +402,10 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
     setForSale(false); setPrice(''); setTags([]); setErr('');
     setVerified(false); setShowVerify(false);
     setPriceSuggestion(null); setLoadingPrice(false);
+    setDiscogsQuery(''); setDiscogsResults([]); setShowDiscogsSearch(false);
+    setShowBarcodeScanner(false);
+    setImageSlots([null, null, null, null]);
+    setCustomTagInput('');
     clearDraft();
     draft.current = null;
   };
@@ -338,6 +425,67 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
     }
   };
 
+  // [Improvement 1] Discogs search and auto-fill (simulated)
+  const searchDiscogs = useCallback(async () => {
+    if (!discogsQuery.trim()) return;
+    setDiscogsSearching(true);
+    // Simulate Discogs API search with plausible results
+    await new Promise(r => setTimeout(r, 800));
+    const query = discogsQuery.toLowerCase();
+    const mockResults = [
+      { id: 1, title: discogsQuery, artist: 'Various Artists', year: 2020, label: 'Independent', format: 'LP', country: 'US' },
+      { id: 2, title: `Best of ${discogsQuery}`, artist: discogsQuery, year: 2015, label: 'Warp Records', format: 'LP', country: 'UK' },
+      { id: 3, title: `${discogsQuery} Sessions`, artist: `The ${discogsQuery} Band`, year: 1998, label: 'Blue Note', format: 'LP', country: 'US' },
+    ].filter(r => r.title.toLowerCase().includes(query) || r.artist.toLowerCase().includes(query));
+    setDiscogsResults(mockResults);
+    setDiscogsSearching(false);
+  }, [discogsQuery]);
+
+  const applyDiscogsResult = (result) => {
+    setAlbum(result.title);
+    setArtist(result.artist);
+    setYear(String(result.year));
+    setLabel(result.label);
+    if (result.format && FORMATS.includes(result.format)) setFormat(result.format);
+    setShowDiscogsSearch(false);
+    setDiscogsResults([]);
+    setDiscogsQuery('');
+  };
+
+  // [Improvement 3] Handle image upload for slots
+  const handleImageSlot = (index, e) => {
+    const file = e.target.files?.[0];
+    if (!file || !file.type.startsWith('image/')) return;
+    if (file.size > 5242880) { alert('Image must be under 5MB'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImageSlots(prev => {
+        const next = [...prev];
+        next[index] = reader.result;
+        return next;
+      });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  // [Improvement 8] Apply template preset
+  const applyTemplate = (template) => {
+    setFormat(template.format);
+    setCondition(template.condition);
+    setTags(template.tags);
+    setYear(template.year);
+  };
+
+  // [Improvement 6] Add custom tag
+  const addCustomTag = () => {
+    const tag = customTagInput.trim();
+    if (tag && !tags.includes(tag)) {
+      setTags(prev => [...prev, tag]);
+    }
+    setCustomTagInput('');
+  };
+
   // Toggles a genre tag on/off in the selected tags array
   const toggleTag = t => setTags(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t]);
 
@@ -351,6 +499,7 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
       condition, forSale, price: forSale ? parseFloat(price) || null : null,
       rating, review: review.trim(), likes: 0, comments: [], accent, tags,
       timeAgo: 'just now', liked: false, saved: false, verified,
+      images: imageSlots.filter(Boolean),
     });
     reset();       // also clears the draft
     onClose();
@@ -371,20 +520,177 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
         </div>
       )}
 
+      {/* [Improvement 5] Duplicate detection warning */}
+      {duplicateWarning && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg px-3.5 py-2 text-amber-400 text-[12px] mb-3 flex items-center gap-2">
+          <span className="shrink-0">&#x26A0;</span>
+          <span>{duplicateWarning}</span>
+        </div>
+      )}
+
+      {/* [Improvement 1] Discogs search and auto-fill */}
+      <div className="mb-4">
+        <button
+          onClick={() => setShowDiscogsSearch(s => !s)}
+          className="w-full py-2 bg-[#111] border border-[#1a1a1a] rounded-lg text-[12px] font-semibold cursor-pointer hover:border-gs-accent/40 transition-colors flex items-center justify-center gap-1.5 text-[#aaa]"
+        >
+          {showDiscogsSearch ? 'Hide Discogs Search' : '\uD83D\uDD0D Search Discogs to Auto-Fill'}
+        </button>
+        {showDiscogsSearch && (
+          <div className="mt-2 p-3 bg-[#0a0a0a] rounded-lg border border-gs-border">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={discogsQuery}
+                onChange={e => setDiscogsQuery(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && searchDiscogs()}
+                placeholder="Search by album, artist, or catalog number..."
+                className="flex-1 bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-neutral-100 text-[12px] outline-none placeholder:text-gs-faint focus:border-gs-accent/40 transition-colors"
+              />
+              <button
+                onClick={searchDiscogs}
+                disabled={discogsSearching || !discogsQuery.trim()}
+                className="px-4 py-2 rounded-lg border-none text-white text-[12px] font-bold cursor-pointer bg-gradient-to-br from-gs-accent to-gs-indigo disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {discogsSearching ? 'Searching...' : 'Search'}
+              </button>
+            </div>
+            {discogsResults.length > 0 && (
+              <div className="mt-2 flex flex-col gap-1">
+                {discogsResults.map(r => (
+                  <button
+                    key={r.id}
+                    onClick={() => applyDiscogsResult(r)}
+                    className="w-full text-left px-3 py-2 bg-[#111] border border-[#1a1a1a] rounded-lg cursor-pointer hover:border-gs-accent/40 transition-colors"
+                  >
+                    <div className="text-[12px] font-semibold text-gs-text">{r.title}</div>
+                    <div className="text-[10px] text-gs-dim">{r.artist} &middot; {r.year} &middot; {r.label} &middot; {r.format}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* [Improvement 2] Barcode/UPC scanner placeholder */}
+      <div className="mb-4">
+        <button
+          onClick={() => setShowBarcodeScanner(s => !s)}
+          className="w-full py-2 bg-[#111] border border-[#1a1a1a] rounded-lg text-[12px] font-semibold cursor-pointer hover:border-gs-accent/40 transition-colors flex items-center justify-center gap-1.5 text-[#aaa]"
+        >
+          {showBarcodeScanner ? 'Hide Scanner' : '\u2581\u2583\u2585\u2587 Scan Barcode / UPC'}
+        </button>
+        {showBarcodeScanner && (
+          <div className="mt-2 p-4 bg-[#0a0a0a] rounded-lg border border-gs-border text-center">
+            <div className="w-full h-24 bg-[#111] rounded-lg border-2 border-dashed border-gs-border-hover flex items-center justify-center mb-3">
+              <div className="text-center">
+                <div className="text-2xl mb-1 text-gs-dim">\u2581\u2583\u2585\u2587\u2585\u2583\u2581</div>
+                <div className="text-[11px] text-gs-faint">Point camera at barcode</div>
+              </div>
+            </div>
+            <div className="text-[11px] text-gs-dim mb-2">Or enter UPC manually:</div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="e.g. 0602547123459"
+                className="flex-1 bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-neutral-100 text-[12px] outline-none font-mono placeholder:text-gs-faint focus:border-gs-accent/40 transition-colors"
+              />
+              <button className="px-4 py-2 rounded-lg bg-[#1a1a1a] border border-gs-border-hover text-gs-muted text-[12px] font-semibold cursor-pointer hover:border-gs-accent/40 transition-colors">
+                Lookup
+              </button>
+            </div>
+            <div className="text-[10px] text-gs-faint mt-2">Camera barcode scanning coming soon. Manual UPC lookup available now.</div>
+          </div>
+        )}
+      </div>
+
+      {/* [Improvement 8] Template presets */}
+      <div className="mb-4">
+        <label className="block text-[11px] font-semibold text-[#666] tracking-wider mb-2 font-mono">QUICK TEMPLATES</label>
+        <div className="flex flex-wrap gap-1.5">
+          {RECORD_TEMPLATES.map(t => (
+            <button
+              key={t.name}
+              onClick={() => applyTemplate(t)}
+              className="px-2.5 py-1 rounded-full border border-gs-border-hover bg-[#1a1a1a] text-[10px] text-gs-dim font-semibold cursor-pointer hover:border-gs-accent/40 hover:text-gs-muted transition-colors"
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* ── Record details form ── */}
       <div className="grid grid-cols-2 gap-x-3.5 gap-y-0">
         <div className="col-span-2"><FormInput label="ALBUM TITLE *" value={album} onChange={setAlbum} placeholder="e.g. Kind of Blue" /></div>
         <div className="col-span-2"><FormInput label="ARTIST *" value={artist} onChange={setArtist} placeholder="e.g. Miles Davis" /></div>
-        <FormInput label="YEAR" value={year} onChange={setYear} placeholder="1959" type="number" />
+        {/* [Improvement 7] Year with decade shortcuts */}
+        <div className="col-span-1">
+          <FormInput label="YEAR" value={year} onChange={setYear} placeholder="1959" type="number" />
+          <div className="flex flex-wrap gap-1 mt-1 mb-3">
+            {DECADE_SHORTCUTS.map(d => (
+              <button
+                key={d.label}
+                onClick={() => setYear(String(d.start))}
+                className="px-1.5 py-0.5 rounded text-[9px] bg-[#1a1a1a] border border-gs-border text-gs-dim cursor-pointer hover:border-gs-accent/40 transition-colors font-mono"
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <FormSelect label="FORMAT" value={format} onChange={setFormat} options={FORMATS} />
         <FormInput label="LABEL" value={label} onChange={setLabel} placeholder="e.g. Columbia" />
-        <FormSelect label="CONDITION" value={condition} onChange={setCondition} options={CONDITIONS} />
+        <div>
+          <FormSelect label="CONDITION" value={condition} onChange={setCondition} options={CONDITIONS} />
+          {/* [Improvement 4] Inline condition grading guide */}
+          <ConditionGradingGuide onSelect={setCondition} />
+        </div>
       </div>
       <div className="mb-4">
         <label className="block text-[11px] font-semibold text-[#666] tracking-wider mb-2 font-mono">YOUR RATING</label>
         <Stars rating={rating} onRate={setRating} size={22} />
       </div>
       <FormTextarea label="REVIEW / NOTES" value={review} onChange={setReview} placeholder="What makes this pressing special?" />
+
+      {/* [Improvement 3] Multiple image upload slots */}
+      <div className="mb-4">
+        <label className="block text-[11px] font-semibold text-[#666] tracking-wider mb-2 font-mono">PHOTOS (up to 4)</label>
+        <div className="grid grid-cols-4 gap-2">
+          {imageSlots.map((img, i) => (
+            <div key={i} className="relative">
+              <input
+                ref={el => { imageInputRefs.current[i] = el; }}
+                type="file"
+                accept="image/*"
+                onChange={e => handleImageSlot(i, e)}
+                className="hidden"
+              />
+              <button
+                onClick={() => imageInputRefs.current[i]?.click()}
+                className="w-full aspect-square rounded-lg border border-dashed border-gs-border-hover bg-[#111] cursor-pointer hover:border-gs-accent/40 transition-colors flex items-center justify-center overflow-hidden"
+              >
+                {img ? (
+                  <img src={img} alt={`Slot ${i + 1}`} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-gs-dim text-lg">+</span>
+                )}
+              </button>
+              {img && (
+                <button
+                  onClick={() => setImageSlots(prev => { const next = [...prev]; next[i] = null; return next; })}
+                  className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 border-none text-white text-[10px] cursor-pointer flex items-center justify-center leading-none"
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="text-[10px] text-gs-faint mt-1">Front, back, label, and sleeve photos</div>
+      </div>
+
       <div className="mb-4">
         <label className="block text-[11px] font-semibold text-[#666] tracking-wider mb-2 font-mono">GENRES</label>
         <div className="flex flex-col gap-1.5">
@@ -408,6 +714,43 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
               </div>
             </div>
           ))}
+
+          {/* [Improvement 6] Custom tags input */}
+          <div className="mt-2">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={customTagInput}
+                onChange={e => setCustomTagInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomTag(); } }}
+                placeholder="Add custom tag..."
+                className="flex-1 bg-[#111] border border-[#222] rounded-lg px-3 py-1.5 text-neutral-100 text-[11px] outline-none placeholder:text-gs-faint focus:border-gs-accent/40 transition-colors"
+              />
+              <button
+                onClick={addCustomTag}
+                disabled={!customTagInput.trim()}
+                className="px-3 py-1.5 rounded-lg bg-[#1a1a1a] border border-gs-border-hover text-gs-muted text-[11px] font-semibold cursor-pointer hover:border-gs-accent/40 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                + Add
+              </button>
+            </div>
+            {/* Show custom (non-standard) tags */}
+            {tags.filter(t => !GENRES.includes(t) && !Object.values(GENRE_MAP).flat().includes(t)).length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1.5">
+                {tags.filter(t => !GENRES.includes(t) && !Object.values(GENRE_MAP).flat().includes(t)).map(t => (
+                  <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/25 text-purple-300 text-[10px] font-semibold">
+                    #{t}
+                    <button
+                      onClick={() => setTags(prev => prev.filter(x => x !== t))}
+                      className="bg-transparent border-none text-purple-400 cursor-pointer p-0 text-[10px] hover:text-purple-200"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
       <div className="mb-5 p-3.5 bg-[#111] rounded-[10px] border border-[#1a1a1a]">
@@ -426,7 +769,7 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
                   Looking up prices...
                 </>
               ) : (
-                <>💰 Get Market Price</>
+                <>\uD83D\uDCB0 Get Market Price</>
               )}
             </button>
             {priceSuggestion && priceSuggestion.found && (
@@ -474,13 +817,13 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
           <div className={`flex items-center justify-between ${showVerify ? 'mb-3.5' : ''}`}>
             <div>
               <div className="text-xs font-bold text-[#ccc] mb-0.5">Verify your vinyl?</div>
-              <div className="text-[11px] text-gs-dim">Get a <span className="text-blue-500">✓ verified</span> badge on this record</div>
+              <div className="text-[11px] text-gs-dim">Get a <span className="text-blue-500">&check; verified</span> badge on this record</div>
             </div>
             <button
               onClick={() => setShowVerify(v => !v)}
               className={`px-3.5 py-[7px] rounded-lg text-[11px] font-bold cursor-pointer ${showVerify ? 'bg-[#1a1a1a] border border-gs-border-hover text-[#666]' : 'bg-gradient-to-br from-blue-500 to-gs-indigo border-none text-white'}`}
             >
-              {showVerify ? 'Skip' : '📷 Verify'}
+              {showVerify ? 'Skip' : '\uD83D\uDCF7 Verify'}
             </button>
           </div>
           {showVerify && (
@@ -493,7 +836,7 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
       )}
       {verified && (
         <div className="mb-4 px-3.5 py-2.5 bg-blue-900/15 rounded-[10px] border border-blue-500/20 flex items-center gap-2">
-          <span className="text-blue-500 text-base">✓</span>
+          <span className="text-blue-500 text-base">&check;</span>
           <span className="text-xs font-semibold text-blue-500">Vinyl verified by Claude AI</span>
         </div>
       )}
@@ -510,7 +853,7 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
           onClick={submit}
           className={`flex-[2] p-[11px] border-none rounded-[10px] text-[13px] font-bold cursor-pointer text-white transition-all duration-300 ${verified ? 'bg-gradient-to-br from-green-500 to-gs-accent' : 'bg-gradient-to-br from-gs-accent to-gs-indigo'}`}
         >
-          {verified ? '✓ Add Verified Record' : 'Add to Collection'}
+          {verified ? '\u2713 Add Verified Record' : 'Add to Collection'}
         </button>
       </div>
     </Modal>
