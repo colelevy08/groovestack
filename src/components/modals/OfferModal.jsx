@@ -155,6 +155,12 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
             <div className="flex justify-between text-[13px] text-gs-muted mb-1.5">
               <span>You get</span><span className="text-gs-text">{selectedTradeRecord?.album || "—"}</span>
             </div>
+            <div className="flex justify-between text-[13px] text-gs-muted mb-1.5">
+              <span>Shipping (each party)</span><span>$6.00</span>
+            </div>
+            <div className="flex justify-between text-[13px] text-gs-muted mb-1.5">
+              <span>Transaction fee (5%)</span><span>$0.00</span>
+            </div>
             <div className="flex justify-between text-[15px] font-bold text-gs-text border-t border-[#222] pt-2.5 mt-2.5">
               <span>Type</span><span>Straight trade</span>
             </div>

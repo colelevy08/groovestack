@@ -16,7 +16,7 @@ const offerTypeColor = t => t === "trade" ? "#8b5cf6" : t === "combo" ? "#f59e0b
 // Status badge colors for offers
 const statusColor = s => s === "pending" ? "#f59e0b" : s === "accepted" ? "#22c55e" : s === "declined" ? "#ef4444" : "#555";
 
-export default function TransactionsScreen({ offers, purchases, cart, currentUser, records, onBuy, onRemoveFromCart, onViewUser, onDetail }) {
+export default function TransactionsScreen({ offers, purchases, cart, currentUser, records, profile, onBuy, onRemoveFromCart, onViewUser, onDetail, onAcceptOffer, onDeclineOffer }) {
   const [tab, setTab] = useState("offers sent");
 
   const sentOffers = (offers || []).filter(o => o.from === currentUser);
@@ -76,7 +76,8 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
           ? <Empty icon="📥" text="No offers received yet." />
           : <div className="flex flex-col gap-2">
               {receivedOffers.map(o => (
-                <OfferRow key={o.id} offer={o} direction="received" onViewUser={onViewUser} />
+                <OfferRow key={o.id} offer={o} direction="received" onViewUser={onViewUser}
+                  onAccept={onAcceptOffer} onDecline={onDeclineOffer} profile={profile} />
               ))}
             </div>
       )}
@@ -178,11 +179,19 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
 }
 
 // Shared row component for sent/received offers
-function OfferRow({ offer, direction, onViewUser }) {
+function OfferRow({ offer, direction, onViewUser, onAccept, onDecline, profile }) {
   const o = offer;
   const otherUser = direction === "sent" ? o.to : o.from;
   const typeLabel = offerTypeLabel(o.type);
   const typeColor = offerTypeColor(o.type);
+  const isPending = !o.status || o.status === "pending";
+  const isAccepted = o.status === "accepted";
+  const canRespond = direction === "received" && isPending && onAccept && onDecline;
+  const showAddress = isAccepted && (o.type === "trade" || o.type === "combo");
+
+  // Address confirmation state for accepting
+  const [confirming, setConfirming] = useState(false);
+  const hasAddress = profile?.shippingStreet && profile?.shippingCity;
 
   return (
     <div className="bg-gs-card border border-gs-border rounded-xl py-3.5 px-4">
@@ -224,6 +233,66 @@ function OfferRow({ offer, direction, onViewUser }) {
           )}
         </div>
       </div>
+
+      {/* Accept/Decline buttons for received pending offers */}
+      {canRespond && !confirming && (
+        <div className="flex gap-2 mt-3 pt-3 border-t border-[#1a1a1a]">
+          <button onClick={() => onDecline(o.id)} className="gs-btn-secondary flex-1 py-2 text-[11px]">Decline</button>
+          <button onClick={() => {
+            if (o.type === "trade" || o.type === "combo") {
+              setConfirming(true);
+            } else {
+              onAccept(o.id);
+            }
+          }} className="gs-btn-gradient flex-[2] py-2 text-[11px]">
+            Accept {o.type === "trade" ? "Trade" : o.type === "combo" ? "Combo" : "Offer"}
+          </button>
+        </div>
+      )}
+
+      {/* Address confirmation for trades */}
+      {confirming && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="text-[11px] font-semibold text-gs-muted mb-2">📦 Confirm your shipping address</div>
+          {hasAddress ? (
+            <>
+              <div className="bg-[#111] rounded-lg px-3 py-2 mb-3">
+                <div className="text-xs text-gs-text font-semibold">{profile.shippingName}</div>
+                <div className="text-[11px] text-gs-muted">{profile.shippingStreet}</div>
+                <div className="text-[11px] text-gs-muted">{profile.shippingCity}, {profile.shippingState} {profile.shippingZip}</div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirming(false)} className="gs-btn-secondary flex-1 py-2 text-[11px]">Cancel</button>
+                <button onClick={() => { onAccept(o.id); setConfirming(false); }} className="gs-btn-gradient flex-[2] py-2 text-[11px]">
+                  Confirm & Accept Trade
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="bg-[#f59e0b11] border border-[#f59e0b22] rounded-lg px-3 py-2 text-[11px] text-amber-500 mb-2">
+              You need to add a shipping address in your Profile Settings before accepting trades.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Show address exchange info for accepted trades */}
+      {showAddress && direction === "received" && hasAddress && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="text-[11px] font-semibold text-green-500 mb-2">✓ Trade accepted — ship your record to @{o.from}</div>
+          <div className="bg-[#111] rounded-lg px-3 py-2 text-[11px] text-gs-muted">
+            Shipping labels will be exchanged via DM. Check your messages.
+          </div>
+        </div>
+      )}
+      {showAddress && direction === "sent" && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="text-[11px] font-semibold text-green-500 mb-2">✓ Trade accepted — ship your record to @{o.to}</div>
+          <div className="bg-[#111] rounded-lg px-3 py-2 text-[11px] text-gs-muted">
+            Shipping labels will be exchanged via DM. Check your messages.
+          </div>
+        </div>
+      )}
     </div>
   );
 }

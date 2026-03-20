@@ -515,9 +515,26 @@ if (pool) {
       avatar_url TEXT DEFAULT '',
       header_url TEXT DEFAULT '',
       accent TEXT DEFAULT '#0ea5e9',
+      shipping_name TEXT DEFAULT '',
+      shipping_street TEXT DEFAULT '',
+      shipping_city TEXT DEFAULT '',
+      shipping_state TEXT DEFAULT '',
+      shipping_zip TEXT DEFAULT '',
       created_at TIMESTAMPTZ DEFAULT now()
     )
-  `).then(() => console.log('   Profiles table: ready'))
+  `).then(() => {
+    console.log('   Profiles table: ready');
+    // Add shipping columns if they don't exist (migration for existing DBs)
+    return pool.query(`
+      DO $$ BEGIN
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS shipping_name TEXT DEFAULT '';
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS shipping_street TEXT DEFAULT '';
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS shipping_city TEXT DEFAULT '';
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS shipping_state TEXT DEFAULT '';
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS shipping_zip TEXT DEFAULT '';
+      END $$;
+    `);
+  }).then(() => console.log('   Shipping columns: ready'))
     .catch(err => console.error('   DB init error:', err.message));
 }
 
@@ -558,7 +575,7 @@ app.post('/api/auth/signup', async (req, res) => {
     );
     const user = result.rows[0];
     const token = makeToken(user);
-    res.json({ token, user: { id: user.id, username: user.username, displayName: user.display_name, bio: user.bio, location: user.location, favGenre: user.fav_genre, avatarUrl: user.avatar_url, headerUrl: user.header_url, accent: user.accent } });
+    res.json({ token, user: { id: user.id, username: user.username, displayName: user.display_name, bio: user.bio, location: user.location, favGenre: user.fav_genre, avatarUrl: user.avatar_url, headerUrl: user.header_url, accent: user.accent, shippingName: user.shipping_name || '', shippingStreet: user.shipping_street || '', shippingCity: user.shipping_city || '', shippingState: user.shipping_state || '', shippingZip: user.shipping_zip || '' } });
   } catch (err) {
     console.error('Signup error:', err.message);
     res.status(500).json({ error: 'Server error' });
@@ -580,7 +597,7 @@ app.post('/api/auth/login', async (req, res) => {
     if (!valid) return res.status(401).json({ error: 'Invalid email or password' });
 
     const token = makeToken(user);
-    res.json({ token, user: { id: user.id, username: user.username, displayName: user.display_name, bio: user.bio, location: user.location, favGenre: user.fav_genre, avatarUrl: user.avatar_url, headerUrl: user.header_url, accent: user.accent } });
+    res.json({ token, user: { id: user.id, username: user.username, displayName: user.display_name, bio: user.bio, location: user.location, favGenre: user.fav_genre, avatarUrl: user.avatar_url, headerUrl: user.header_url, accent: user.accent, shippingName: user.shipping_name || '', shippingStreet: user.shipping_street || '', shippingCity: user.shipping_city || '', shippingState: user.shipping_state || '', shippingZip: user.shipping_zip || '' } });
   } catch (err) {
     console.error('Login error:', err.message);
     res.status(500).json({ error: 'Server error' });
@@ -591,10 +608,10 @@ app.post('/api/auth/login', async (req, res) => {
 app.get('/api/auth/me', authMiddleware, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
   try {
-    const result = await pool.query('SELECT id, username, display_name, bio, location, fav_genre, avatar_url, header_url, accent FROM profiles WHERE id = $1', [req.user.id]);
+    const result = await pool.query('SELECT id, username, display_name, bio, location, fav_genre, avatar_url, header_url, accent, shipping_name, shipping_street, shipping_city, shipping_state, shipping_zip FROM profiles WHERE id = $1', [req.user.id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Profile not found' });
     const u = result.rows[0];
-    res.json({ id: u.id, username: u.username, displayName: u.display_name, bio: u.bio, location: u.location, favGenre: u.fav_genre, avatarUrl: u.avatar_url, headerUrl: u.header_url, accent: u.accent });
+    res.json({ id: u.id, username: u.username, displayName: u.display_name, bio: u.bio, location: u.location, favGenre: u.fav_genre, avatarUrl: u.avatar_url, headerUrl: u.header_url, accent: u.accent, shippingName: u.shipping_name || '', shippingStreet: u.shipping_street || '', shippingCity: u.shipping_city || '', shippingState: u.shipping_state || '', shippingZip: u.shipping_zip || '' });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -603,11 +620,11 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
 // PUT /api/auth/profile — update profile (requires token)
 app.put('/api/auth/profile', authMiddleware, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
-  const { displayName, bio, location, favGenre, avatarUrl, headerUrl } = req.body;
+  const { displayName, bio, location, favGenre, avatarUrl, headerUrl, shippingName, shippingStreet, shippingCity, shippingState, shippingZip } = req.body;
   try {
     await pool.query(
-      'UPDATE profiles SET display_name=$1, bio=$2, location=$3, fav_genre=$4, avatar_url=$5, header_url=$6 WHERE id=$7',
-      [displayName || '', bio || '', location || '', favGenre || '', avatarUrl || '', headerUrl || '', req.user.id]
+      'UPDATE profiles SET display_name=$1, bio=$2, location=$3, fav_genre=$4, avatar_url=$5, header_url=$6, shipping_name=$7, shipping_street=$8, shipping_city=$9, shipping_state=$10, shipping_zip=$11 WHERE id=$12',
+      [displayName || '', bio || '', location || '', favGenre || '', avatarUrl || '', headerUrl || '', shippingName || '', shippingStreet || '', shippingCity || '', shippingState || '', shippingZip || '', req.user.id]
     );
     res.json({ ok: true });
   } catch (err) {
@@ -652,7 +669,7 @@ function calcPlatformFee(priceCents) {
 // POST /api/checkout/create-session — creates a Stripe Checkout Session
 app.post('/api/checkout/create-session', authMiddleware, async (req, res) => {
   if (!stripe) return res.status(503).json({ error: 'Stripe not configured' });
-  const { recordId, album, artist, price, condition, seller } = req.body;
+  const { recordId, album, artist, price, condition, seller, shippingName, shippingStreet, shippingCity, shippingState, shippingZip } = req.body;
   if (!recordId || !price) return res.status(400).json({ error: 'Missing record info' });
 
   const priceCents = Math.round(parseFloat(price) * 100);
@@ -691,7 +708,7 @@ app.post('/api/checkout/create-session', authMiddleware, async (req, res) => {
       mode: 'payment',
       success_url: `${frontendUrl}?checkout=success&record=${recordId}`,
       cancel_url: `${frontendUrl}?checkout=cancel`,
-      metadata: { recordId: String(recordId), seller: seller || '', buyer: req.user.username, platformFeeCents: String(feeCents) },
+      metadata: { recordId: String(recordId), seller: seller || '', buyer: req.user.username, platformFeeCents: String(feeCents), shippingName: shippingName || '', shippingAddress: `${shippingStreet || ''}, ${shippingCity || ''}, ${shippingState || ''} ${shippingZip || ''}` },
     });
     res.json({ url: session.url, sessionId: session.id });
   } catch (err) {

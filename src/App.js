@@ -131,6 +131,11 @@ export default function App() {
       favGenre: user.favGenre || '',
       avatarUrl: user.avatarUrl || '',
       headerUrl: user.headerUrl || '',
+      shippingName: user.shippingName || '',
+      shippingStreet: user.shippingStreet || '',
+      shippingCity: user.shippingCity || '',
+      shippingState: user.shippingState || '',
+      shippingZip: user.shippingZip || '',
     });
   }, []);
 
@@ -282,6 +287,41 @@ export default function App() {
     setOfferTarget(null);
     setNotifCount(n => n + 1);
     showToast(`${label} sent to @${offerTarget.targetUser}!`);
+  };
+
+  const onAcceptOffer = (offerId) => {
+    setOffers(o => o.map(offer => {
+      if (offer.id !== offerId) return offer;
+      return { ...offer, status: "accepted" };
+    }));
+    const offer = offers.find(o => o.id === offerId);
+    if (offer) {
+      // For trades: swap records between users
+      if (offer.type === "trade" || offer.type === "combo") {
+        // Transfer offered record ownership
+        if (offer.offeredRecordId) {
+          updateRecord(offer.offeredRecordId, r => ({ ...r, user: offer.to, forSale: false, price: null }));
+        }
+        // Transfer trade record to offerer
+        if (offer.tradeRecord?.id) {
+          updateRecord(offer.tradeRecord.id, r => ({ ...r, user: offer.from, forSale: false, price: null }));
+        }
+      }
+      // For cash/combo purchases: mark offered record as sold
+      if (offer.type === "cash" || offer.type === "combo") {
+        if (offer.offeredRecordId) {
+          updateRecord(offer.offeredRecordId, r => ({ ...r, forSale: false, price: null }));
+        }
+      }
+      showToast(`Offer from @${offer.from} accepted!`);
+    }
+  };
+
+  const onDeclineOffer = (offerId) => {
+    setOffers(o => o.map(offer =>
+      offer.id === offerId ? { ...offer, status: "declined" } : offer
+    ));
+    showToast("Offer declined");
   };
 
   // Opens OfferModal from the "Wanted By" section in DetailModal
@@ -490,9 +530,10 @@ export default function App() {
             {nav === "Activity" && (
               <TransactionsScreen
                 offers={offers} purchases={purchases} cart={cart}
-                currentUser={currentUser} records={records}
+                currentUser={currentUser} records={records} profile={profile}
                 onBuy={onBuy} onRemoveFromCart={onRemoveFromCart}
                 onViewUser={onViewUser} onDetail={onDetail}
+                onAcceptOffer={onAcceptOffer} onDeclineOffer={onDeclineOffer}
               />
             )}
             {nav === "Profile" && (
@@ -526,6 +567,7 @@ export default function App() {
       <BuyModal
         open={!!buyRecord} onClose={() => setBuyRecord(null)}
         record={buyRecord} onPurchase={onPurchase} onAddToCart={onAddToCart}
+        profile={profile}
       />
       <DetailModal
         open={!!detailRecord} onClose={() => setDetailRecord(null)}

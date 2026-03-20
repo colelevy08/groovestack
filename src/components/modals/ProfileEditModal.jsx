@@ -47,6 +47,11 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
   const [favGenre, setFavGenre] = useState(profile.favGenre);
   const [avatarUrl, setAvatarUrl] = useState(profile.avatarUrl || null);
   const [headerUrl, setHeaderUrl] = useState(profile.headerUrl || null);
+  const [shippingName, setShippingName] = useState(profile.shippingName || '');
+  const [shippingStreet, setShippingStreet] = useState(profile.shippingStreet || '');
+  const [shippingCity, setShippingCity] = useState(profile.shippingCity || '');
+  const [shippingState, setShippingState] = useState(profile.shippingState || '');
+  const [shippingZip, setShippingZip] = useState(profile.shippingZip || '');
   const [headerHover, setHeaderHover] = useState(false);
   const [avatarHover, setAvatarHover] = useState(false);
 
@@ -64,6 +69,11 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
       setFavGenre(profile.favGenre);
       setAvatarUrl(profile.avatarUrl || null);
       setHeaderUrl(profile.headerUrl || null);
+      setShippingName(profile.shippingName || '');
+      setShippingStreet(profile.shippingStreet || '');
+      setShippingCity(profile.shippingCity || '');
+      setShippingState(profile.shippingState || '');
+      setShippingZip(profile.shippingZip || '');
     }
   }, [open, profile, currentUser]);
 
@@ -97,7 +107,7 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
   // Saves profile fields, then triggers username change separately if the handle was modified
   const handleSave = () => {
     if (usernameError) return;
-    onSave({ displayName, bio, location, favGenre, avatarUrl, headerUrl });
+    onSave({ displayName, bio, location, favGenre, avatarUrl, headerUrl, shippingName, shippingStreet, shippingCity, shippingState, shippingZip });
     if (username && username !== currentUser) {
       onUsernameChange(username);
     }
@@ -188,6 +198,20 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
       <FormTextarea label="BIO" value={bio} onChange={setBio} placeholder="Tell the community about your collection..." />
       <FormInput label="LOCATION" value={location} onChange={setLocation} placeholder="Chicago, IL" />
       <FormSelect label="FAVORITE GENRE" value={favGenre} onChange={setFavGenre} options={GENRES} />
+
+      {/* ── Shipping Address ─────────────────────────────────────────── */}
+      <div className="border-t border-gs-border mt-4 pt-4 mb-4">
+        <div className="gs-label mb-3">📦 SHIPPING ADDRESS</div>
+        <p className="text-[11px] text-gs-dim mb-3">Used to pre-fill checkout and receive trades. You'll always confirm before any order.</p>
+        <FormInput label="FULL NAME" value={shippingName} onChange={setShippingName} placeholder="Jane Smith" />
+        <FormInput label="STREET ADDRESS" value={shippingStreet} onChange={setShippingStreet} placeholder="123 Vinyl Lane, Apt 4" />
+        <div className="grid grid-cols-3 gap-2.5">
+          <FormInput label="CITY" value={shippingCity} onChange={setShippingCity} placeholder="Chicago" />
+          <FormInput label="STATE" value={shippingState} onChange={setShippingState} placeholder="IL" />
+          <FormInput label="ZIP" value={shippingZip} onChange={setShippingZip} placeholder="60601" />
+        </div>
+      </div>
+
       <div className="flex gap-2.5 mt-1">
         <button onClick={onClose} className="gs-btn-secondary flex-1 py-[11px] text-[13px]">Cancel</button>
         <button

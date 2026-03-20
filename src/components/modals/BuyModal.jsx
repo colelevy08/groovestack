@@ -15,15 +15,30 @@ function calcFee(price) {
   return Math.max(Math.round(priceCents * 0.05), 100) / 100;
 }
 
-export default function BuyModal({ open, onClose, record, onPurchase, onAddToCart }) {
+export default function BuyModal({ open, onClose, record, onPurchase, onAddToCart, profile }) {
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
-  const [address, setAddress] = useState("");
+  const [street, setStreet] = useState("");
   const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [zip, setZip] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [prefilled, setPrefilled] = useState(false);
 
-  const reset = () => { setStep(1); setName(""); setAddress(""); setCity(""); setErr(""); setLoading(false); };
+  // Pre-fill from profile shipping address when modal opens
+  if (open && !prefilled && profile) {
+    if (profile.shippingName || profile.shippingStreet) {
+      setName(profile.shippingName || '');
+      setStreet(profile.shippingStreet || '');
+      setCity(profile.shippingCity || '');
+      setState(profile.shippingState || '');
+      setZip(profile.shippingZip || '');
+    }
+    setPrefilled(true);
+  }
+
+  const reset = () => { setStep(1); setName(""); setStreet(""); setCity(""); setState(""); setZip(""); setErr(""); setLoading(false); setPrefilled(false); };
 
   if (!record) return null;
 
@@ -47,6 +62,11 @@ export default function BuyModal({ open, onClose, record, onPurchase, onAddToCar
           price: record.price,
           condition: record.condition,
           seller: record.user,
+          shippingName: name,
+          shippingStreet: street,
+          shippingCity: city,
+          shippingState: state,
+          shippingZip: zip,
         }),
       });
       const data = await res.json();
@@ -80,13 +100,22 @@ export default function BuyModal({ open, onClose, record, onPurchase, onAddToCar
       {step === 1 && (
         <>
           {err && <div className="bg-[#ef444422] border border-[#ef444444] rounded-lg px-3 py-2 text-[#f87171] text-xs mb-3.5">{err}</div>}
+          {(profile?.shippingStreet) && (
+            <div className="bg-[#0ea5e911] border border-[#0ea5e922] rounded-lg px-3 py-2 text-[11px] text-gs-muted mb-3">
+              ✓ Pre-filled from your profile. Please confirm your address is correct.
+            </div>
+          )}
           <FormInput label="FULL NAME" value={name} onChange={setName} placeholder="Jane Smith" />
-          <FormInput label="STREET ADDRESS" value={address} onChange={setAddress} placeholder="123 Vinyl Lane" />
-          <FormInput label="CITY, STATE, ZIP" value={city} onChange={setCity} placeholder="Chicago, IL 60601" />
+          <FormInput label="STREET ADDRESS" value={street} onChange={setStreet} placeholder="123 Vinyl Lane, Apt 4" />
+          <div className="grid grid-cols-3 gap-2.5">
+            <FormInput label="CITY" value={city} onChange={setCity} placeholder="Chicago" />
+            <FormInput label="STATE" value={state} onChange={setState} placeholder="IL" />
+            <FormInput label="ZIP" value={zip} onChange={setZip} placeholder="60601" />
+          </div>
           <div className="flex gap-2.5">
             <button onClick={() => { reset(); onClose(); }} className="flex-1 p-[11px] bg-[#1a1a1a] border border-gs-border-hover rounded-[10px] text-gs-muted text-[13px] font-semibold cursor-pointer">Cancel</button>
             {onAddToCart && <button onClick={() => { onAddToCart(record); reset(); onClose(); }} className="flex-1 p-[11px] bg-[#1a1a1a] border border-[#f59e0b44] rounded-[10px] text-amber-500 text-[13px] font-semibold cursor-pointer">+ Cart</button>}
-            <button onClick={() => { if (!name || !address || !city) { setErr("All fields required."); return; } setErr(""); setStep(2); }} className="flex-[2] p-[11px] gs-btn-gradient border-none rounded-[10px] text-white text-[13px] font-bold cursor-pointer">Continue →</button>
+            <button onClick={() => { if (!name || !street || !city || !state || !zip) { setErr("All address fields are required."); return; } setErr(""); setStep(2); }} className="flex-[2] p-[11px] gs-btn-gradient border-none rounded-[10px] text-white text-[13px] font-bold cursor-pointer">Continue →</button>
           </div>
         </>
       )}
@@ -94,7 +123,7 @@ export default function BuyModal({ open, onClose, record, onPurchase, onAddToCar
       {step === 2 && (
         <>
           <div className="bg-[#111] rounded-lg px-3.5 py-2.5 text-xs text-gs-muted mb-4">
-            Shipping to: <span className="text-gs-text">{name}, {city}</span>
+            Shipping to: <span className="text-gs-text">{name}, {street}, {city}, {state} {zip}</span>
           </div>
           {err && <div className="bg-[#ef444422] border border-[#ef444444] rounded-lg px-3 py-2 text-[#f87171] text-xs mb-3.5">{err}</div>}
 
