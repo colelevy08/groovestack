@@ -1,7 +1,8 @@
 // The current user's own profile page — not to be confused with UserProfileModal (other users).
 // Shows a profile card with avatar, bio, stats, and an "Edit Profile" button that opens ProfileEditModal.
 // Six tabs: posts, listening, records, for sale, saved, and personal wishlist.
-import { useState } from 'react';
+// Includes profile completion indicator, highlights row, share button, and collection value.
+import { useState, useMemo } from 'react';
 import Avatar from '../ui/Avatar';
 import AlbumArt from '../ui/AlbumArt';
 import Badge from '../ui/Badge';
@@ -10,16 +11,58 @@ import Empty from '../ui/Empty';
 import FormInput from '../ui/FormInput';
 import { condColor } from '../../utils/helpers';
 
-export default function ProfileScreen({ records, currentUser, profile, onEdit, following, followers, onShowFollowing, onShowFollowers, wishlist, onAddWishlistItem, onRemoveWishlistItem, onDetail, onViewArtist, posts, onLikePost, onCommentPost, onBookmarkPost, onViewUser, listeningHistory }) {
+export default function ProfileScreen({ records, currentUser, profile, onEdit, following, followers, onShowFollowing, onShowFollowers, wishlist, onAddWishlistItem, onRemoveWishlistItem, onDetail, onViewArtist, posts, onLikePost, onCommentPost, onBookmarkPost, onViewUser, listeningHistory, onAddRecord, onCreatePost }) {
   const mine = records.filter(r => r.user === currentUser);
   const [tab, setTab] = useState("posts");
   const [newWishAlbum, setNewWishAlbum] = useState("");
   const [newWishArtist, setNewWishArtist] = useState("");
+  const [shareToast, setShareToast] = useState(false);
 
   const forSale = mine.filter(r => r.forSale);
   const saved = records.filter(r => r.saved);
   const myPosts = (posts || []).filter(p => p.user === currentUser).sort((a, b) => b.createdAt - a.createdAt);
   const myListens = (listeningHistory || []).filter(s => s.username === currentUser).sort((a, b) => b.timestampMs - a.timestampMs);
+
+  // ── Profile completion ────────────────────────────────────────────────
+  const completionFields = [
+    { key: 'displayName', filled: !!profile.displayName },
+    { key: 'bio', filled: !!profile.bio },
+    { key: 'location', filled: !!profile.location },
+    { key: 'favGenre', filled: !!profile.favGenre },
+    { key: 'avatarUrl', filled: !!profile.avatarUrl },
+    { key: 'headerUrl', filled: !!profile.headerUrl },
+    { key: 'shippingStreet', filled: !!profile.shippingStreet },
+  ];
+  const completionPct = Math.round((completionFields.filter(f => f.filled).length / completionFields.length) * 100);
+  const missingFields = completionFields.filter(f => !f.filled).map(f => f.key);
+
+  // ── Collection value estimate (sum of for-sale prices) ────────────────
+  const collectionValue = useMemo(() => forSale.reduce((sum, r) => sum + (Number(r.price) || 0), 0), [forSale]);
+
+  // ── Highlights — top 3 rated records ──────────────────────────────────
+  const highlights = useMemo(() =>
+    [...mine].filter(r => r.rating > 0).sort((a, b) => b.rating - a.rating).slice(0, 3),
+    [mine]
+  );
+
+  // ── Share profile ─────────────────────────────────────────────────────
+  const handleShare = () => {
+    const url = `${window.location.origin}/u/${currentUser}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setShareToast(true);
+      setTimeout(() => setShareToast(false), 2000);
+    }).catch(() => {
+      // Fallback for older browsers
+      const ta = document.createElement('textarea');
+      ta.value = url;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setShareToast(true);
+      setTimeout(() => setShareToast(false), 2000);
+    });
+  };
 
   const relTime = ts => {
     const d = Date.now() - ts; const m = Math.floor(d / 60000);
@@ -32,16 +75,39 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
 
   // Tab definitions with counts
   const tabs = [
-    { id: "posts", count: myPosts.length },
-    { id: "listening", count: myListens.length },
-    { id: "records", count: mine.length },
-    { id: "for sale", count: forSale.length },
-    { id: "saved", count: saved.length },
-    { id: "wishlist", count: (wishlist || []).length },
+    { id: "posts", label: "Posts", count: myPosts.length },
+    { id: "listening", label: "Listening", count: myListens.length },
+    { id: "records", label: "Records", count: mine.length },
+    { id: "for sale", label: "For Sale", count: forSale.length },
+    { id: "saved", label: "Saved", count: saved.length },
+    { id: "wishlist", label: "Wishlist", count: (wishlist || []).length },
   ];
 
   return (
     <div>
+      {/* ── Profile completion bar ─────────────────────────────────────── */}
+      {completionPct < 100 && (
+        <div className="gs-card mb-4 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-semibold text-gs-muted">Profile Completion</div>
+            <div className="text-xs font-bold text-gs-accent font-mono">{completionPct}%</div>
+          </div>
+          <div className="h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden mb-2">
+            <div
+              className="h-full rounded-full transition-all duration-500 ease-out"
+              style={{
+                width: `${completionPct}%`,
+                background: completionPct < 50 ? 'linear-gradient(90deg,#ef4444,#f59e0b)' : completionPct < 80 ? 'linear-gradient(90deg,#f59e0b,#0ea5e9)' : 'linear-gradient(90deg,#0ea5e9,#10b981)',
+              }}
+            />
+          </div>
+          <div className="text-[10px] text-gs-dim">
+            Add {missingFields.slice(0, 2).map(f => f.replace(/([A-Z])/g, ' $1').replace(/url$/i, '').trim().toLowerCase()).join(', ')}{missingFields.length > 2 ? ` and ${missingFields.length - 2} more` : ''} to complete your profile.
+            <button onClick={onEdit} className="ml-1.5 text-gs-accent bg-transparent border-none cursor-pointer text-[10px] font-semibold p-0 hover:underline">Complete now</button>
+          </div>
+        </div>
+      )}
+
       {/* Profile card */}
       <div className="gs-card mb-6">
         {/* Header — custom image or gradient fallback */}
@@ -60,9 +126,26 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
             <div className="rounded-full border-[3px] border-gs-card leading-none relative z-[2]">
               <Avatar username={currentUser} size={64} src={profile.avatarUrl} />
             </div>
-            <button onClick={onEdit} className="gs-btn-secondary px-[18px] py-2 rounded-[20px] text-xs">
-              Edit Profile
-            </button>
+            <div className="flex gap-2 items-center">
+              {/* Share Profile button */}
+              <div className="relative">
+                <button onClick={handleShare} className="gs-btn-secondary px-3 py-2 rounded-[20px] text-xs flex items-center gap-1.5" title="Copy profile link">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                  Share
+                </button>
+                {/* Toast */}
+                {shareToast && (
+                  <div className="absolute -bottom-9 left-1/2 -translate-x-1/2 bg-gs-accent text-black text-[10px] font-bold px-3 py-1 rounded-md whitespace-nowrap z-10 animate-fade-in">
+                    Link copied!
+                  </div>
+                )}
+              </div>
+              {/* Edit Profile button */}
+              <button onClick={onEdit} className="gs-btn-secondary px-[18px] py-2 rounded-[20px] text-xs flex items-center gap-1.5">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                Edit Profile
+              </button>
+            </div>
           </div>
           <div className="text-xl font-extrabold text-gs-text tracking-tight mb-0.5">{profile.displayName}</div>
           <div className="text-xs text-gs-accent font-mono mb-3">@{currentUser}</div>
@@ -72,11 +155,12 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
             {profile.favGenre && <span>🎵 {profile.favGenre}</span>}
           </div>
 
-          {/* Stats — 4 key numbers */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          {/* Stats — 5 key numbers including collection value */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
             {[
               { l: "Records", v: mine.length, click: () => setTab("records") },
               { l: "For Sale", v: forSale.length, click: () => setTab("for sale") },
+              { l: "Value", v: collectionValue > 0 ? `$${collectionValue}` : "$0", click: () => setTab("for sale") },
               { l: "Following", v: following.length, click: onShowFollowing },
               { l: "Followers", v: (followers || []).length, click: onShowFollowers },
             ].map(s => (
@@ -92,27 +176,59 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
         </div>
       </div>
 
-      {/* Tabs with counts */}
-      <div className="flex border-b border-[#1a1a1a] mb-[18px]">
+      {/* ── Highlights — top-rated records row ─────────────────────────── */}
+      {highlights.length > 0 && (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs font-bold text-gs-muted uppercase tracking-wider">Top Rated</div>
+            <button onClick={() => setTab("records")} className="text-[10px] text-gs-accent bg-transparent border-none cursor-pointer font-semibold hover:underline p-0">View all</button>
+          </div>
+          <div className="flex gap-3">
+            {highlights.map(r => (
+              <div
+                key={r.id}
+                onClick={() => onDetail(r)}
+                className="flex-1 bg-gs-card border border-gs-border rounded-xl p-3 cursor-pointer transition-all duration-150 hover:border-gs-accent/30 hover:scale-[1.02] min-w-0"
+              >
+                <div className="flex justify-center mb-2">
+                  <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={64} />
+                </div>
+                <div className="text-[11px] font-bold text-gs-text text-center truncate">{r.album}</div>
+                <div className="text-[10px] text-gs-dim text-center truncate mb-1.5">{r.artist}</div>
+                <div className="flex justify-center">
+                  <Stars rating={r.rating} size={10} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tabs with count badges */}
+      <div className="flex border-b border-[#1a1a1a] mb-[18px] overflow-x-auto">
         {tabs.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`px-3.5 py-2.5 bg-transparent border-none border-b-2 text-xs font-semibold cursor-pointer capitalize -mb-px flex items-center gap-[5px] transition-colors duration-150 ${
+            className={`px-3.5 py-2.5 bg-transparent border-none border-b-2 text-xs font-semibold cursor-pointer -mb-px flex items-center gap-[5px] transition-colors duration-150 whitespace-nowrap ${
               tab === t.id
                 ? "border-b-gs-accent text-gs-accent"
                 : "border-b-transparent text-gs-dim hover:text-gs-muted"
             }`}
           >
-            {t.id}
-            <span className={`text-[10px] font-mono ${tab === t.id ? "text-gs-accent/40" : "text-gs-subtle"}`}>{t.count}</span>
+            {t.label}
+            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full min-w-[18px] text-center ${
+              tab === t.id
+                ? "bg-gs-accent/10 text-gs-accent"
+                : "bg-[#1a1a1a] text-gs-subtle"
+            }`}>{t.count}</span>
           </button>
         ))}
       </div>
 
       {tab === "posts" ? (
         myPosts.length === 0 ? (
-          <Empty icon="📝" text="No posts yet. Share what you're spinning!" />
+          <Empty icon="📝" text="No posts yet. Share what you're spinning!" action={onCreatePost} actionLabel="Create Post" />
         ) : (
           <div className="flex flex-col gap-3">
             {myPosts.map(post => {
@@ -256,7 +372,12 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
           )}
         </div>
       ) : display.length === 0 ? (
-        <Empty icon="💿" text={`No ${tab} yet.`} />
+        <Empty
+          icon={tab === "for sale" ? "🏷️" : tab === "saved" ? "🔖" : "💿"}
+          text={tab === "for sale" ? "You don't have any records listed for sale yet." : tab === "saved" ? "You haven't saved any records yet. Browse the marketplace!" : `No ${tab} yet.`}
+          action={tab === "records" ? onAddRecord : undefined}
+          actionLabel={tab === "records" ? "Add Record" : undefined}
+        />
       ) : (
         <div className="flex flex-col gap-2">
           {display.slice(0, 50).map(r => (

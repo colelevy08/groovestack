@@ -2,12 +2,15 @@
 // Supports 3 offer types: Cash (price + shipping), Trade (swap records), or Combo (record + cash).
 // The offerer always gives up the record matching the target's wishlist item.
 // What they receive varies: cash, one of the target's records, or a record + cash.
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Modal from '../ui/Modal';
 import FormInput from '../ui/FormInput';
 import AlbumArt from '../ui/AlbumArt';
 import Badge from '../ui/Badge';
 import { condColor } from '../../utils/helpers';
+
+// Rough value multipliers by condition grade for fair trade calculation
+const COND_VALUES = { M: 1.0, NM: 0.85, "VG+": 0.7, VG: 0.55, "G+": 0.4, G: 0.28, F: 0.15, P: 0.08 };
 
 export default function OfferModal({ open, onClose, target, records, onSubmit }) {
   const [offerType, setOfferType] = useState("cash");
@@ -17,6 +20,17 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
   const [err, setErr] = useState("");
 
   const reset = () => { setOfferType("cash"); setPrice(""); setShipping("6.00"); setSelectedTradeRecord(null); setErr(""); };
+
+  // Fair trade indicator — compare condition values
+  const fairTrade = useMemo(() => {
+    if (!selectedTradeRecord || !target?.offeredRecord) return null;
+    const myVal = COND_VALUES[target.offeredRecord.condition] || 0.5;
+    const theirVal = COND_VALUES[selectedTradeRecord.condition] || 0.5;
+    const ratio = myVal / theirVal;
+    if (ratio >= 0.8 && ratio <= 1.2) return { label: "Fair Trade", color: "#10b981", icon: "✓" };
+    if (ratio > 1.2) return { label: "You're giving more value", color: "#f59e0b", icon: "⚠" };
+    return { label: "You're getting more value", color: "#60a5fa", icon: "★" };
+  }, [selectedTradeRecord, target?.offeredRecord]);
 
   if (!target) return null;
 
@@ -47,7 +61,7 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
   const typeLabels = [["cash", "Cash"], ["trade", "Trade"], ["combo", "Trade + Cash"]];
 
   return (
-    <Modal open={open} onClose={() => { reset(); onClose(); }} title="Make an Offer" width="460px">
+    <Modal open={open} onClose={() => { reset(); onClose(); }} title="Make an Offer" width="480px">
       {/* What they want — wishlist item */}
       <div className="bg-[#111] rounded-[10px] p-3.5 mb-3">
         <div className="text-[11px] text-gs-dim font-mono mb-2">THEY WANT</div>
@@ -93,6 +107,31 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
 
       {err && <div className="bg-red-500/[0.13] border border-red-500/[0.27] rounded-lg px-3 py-2 text-red-400 text-xs mb-3.5">{err}</div>}
 
+      {/* Combo split view — cash + trade side by side */}
+      {offerType === "combo" && (
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div className="bg-[#0d0d0d] rounded-[10px] p-3 border border-[#1a1a1a]">
+            <div className="text-[10px] text-gs-dim font-mono mb-2 tracking-wider">RECORD SWAP</div>
+            {selectedTradeRecord ? (
+              <div className="flex gap-2 items-center">
+                <AlbumArt album={selectedTradeRecord.album} artist={selectedTradeRecord.artist} accent={selectedTradeRecord.accent} size={28} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-bold text-gs-text truncate">{selectedTradeRecord.album}</div>
+                  <Badge label={selectedTradeRecord.condition} color={condColor(selectedTradeRecord.condition)} />
+                </div>
+              </div>
+            ) : (
+              <div className="text-[11px] text-gs-faint">Pick a record below</div>
+            )}
+          </div>
+          <div className="bg-[#0d0d0d] rounded-[10px] p-3 border border-[#1a1a1a]">
+            <div className="text-[10px] text-gs-dim font-mono mb-2 tracking-wider">+ CASH</div>
+            <div className="text-lg font-bold text-emerald-400">${(parseFloat(price) || 0).toFixed(2)}</div>
+            <div className="text-[10px] text-gs-dim">+ ${(parseFloat(shipping) || 0).toFixed(2)} shipping</div>
+          </div>
+        </div>
+      )}
+
       {/* Record picker — shown for trade and combo */}
       {offerType !== "cash" && (
         <div className="mb-4">
@@ -125,6 +164,35 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Condition comparison side-by-side for trades */}
+      {offerType !== "cash" && selectedTradeRecord && target.offeredRecord && (
+        <div className="mb-4 bg-[#0d0d0d] rounded-[10px] p-3.5 border border-[#1a1a1a]">
+          <div className="text-[10px] text-gs-dim font-mono mb-2.5 tracking-wider">CONDITION COMPARISON</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="text-center">
+              <div className="text-[10px] text-gs-faint mb-1.5">YOUR RECORD</div>
+              <Badge label={target.offeredRecord.condition} color={condColor(target.offeredRecord.condition)} />
+              <div className="text-[10px] text-gs-dim mt-1">{target.offeredRecord.album}</div>
+            </div>
+            <div className="text-center">
+              <div className="text-[10px] text-gs-faint mb-1.5">THEIR RECORD</div>
+              <Badge label={selectedTradeRecord.condition} color={condColor(selectedTradeRecord.condition)} />
+              <div className="text-[10px] text-gs-dim mt-1">{selectedTradeRecord.album}</div>
+            </div>
+          </div>
+          {/* Fair trade indicator */}
+          {fairTrade && (
+            <div
+              className="flex items-center justify-center gap-1.5 mt-3 pt-2.5 border-t border-[#1a1a1a] text-[11px] font-semibold"
+              style={{ color: fairTrade.color }}
+            >
+              <span>{fairTrade.icon}</span>
+              <span>{fairTrade.label}</span>
+            </div>
+          )}
         </div>
       )}
 

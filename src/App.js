@@ -3,7 +3,7 @@
 // State is persisted to localStorage on every change (currentUser, records, following, profile, dmMessages).
 // Navigation state (nav) determines which screen is rendered in the main content area.
 // Auth is managed via Supabase — shows AuthScreen when no session is active.
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import INITIAL_RECORDS from './constants/records';
 import INITIAL_POSTS from './constants/posts';
 import INITIAL_LISTENING from './constants/listening';
@@ -105,6 +105,59 @@ export default function App() {
   const [verifyingRecord, setVerifyingRecord] = useState(null);
   const [showAuth, setShowAuth] = useState(false);
   const [toast, setToast] = useState({ visible: false, msg: "" });
+
+  // ── Global search state ─────────────────────────────────────────────────────
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false);
+  const globalSearchTimer = useRef(null);
+  const [debouncedGlobalSearch, setDebouncedGlobalSearch] = useState("");
+
+  // Debounce global search input (300ms)
+  useEffect(() => {
+    globalSearchTimer.current = setTimeout(() => setDebouncedGlobalSearch(globalSearch), 300);
+    return () => clearTimeout(globalSearchTimer.current);
+  }, [globalSearch]);
+
+  const globalSearchResults = useMemo(() => { // eslint-disable-line no-unused-vars
+    const q = debouncedGlobalSearch.trim().toLowerCase();
+    if (!q) return { records: [], users: [], posts: [] };
+    return {
+      records: records.filter(r => r.album?.toLowerCase().includes(q) || r.artist?.toLowerCase().includes(q)),
+      users: Object.keys(USER_PROFILES).filter(u => u.toLowerCase().includes(q)),
+      posts: posts.filter(p => p.caption?.toLowerCase().includes(q)),
+    };
+  }, [debouncedGlobalSearch, records, posts]);
+
+  // ── What's New changelog ───────────────────────────────────────────────────
+  const [showChangelog, setShowChangelog] = useState(false);
+
+  // ── Page transition key ───────────────────────────────────────────────────
+  const [pageTransitionKey, setPageTransitionKey] = useState(nav);
+
+  // ── Unread message count (computed) ───────────────────────────────────────
+  const unreadCount = useMemo(() => {
+    return Object.values(dmMessages).reduce((count, thread) => {
+      return count + thread.filter(m => m.from !== currentUser && !m.read).length;
+    }, 0);
+  }, [dmMessages, currentUser]);
+
+  // ── Cart count for sidebar badge ──────────────────────────────────────────
+  const cartCount = useMemo(() => cart.length, [cart]);
+
+  // ── Online status tracking ────────────────────────────────────────────────
+  const [lastActiveTimestamp, setLastActiveTimestamp] = useState(() => Date.now()); // eslint-disable-line no-unused-vars
+  useEffect(() => {
+    const updateActivity = () => setLastActiveTimestamp(Date.now());
+    window.addEventListener('mousemove', updateActivity);
+    window.addEventListener('keydown', updateActivity);
+    return () => {
+      window.removeEventListener('mousemove', updateActivity);
+      window.removeEventListener('keydown', updateActivity);
+    };
+  }, []);
+
+  // ── User reports (stored in state) ────────────────────────────────────────
+  const [userReports, setUserReports] = useState([]); // eslint-disable-line no-unused-vars
 
   // Shows the Toast bar and auto-hides it after 2.2 seconds
   const showToast = msg => {
@@ -214,6 +267,40 @@ export default function App() {
   useEffect(() => { localStorage.setItem('gs_vinylBuddyDevice', vinylBuddyDevice); }, [vinylBuddyDevice]);
   useEffect(() => { localStorage.setItem('gs_notifCount', JSON.stringify(notifCount)); }, [notifCount]);
 
+  // ── Update page transition key when nav changes ─────────────────────────
+  useEffect(() => { setPageTransitionKey(nav + '-' + Date.now()); }, [nav]);
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e) => {
+      // Escape — close any open modal
+      if (e.key === 'Escape') {
+        if (showGlobalSearch) { setShowGlobalSearch(false); setGlobalSearch(""); return; }
+        if (showChangelog) { setShowChangelog(false); return; }
+        if (showAuth) { setShowAuth(false); return; }
+        if (showAdd) { setShowAdd(false); return; }
+        if (commentRecord) { setCommentRecord(null); return; }
+        if (buyRecord) { setBuyRecord(null); return; }
+        if (detailRecord) { setDetailRecord(null); return; }
+        if (showEditProfile) { setShowEditProfile(false); return; }
+        if (viewingUser) { setViewingUser(null); return; }
+        if (showDMs) { setShowDMs(false); return; }
+        if (showNotifs) { setShowNotifs(false); return; }
+        if (offerTarget) { setOfferTarget(null); return; }
+        if (showCreatePost) { setShowCreatePost(false); return; }
+        if (viewingArtist) { setViewingArtist(null); return; }
+        if (verifyingRecord) { setVerifyingRecord(null); return; }
+      }
+      // Cmd+K / Ctrl+K — open global search
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowGlobalSearch(s => !s);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [showGlobalSearch, showChangelog, showAuth, showAdd, commentRecord, buyRecord, detailRecord, showEditProfile, viewingUser, showDMs, showNotifs, offerTarget, showCreatePost, viewingArtist, verifyingRecord]);
+
   // ── Poll Vinyl Buddy server for new listening sessions ───────────────────
   useEffect(() => {
     if (!currentUser) return;
@@ -293,7 +380,7 @@ export default function App() {
   const onAcceptOffer = (offerId) => {
     setOffers(o => o.map(offer => {
       if (offer.id !== offerId) return offer;
-      return { ...offer, status: "accepted" };
+      return { ...offer, status: "accepted", shippingLabel: `SHIP-${Date.now().toString(36).toUpperCase()}` };
     }));
     const offer = offers.find(o => o.id === offerId);
     if (offer) {
@@ -314,7 +401,7 @@ export default function App() {
           updateRecord(offer.offeredRecordId, r => ({ ...r, forSale: false, price: null }));
         }
       }
-      showToast(`Offer from @${offer.from} accepted!`);
+      showToast(`Offer from @${offer.from} accepted! Shipping label generated.`);
     }
   };
 
@@ -323,6 +410,37 @@ export default function App() {
       offer.id === offerId ? { ...offer, status: "declined" } : offer
     ));
     showToast("Offer declined");
+  };
+
+  // ── Reorder handler — re-add a previously purchased record to cart ───────
+  const onReorder = (purchase) => {
+    if (cart.some(item => item.recordId === purchase.recordId)) {
+      showToast("Already in cart!");
+      return;
+    }
+    setCart(c => [{
+      id: Date.now(), recordId: purchase.recordId, album: purchase.album,
+      artist: purchase.artist, price: purchase.price, condition: purchase.condition,
+      accent: purchase.accent, format: purchase.format, year: purchase.year,
+      seller: purchase.seller,
+    }, ...c]);
+    showToast("Re-added to cart!");
+  };
+
+  // ── Share profile handler ─────────────────────────────────────────────────
+  const onShareProfile = (username) => {
+    const url = `${window.location.origin}/user/${username || currentUser}`;
+    navigator.clipboard?.writeText(url).then(
+      () => showToast("Profile link copied!"),
+      () => showToast("Profile link: " + url)
+    );
+    return url;
+  };
+
+  // ── Report user handler ───────────────────────────────────────────────────
+  const onReportUser = (username, reason) => {
+    setUserReports(r => [...r, { id: Date.now(), reporter: currentUser, reported: username, reason, time: new Date().toISOString() }]);
+    showToast(`Report submitted for @${username}`);
   };
 
   // Opens OfferModal from the "Wanted By" section in DetailModal
@@ -426,6 +544,15 @@ export default function App() {
   // Convenience bundle spread into ExploreScreen, CollectionScreen, and ProfileScreen
   const cardHandlers = { onLike, onSave, onComment, onBuy, onDetail, onViewUser, onViewArtist };
 
+  // ── Memoized computed values ──────────────────────────────────────────────
+  const myRecords = useMemo(() => records.filter(r => r.user === currentUser), [records, currentUser]); // eslint-disable-line no-unused-vars
+  const marketplaceRecords = useMemo(() => records.filter(r => r.forSale), [records]); // eslint-disable-line no-unused-vars
+  const postCounts = useMemo(() => { // eslint-disable-line no-unused-vars
+    const counts = {};
+    posts.forEach(p => { counts[p.user] = (counts[p.user] || 0) + 1; });
+    return counts;
+  }, [posts]);
+
   // Compute who follows the current user by scanning USER_PROFILES followers arrays
   const computedFollowers = useMemo(() => Object.entries(USER_PROFILES)
     .filter(([, p]) => (p.followers || []).includes(currentUser))
@@ -474,9 +601,13 @@ export default function App() {
         onLogout={isGuest ? null : handleLogout}
         isGuest={isGuest}
         onSignIn={() => setShowAuth(true)}
+        globalSearch={globalSearch} setGlobalSearch={setGlobalSearch}
+        unreadCount={unreadCount}
+        cartCount={cartCount}
       />
 
       <main className="gs-main ml-[196px] px-10 py-[26px] max-w-[1400px]">
+        <div key={pageTransitionKey} className="animate-fade-in">
         {/* Full user profile page — overrides nav routing when viewing another user's full profile */}
         {viewingUserProfile ? (
           <UserProfilePage
@@ -493,6 +624,8 @@ export default function App() {
               const offeredRecord = records.find(r => r.user === currentUser && r.album.toLowerCase() === wishlistItem.album.toLowerCase() && r.artist.toLowerCase() === wishlistItem.artist.toLowerCase());
               setOfferTarget({ wishlistItem, targetUser, offeredRecord });
             }}
+            onShareProfile={onShareProfile}
+            onReportUser={onReportUser}
           />
         ) : (
           <>
@@ -535,6 +668,7 @@ export default function App() {
                 onBuy={onBuy} onRemoveFromCart={onRemoveFromCart}
                 onViewUser={onViewUser} onDetail={onDetail}
                 onAcceptOffer={onAcceptOffer} onDeclineOffer={onDeclineOffer}
+                onReorder={onReorder}
               />
             )}
             {nav === "Profile" && (
@@ -549,10 +683,12 @@ export default function App() {
                 posts={posts} onLikePost={onLikePost} onCommentPost={onCommentPost} onBookmarkPost={onBookmarkPost}
                 onViewUser={onViewUser}
                 listeningHistory={listeningHistory}
+                onShareProfile={onShareProfile}
               />
             )}
           </>
         )}
+        </div>
       </main>
 
       {/* ── Modals ─────────────────────────────────────────────────────────────── */}
@@ -590,6 +726,8 @@ export default function App() {
         following={following} onFollow={onFollow}
         posts={posts} listeningHistory={listeningHistory}
         onViewFullProfile={u => { setViewingUser(null); setViewingUserProfile(u); }}
+        onShareProfile={onShareProfile}
+        onReportUser={onReportUser}
       />
       <DMModal
         open={showDMs} onClose={() => setShowDMs(false)}

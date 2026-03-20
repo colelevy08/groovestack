@@ -91,11 +91,11 @@
   }
   /* Overlay backdrop */
   .gs-overlay {
-    @apply fixed inset-0 bg-black/85 flex items-center justify-center z-[1000] backdrop-blur-sm animate-fade-in;
+    @apply fixed inset-0 bg-black/85 flex items-center justify-center z-[1000] backdrop-blur-md animate-overlay-in;
   }
   /* Modal */
   .gs-modal-box {
-    @apply bg-gs-surface border border-gs-border rounded-2xl overflow-auto shadow-2xl animate-slide-up max-h-[88vh];
+    @apply bg-gs-surface border border-gs-border rounded-2xl overflow-auto shadow-2xl animate-modal-in max-h-[88vh];
     max-width: 94vw;
   }
   /* Tag pill */

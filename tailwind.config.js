@@ -32,6 +32,13 @@ module.exports = {
         'skeleton': 'skeleton 1.5s ease-in-out infinite',
         'page-in': 'pageIn 0.3s ease-out',
         'double-tap-heart': 'doubleTapHeart 0.8s ease-out forwards',
+        'modal-in': 'modalIn 0.2s ease-out',
+        'modal-out': 'modalOut 0.15s ease-in forwards',
+        'overlay-in': 'overlayIn 0.2s ease-out',
+        'overlay-out': 'overlayOut 0.15s ease-in forwards',
+        'toast-in': 'toastIn 0.3s ease-out',
+        'toast-out': 'toastOut 0.2s ease-in forwards',
+        'shimmer': 'shimmer 1.8s ease-in-out infinite',
       },
       keyframes: {
         fadeIn: {
@@ -41,6 +48,34 @@ module.exports = {
         slideUp: {
           '0%': { opacity: '0', transform: 'translateY(12px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        modalIn: {
+          '0%': { opacity: '0', transform: 'scale(0.95) translateY(8px)' },
+          '100%': { opacity: '1', transform: 'scale(1) translateY(0)' },
+        },
+        modalOut: {
+          '0%': { opacity: '1', transform: 'scale(1) translateY(0)' },
+          '100%': { opacity: '0', transform: 'scale(0.95) translateY(8px)' },
+        },
+        overlayIn: {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        overlayOut: {
+          '0%': { opacity: '1' },
+          '100%': { opacity: '0' },
+        },
+        toastIn: {
+          '0%': { opacity: '0', transform: 'translateX(-50%) translateY(16px) scale(0.95)' },
+          '100%': { opacity: '1', transform: 'translateX(-50%) translateY(0) scale(1)' },
+        },
+        toastOut: {
+          '0%': { opacity: '1', transform: 'translateX(-50%) translateY(0) scale(1)' },
+          '100%': { opacity: '0', transform: 'translateX(-50%) translateY(16px) scale(0.95)' },
+        },
+        shimmer: {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
         },
         heartPop: {
           '0%': { transform: 'scale(1)' },
