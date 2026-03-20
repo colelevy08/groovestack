@@ -252,7 +252,10 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
               onMouseLeave={e => e.currentTarget.style.borderColor = "#1e1e1e"}>
               <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={38} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.album}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f5", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", alignItems: "center", gap: 4 }}>
+                  {r.album}
+                  {r.verified && <span title="Verified vinyl" style={{ color: "#3b82f6", fontSize: 11, flexShrink: 0 }}>✓</span>}
+                </div>
                 <div style={{ fontSize: 11, color: "#666" }}>{r.artist} · {r.year} · {r.format}</div>
               </div>
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>

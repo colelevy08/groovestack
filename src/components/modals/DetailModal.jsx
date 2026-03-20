@@ -10,7 +10,7 @@ import Avatar from '../ui/Avatar';
 import { condColor } from '../../utils/helpers';
 import { USER_WISHLISTS } from '../../constants';
 
-export default function DetailModal({ open, onClose, record, onLike, onSave, onComment, onBuy, onViewUser, onViewArtist, onAddWishlistItem, currentUser, records, onOfferFromDetail }) {
+export default function DetailModal({ open, onClose, record, onLike, onSave, onComment, onBuy, onViewUser, onViewArtist, onAddWishlistItem, currentUser, records, onOfferFromDetail, onVerifyRecord }) {
   if (!record) return null;
 
   // When viewing your own record, find users who have it on their wishlist
@@ -31,7 +31,10 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
       <div style={{ display: "flex", gap: 20, marginBottom: 20 }}>
         <AlbumArt album={record.album} artist={record.artist} accent={record.accent} size={96} />
         <div style={{ flex: 1 }}>
-          <h2 style={{ fontSize: 22, fontWeight: 800, color: "#f5f5f5", letterSpacing: "-0.03em", marginBottom: 4 }}>{record.album}</h2>
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: "#f5f5f5", letterSpacing: "-0.03em", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
+            {record.album}
+            {record.verified && <span title="Verified vinyl" style={{ color: "#3b82f6", fontSize: 16 }}>✓</span>}
+          </h2>
           <p style={{ fontSize: 14, color: "#888", marginBottom: 10 }}>
             <button onClick={() => { onClose(); onViewArtist?.(record.artist); }} style={{ background: "none", border: "none", color: "#888", fontSize: 14, padding: 0, cursor: "pointer" }}
               onMouseEnter={e => e.currentTarget.style.color = "#ccc"} onMouseLeave={e => e.currentTarget.style.color = "#888"}
@@ -83,6 +86,11 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
         <button onClick={() => onAddWishlistItem(record.album, record.artist)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 8, background: "#1a1a1a", border: "1px solid #2a2a2a", color: "#888", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
           ✨ Wishlist
         </button>
+        {isOwn && !record.verified && onVerifyRecord && (
+          <button onClick={() => { onClose(); onVerifyRecord(record); }} style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 8, background: "#3b82f622", border: "1px solid #3b82f644", color: "#3b82f6", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            📷 Verify
+          </button>
+        )}
         {record.forSale && (
           <button onClick={() => { onClose(); onBuy(record); }} style={{ marginLeft: "auto", padding: "9px 18px", borderRadius: 8, background: `linear-gradient(135deg,${record.accent},#6366f1)`, border: "none", color: "#000", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
             Buy · ${record.price}

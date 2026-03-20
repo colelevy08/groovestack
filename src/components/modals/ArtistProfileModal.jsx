@@ -149,7 +149,7 @@ export default function ArtistProfileModal({ artist, open, onClose, records, onD
               >
                 <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={44} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f5", marginBottom: 2 }}>{r.album}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#f5f5f5", marginBottom: 2, display: "flex", alignItems: "center", gap: 4 }}>{r.album}{r.verified && <span title="Verified vinyl" style={{ color: "#3b82f6", fontSize: 11 }}>✓</span>}</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <button
                       onClick={e => { e.stopPropagation(); onViewUser(r.user); onClose(); }}

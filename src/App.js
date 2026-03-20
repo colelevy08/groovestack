@@ -37,6 +37,7 @@ import NotificationsPanel from './components/modals/NotificationsPanel';
 import OfferModal from './components/modals/OfferModal';
 import CreatePostModal from './components/modals/CreatePostModal';
 import ArtistProfileModal from './components/modals/ArtistProfileModal';
+import VerifyRecordModal from './components/modals/VerifyRecordModal';
 
 // UI
 import Toast from './components/ui/Toast';
@@ -62,7 +63,7 @@ export default function App() {
   const [records, setRecords] = useState(() => {
     try { return JSON.parse(localStorage.getItem('gs_records')) || INITIAL_RECORDS; } catch { return INITIAL_RECORDS; }
   });
-  const [nav, setNav] = useState("Social");
+  const [nav, setNav] = useState(() => getToken() ? "Social" : "Marketplace");
   const [posts, setPosts] = useState(() => {
     try { return JSON.parse(localStorage.getItem('gs_posts')) || INITIAL_POSTS; } catch { return INITIAL_POSTS; }
   });
@@ -109,6 +110,8 @@ export default function App() {
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [viewingUserProfile, setViewingUserProfile] = useState(null);
   const [viewingArtist, setViewingArtist] = useState(null);
+  const [verifyingRecord, setVerifyingRecord] = useState(null);
+  const [showAuth, setShowAuth] = useState(false);
   const [toast, setToast] = useState({ visible: false, msg: "" });
 
   // Shows the Toast bar and auto-hides it after 2.2 seconds
@@ -150,7 +153,7 @@ export default function App() {
   }, [applyUser]);
 
   // ── Auth: called by AuthScreen after login/signup ───────────────────────
-  const handleAuth = (user) => applyUser(user);
+  const handleAuth = (user) => { applyUser(user); setShowAuth(false); };
 
   // ── Auth: logout ────────────────────────────────────────────────────────────
   const handleLogout = () => {
@@ -158,6 +161,7 @@ export default function App() {
     setSession(null);
     setCurrentUser('');
     setProfile({ displayName: '', bio: '', location: '', favGenre: '' });
+    setNav("Marketplace");
     Object.keys(localStorage).forEach(k => {
       if (k.startsWith('gs_')) localStorage.removeItem(k);
     });
@@ -272,15 +276,16 @@ export default function App() {
   };
 
   // ── Record actions — passed to screens and modals as callbacks ───────────────
-  const onLike = id => updateRecord(id, r => ({ ...r, liked: !r.liked, likes: r.liked ? r.likes - 1 : r.likes + 1 }));
+  const onLike = id => { if (requireAuth()) return; updateRecord(id, r => ({ ...r, liked: !r.liked, likes: r.liked ? r.likes - 1 : r.likes + 1 })); };
 
   const onSave = id => {
+    if (requireAuth()) return;
     const r = records.find(r => r.id === id);
     updateRecord(id, r => ({ ...r, saved: !r.saved }));
     showToast(r?.saved ? "Removed from saved" : "Saved!");
   };
 
-  const onComment = r => setCommentRecord(r);
+  const onComment = r => { if (requireAuth()) return; setCommentRecord(r); };
   const onBuy = r => setBuyRecord(r);
   const onDetail = r => setDetailRecord(r);
 
@@ -312,7 +317,13 @@ export default function App() {
 
   const onAdd = r => {
     setRecords(rs => [r, ...rs]);
-    showToast("Record added to collection!");
+    showToast(r.verified ? "Verified record added!" : "Record added to collection!");
+  };
+
+  const onVerifyRecord = r => setVerifyingRecord(r);
+  const onRecordVerified = id => {
+    setRecords(rs => rs.map(r => r.id === id ? { ...r, verified: true } : r));
+    showToast("Record verified! ✓");
   };
 
   // ── Post actions ───────────────────────────────────────────────────────────
@@ -343,6 +354,7 @@ export default function App() {
 
   // ── Social actions ───────────────────────────────────────────────────────────
   const onFollow = u => {
+    if (requireAuth()) return;
     if (following.includes(u)) {
       setFollowing(f => f.filter(x => x !== u));
       showToast(`Unfollowed @${u}`);
@@ -372,7 +384,15 @@ export default function App() {
     }
   };
 
-  // ── Auth gate: loading → auth screen → main app ─────────────────────────────
+  const isGuest = !session;
+
+  // Guest guard — prompts sign-in modal for actions that require auth
+  const requireAuth = (action) => {
+    if (isGuest) { setShowAuth(true); return true; }
+    return false;
+  };
+
+  // ── Loading screen ────────────────────────────────────────────────────────
   if (authLoading) {
     return (
       <div style={{ minHeight: '100vh', background: '#080808', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -382,27 +402,24 @@ export default function App() {
     );
   }
 
-  if (!session) {
-    return (
-      <div style={{ minHeight: '100vh', background: '#080808', fontFamily: "'DM Sans',-apple-system,sans-serif", color: '#f5f5f5' }}>
-        <style>{FONT_STYLE}</style>
-        <AuthScreen onAuth={handleAuth} />
-      </div>
-    );
-  }
-
   return (
     <div style={{ minHeight: "100vh", background: "#080808", fontFamily: "'DM Sans',-apple-system,sans-serif", color: "#f5f5f5" }}>
       <style>{FONT_STYLE}</style>
 
       <Sidebar
-        nav={nav} setNav={n => { setViewingUserProfile(null); setNav(n); }}
+        nav={nav} setNav={n => {
+          // Guest can browse Marketplace and Collection, but other tabs require auth
+          if (isGuest && !["Marketplace", "Collection"].includes(n)) { setShowAuth(true); return; }
+          setViewingUserProfile(null); setNav(n);
+        }}
         following={following} profile={profile} currentUser={currentUser}
         notifCount={notifCount}
-        onNotifClick={() => { setShowNotifs(n => !n); setNotifCount(0); }}
-        onAddRecord={() => setShowAdd(true)}
-        onMessages={() => setShowDMs(true)}
-        onLogout={handleLogout}
+        onNotifClick={() => { if (requireAuth()) return; setShowNotifs(n => !n); setNotifCount(0); }}
+        onAddRecord={() => { if (requireAuth()) return; setShowAdd(true); }}
+        onMessages={() => { if (requireAuth()) return; setShowDMs(true); }}
+        onLogout={isGuest ? null : handleLogout}
+        isGuest={isGuest}
+        onSignIn={() => setShowAuth(true)}
       />
 
       <main style={{ marginLeft: 196, padding: "26px 40px", maxWidth: 1400 }}>
@@ -504,6 +521,7 @@ export default function App() {
         onBuy={r => { setDetailRecord(null); setBuyRecord(r); }}
         onAddWishlistItem={onAddWishlistItem}
         currentUser={currentUser} records={records} onOfferFromDetail={onOfferFromDetail}
+        onVerifyRecord={onVerifyRecord}
       />
       <ProfileEditModal
         open={showEditProfile} onClose={() => setShowEditProfile(false)}
@@ -541,6 +559,27 @@ export default function App() {
         artist={viewingArtist} open={!!viewingArtist} onClose={() => setViewingArtist(null)}
         records={records} onDetail={onDetail} onBuy={onBuy} onViewUser={onViewUser}
       />
+      <VerifyRecordModal
+        open={!!verifyingRecord} onClose={() => setVerifyingRecord(null)}
+        record={verifyingRecord} onVerified={onRecordVerified}
+      />
+      {/* Auth modal — shown when guest tries a restricted action or clicks "Create Profile" */}
+      {showAuth && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, backdropFilter: "blur(6px)" }}
+          onClick={e => e.target === e.currentTarget && setShowAuth(false)}
+        >
+          <div style={{ position: "relative" }}>
+            <button
+              onClick={() => setShowAuth(false)}
+              style={{ position: "absolute", top: -40, right: 0, background: "none", border: "none", color: "#666", fontSize: 13, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}
+            >
+              Continue browsing →
+            </button>
+            <AuthScreen onAuth={handleAuth} />
+          </div>
+        </div>
+      )}
       <Toast message={toast.msg} visible={toast.visible} />
     </div>
   );

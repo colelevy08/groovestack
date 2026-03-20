@@ -15,7 +15,7 @@ const NAV_ITEMS = [
   { id: "Profile",    path: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" },
 ];
 
-export default function Sidebar({ nav, setNav, following, profile, currentUser, notifCount, onNotifClick, onAddRecord, onMessages, onLogout }) {
+export default function Sidebar({ nav, setNav, following, profile, currentUser, notifCount, onNotifClick, onAddRecord, onMessages, onLogout, isGuest, onSignIn }) {
   return (
     <div style={{ position: "fixed", left: 0, top: 0, bottom: 0, width: 196, background: "#0a0a0a", borderRight: "1px solid #161616", display: "flex", flexDirection: "column", padding: "22px 0", zIndex: 100 }}>
       {/* Logo + notifications */}
@@ -43,55 +43,79 @@ export default function Sidebar({ nav, setNav, following, profile, currentUser, 
       <nav style={{ flex: 1, padding: "0 8px" }}>
         {NAV_ITEMS.map(({ id, path }) => {
           const active = nav === id;
+          const guestAllowed = ["Marketplace", "Collection"].includes(id);
+          const dimmed = isGuest && !guestAllowed;
           return (
             <button
               key={id}
               onClick={() => setNav(id)}
-              style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "9px 12px", borderRadius: 9, background: active ? "#0ea5e911" : "none", border: active ? "1px solid #0ea5e922" : "1px solid transparent", color: active ? "#0ea5e9" : "#555", cursor: "pointer", fontSize: 13, fontWeight: active ? 600 : 500, marginBottom: 2, textAlign: "left", transition: "all 0.15s" }}
+              style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "9px 12px", borderRadius: 9, background: active ? "#0ea5e911" : "none", border: active ? "1px solid #0ea5e922" : "1px solid transparent", color: active ? "#0ea5e9" : dimmed ? "#333" : "#555", cursor: "pointer", fontSize: 13, fontWeight: active ? 600 : 500, marginBottom: 2, textAlign: "left", transition: "all 0.15s", opacity: dimmed ? 0.5 : 1 }}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d={path} />
               </svg>
               {id}
+              {dimmed && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ marginLeft: "auto", opacity: 0.4 }}><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0110 0v4" /></svg>}
             </button>
           );
         })}
       </nav>
 
-      {/* Bottom actions */}
-      <div style={{ padding: "0 8px 8px" }}>
-        <button onClick={onAddRecord} style={{ width: "100%", padding: 10, background: "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 9, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", marginBottom: 6 }}>
-          + Add Record
-        </button>
-        <button onClick={onMessages} style={{ width: "100%", padding: 9, background: "#111", border: "1px solid #1e1e1e", borderRadius: 9, color: "#888", fontWeight: 600, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-          Messages
-        </button>
-      </div>
-
-      {/* Current user */}
-      <div style={{ padding: "10px 8px 0", borderTop: "1px solid #161616", margin: "0 8px" }}>
-        <button
-          onClick={() => setNav("Profile")}
-          style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", width: "100%", background: "none", border: "none", cursor: "pointer", borderRadius: 8 }}
-          onMouseEnter={e => e.currentTarget.style.background = "#111"}
-          onMouseLeave={e => e.currentTarget.style.background = "none"}
-        >
-          <Avatar username={currentUser} size={30} src={profile.avatarUrl} />
-          <div style={{ textAlign: "left" }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#e0e0e0" }}>{profile.displayName}</div>
-            <div style={{ fontSize: "10px", color: "#444", fontFamily: "'DM Mono',monospace" }}>@{currentUser}</div>
-          </div>
-        </button>
-        {onLogout && (
-          <button
-            onClick={onLogout}
-            style={{ width: '100%', padding: '8px 10px', background: 'none', border: 'none', color: '#444', fontSize: 11, fontWeight: 500, cursor: 'pointer', marginTop: 4, fontFamily: "'DM Mono',monospace", textAlign: 'center' }}
-            onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
-            onMouseLeave={e => e.currentTarget.style.color = '#444'}
-          >
-            Log out
+      {/* Bottom actions — hidden for guests */}
+      {!isGuest && (
+        <div style={{ padding: "0 8px 8px" }}>
+          <button onClick={onAddRecord} style={{ width: "100%", padding: 10, background: "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 9, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", marginBottom: 6 }}>
+            + Add Record
           </button>
+          <button onClick={onMessages} style={{ width: "100%", padding: 9, background: "#111", border: "1px solid #1e1e1e", borderRadius: 9, color: "#888", fontWeight: 600, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+            Messages
+          </button>
+        </div>
+      )}
+
+      {/* Current user / guest sign-in */}
+      <div style={{ padding: "10px 8px 0", borderTop: "1px solid #161616", margin: "0 8px" }}>
+        {isGuest ? (
+          <>
+            <button
+              onClick={onSignIn}
+              style={{ width: "100%", padding: 11, background: "linear-gradient(135deg,#0ea5e9,#6366f1)", border: "none", borderRadius: 9, color: "#fff", fontWeight: 700, fontSize: 12, cursor: "pointer", marginBottom: 6 }}
+            >
+              Create Profile
+            </button>
+            <button
+              onClick={onSignIn}
+              style={{ width: "100%", padding: 9, background: "#111", border: "1px solid #1e1e1e", borderRadius: 9, color: "#888", fontWeight: 600, fontSize: 11, cursor: "pointer", textAlign: "center" }}
+            >
+              Log in
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => setNav("Profile")}
+              style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 10px", width: "100%", background: "none", border: "none", cursor: "pointer", borderRadius: 8 }}
+              onMouseEnter={e => e.currentTarget.style.background = "#111"}
+              onMouseLeave={e => e.currentTarget.style.background = "none"}
+            >
+              <Avatar username={currentUser} size={30} src={profile.avatarUrl} />
+              <div style={{ textAlign: "left" }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#e0e0e0" }}>{profile.displayName}</div>
+                <div style={{ fontSize: "10px", color: "#444", fontFamily: "'DM Mono',monospace" }}>@{currentUser}</div>
+              </div>
+            </button>
+            {onLogout && (
+              <button
+                onClick={onLogout}
+                style={{ width: '100%', padding: '8px 10px', background: 'none', border: 'none', color: '#444', fontSize: 11, fontWeight: 500, cursor: 'pointer', marginTop: 4, fontFamily: "'DM Mono',monospace", textAlign: 'center' }}
+                onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+                onMouseLeave={e => e.currentTarget.style.color = '#444'}
+              >
+                Log out
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>

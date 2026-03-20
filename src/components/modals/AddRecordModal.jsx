@@ -1,5 +1,6 @@
 // Modal for adding a new record to the current user's collection.
-// Requires AI verification via VinylCamera before the submit button becomes active.
+// AI verification via VinylCamera is optional — users can skip and verify later.
+// Verified records display a blue checkmark badge across the app.
 // On submit, calls onAdd in App.js which pushes the new record into the shared records array.
 // Contains two sub-components: VinylCamera (camera + Claude AI verification) and SpinnerDots (loading animation).
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -279,13 +280,14 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
   const [tags, setTags] = useState([]);
   const [err, setErr] = useState('');
   const [verified, setVerified] = useState(false);
+  const [showVerify, setShowVerify] = useState(false);
 
   // Resets all fields back to defaults — called on cancel and after a successful add
   const reset = () => {
     setAlbum(''); setArtist(''); setYear(''); setFormat('LP');
     setLabel(''); setCondition('VG+'); setRating(4); setReview('');
     setForSale(false); setPrice(''); setTags([]); setErr('');
-    setVerified(false);
+    setVerified(false); setShowVerify(false);
   };
 
   // Toggles a genre tag on/off in the selected tags array
@@ -294,14 +296,13 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
   // Validates, builds the new record object, calls onAdd, and closes the modal
   const submit = () => {
     if (!album.trim() || !artist.trim()) { setErr('Album and artist are required.'); return; }
-    if (!verified) { setErr('Please verify your vinyl before adding it.'); return; }
     const accent = ACCENT_COLORS[Math.floor(Math.random() * ACCENT_COLORS.length)];
     onAdd({
       id: Date.now(), user: currentUser, album: album.trim(), artist: artist.trim(),
       year: parseInt(year) || new Date().getFullYear(), format, label: label.trim(),
       condition, forSale, price: forSale ? parseFloat(price) || null : null,
       rating, review: review.trim(), likes: 0, comments: [], accent, tags,
-      timeAgo: 'just now', liked: false, saved: false,
+      timeAgo: 'just now', liked: false, saved: false, verified,
     });
     reset();
     onClose();
@@ -359,11 +360,35 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
         {forSale && <div style={{ marginTop: 12 }}><FormInput label="ASKING PRICE (USD)" value={price} onChange={setPrice} placeholder="0.00" type="number" /></div>}
       </div>
 
-      {/* ── Claude AI vinyl verification ── */}
-      <VinylCamera
-        onVerified={() => setVerified(true)}
-        onRetake={() => setVerified(false)}
-      />
+      {/* ── Optional Claude AI vinyl verification ── */}
+      {!verified && (
+        <div style={{ marginBottom: 16, padding: 14, background: '#111', borderRadius: 12, border: '1px solid #1a1a1a' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: showVerify ? 14 : 0 }}>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#ccc', marginBottom: 2 }}>Verify your vinyl?</div>
+              <div style={{ fontSize: 11, color: '#555' }}>Get a <span style={{ color: '#3b82f6' }}>✓ verified</span> badge on this record</div>
+            </div>
+            <button
+              onClick={() => setShowVerify(v => !v)}
+              style={{ padding: '7px 14px', background: showVerify ? '#1a1a1a' : 'linear-gradient(135deg,#3b82f6,#6366f1)', border: showVerify ? '1px solid #2a2a2a' : 'none', borderRadius: 8, color: showVerify ? '#666' : '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+            >
+              {showVerify ? 'Skip' : '📷 Verify'}
+            </button>
+          </div>
+          {showVerify && (
+            <VinylCamera
+              onVerified={() => setVerified(true)}
+              onRetake={() => setVerified(false)}
+            />
+          )}
+        </div>
+      )}
+      {verified && (
+        <div style={{ marginBottom: 16, padding: '10px 14px', background: '#1e3a5f22', borderRadius: 10, border: '1px solid #3b82f633', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ color: '#3b82f6', fontSize: 16 }}>✓</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#3b82f6' }}>Vinyl verified by Claude AI</span>
+        </div>
+      )}
 
       {/* ── Action buttons ── */}
       <div style={{ display: 'flex', gap: 10 }}>
@@ -375,17 +400,15 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
         </button>
         <button
           onClick={submit}
-          disabled={!verified}
-          title={!verified ? 'Verify your vinyl first' : ''}
           style={{
             flex: 2, padding: 11, border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 700,
-            cursor: verified ? 'pointer' : 'not-allowed',
-            background: verified ? 'linear-gradient(135deg,#22c55e,#0ea5e9)' : '#1a1a1a',
-            color: verified ? '#fff' : '#444',
+            cursor: 'pointer',
+            background: verified ? 'linear-gradient(135deg,#22c55e,#0ea5e9)' : 'linear-gradient(135deg,#0ea5e9,#6366f1)',
+            color: '#fff',
             transition: 'all 0.3s ease',
           }}
         >
-          {verified ? '✅ Add to Collection' : '🔒 Verify Vinyl First'}
+          {verified ? '✓ Add Verified Record' : 'Add to Collection'}
         </button>
       </div>
     </Modal>

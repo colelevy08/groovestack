@@ -30,7 +30,10 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
         <div style={{ display: "flex", gap: 12, marginBottom: 12, cursor: "pointer" }} onClick={() => onDetail(r)}>
           <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={68} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: "#f5f5f5", letterSpacing: "-0.02em", lineHeight: 1.2, marginBottom: 3 }}>{r.album}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#f5f5f5", letterSpacing: "-0.02em", lineHeight: 1.2, marginBottom: 3, display: "flex", alignItems: "center", gap: 5 }}>
+              {r.album}
+              {r.verified && <span title="Verified vinyl" style={{ color: "#3b82f6", fontSize: 13, flexShrink: 0 }}>✓</span>}
+            </div>
             <div style={{ fontSize: 12, color: "#888", marginBottom: 6 }}>
               <button onClick={e => { e.stopPropagation(); onViewArtist?.(r.artist); }} style={{ background: "none", border: "none", color: "#888", fontSize: 12, padding: 0, cursor: "pointer" }}
                 onMouseEnter={e => e.currentTarget.style.color = "#ccc"} onMouseLeave={e => e.currentTarget.style.color = "#888"}
