@@ -229,11 +229,11 @@ slide10.addShape(pptx.ShapeType.rect, {
 
 const stats = [
   { number: '2,000+', label: 'Seed Records' },
-  { number: '31', label: 'Collector Profiles' },
+  { number: '41', label: 'Collector Profiles' },
   { number: '18 / 85+', label: 'Genres / Subgenres' },
-  { number: '45+', label: 'Social Posts' },
-  { number: '73+', label: 'Listening Sessions' },
-  { number: '21+', label: 'API Endpoints' }
+  { number: '70+', label: 'Social Posts' },
+  { number: '169+', label: 'Listening Sessions' },
+  { number: '120+', label: 'API Endpoints' }
 ];
 
 stats.forEach((stat, i) => {
@@ -264,7 +264,57 @@ stats.forEach((stat, i) => {
   });
 });
 
-// ─── Slide 11: Revenue Model ───
+// ─── Slide 11: Analytics & Insights ───
+addContentSlide('Analytics & Insights', [
+  'Full analytics dashboard with SVG charts (no external deps)',
+  'Collection value tracking over time',
+  'Genre distribution pie chart and condition breakdown',
+  'Spending analytics with monthly bar charts',
+  'Seller/buyer analytics with top partners and trends',
+  'Listening pattern analysis and mood detection'
+]);
+
+// ─── Slide 12: Advanced Marketplace ───
+addContentSlide('Advanced Marketplace', [
+  'Escrow system for high-value trades',
+  'Dispute resolution workflow with admin review',
+  'User reputation scoring from sales, reviews, and disputes',
+  'Coupon/promo code system for sellers',
+  'Price alerts when wishlist items become available',
+  'Bulk record import from CSV or Discogs collection'
+]);
+
+// ─── Slide 13: Vinyl Buddy Deep Features ───
+addContentSlide('Vinyl Buddy Deep Features', [
+  'Shazam-style pulsing animation during identification',
+  'Listening mood detector based on genre classification',
+  'Achievement badges (First Spin, Century Club, Night Owl, etc.)',
+  'Listening streaks and goals/challenges tracking',
+  'Genre evolution chart showing taste changes over time',
+  'Device calibration, firmware updates, and battery monitoring'
+]);
+
+// ─── Slide 14: UX & Accessibility ───
+addContentSlide('UX & Accessibility', [
+  'Full keyboard navigation (1-9 tabs, Cmd+K palette, shortcuts)',
+  'Command palette with fuzzy search across records, users, actions',
+  'Swipe gestures on mobile for like/save and modal dismiss',
+  'Dark/light theme toggle with smooth transitions',
+  'Reduced motion support, high contrast mode',
+  'Screen reader announcements and skip-to-content links'
+]);
+
+// ─── Slide 15: Server & Security ───
+addContentSlide('Server & Security', [
+  '120+ API endpoints covering full marketplace lifecycle',
+  'JWT auth with bcrypt, TOTP 2FA, password reset flow',
+  'Rate limiting per endpoint, CSRF protection',
+  'GDPR-compliant data export and account deletion',
+  'OpenAPI spec, API docs, and changelog endpoints',
+  'Gzip compression, request tracing, graceful shutdown'
+]);
+
+// ─── Slide 16: Revenue Model ───
 addContentSlide('Revenue Model', [
   '5% transaction fee (min $1) on all marketplace sales',
   '$6 flat shipping fee per order',
@@ -282,14 +332,14 @@ addContentSlide('Deployment', [
   'Production URL: groovestack.vercel.app'
 ]);
 
-// ─── Slide 13: What's Next ───
+// ─── Slide 18: What's Next ───
 addContentSlide("What's Next", [
   'Mobile app (React Native) for iOS and Android',
   'Real-time notifications via WebSockets',
   'Vinyl Buddy v2 with WiFi + Bluetooth connectivity',
-  'Social features: stories, live listening sessions',
-  'AI-powered recommendations engine',
-  'International shipping support'
+  'Live listening sessions with friends',
+  'International shipping and multi-currency support',
+  'Premium subscription tiers for power collectors'
 ]);
 
 // ─── Slide 14: Thank You ───
