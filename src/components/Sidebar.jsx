@@ -46,7 +46,7 @@ export default function Sidebar({ nav, setNav, following, profile, currentUser, 
         <nav className="flex-1 px-2 space-y-0.5">
           {NAV_ITEMS.map(({ id, path }) => {
             const active = nav === id;
-            const guestAllowed = ["Marketplace", "Collection"].includes(id);
+            const guestAllowed = id === "Marketplace";
             const dimmed = isGuest && !guestAllowed;
             return (
               <button
@@ -121,7 +121,7 @@ export default function Sidebar({ nav, setNav, following, profile, currentUser, 
       <div className="gs-mobile-bar hidden fixed bottom-0 left-0 right-0 bg-gs-sidebar border-t border-gs-border-subtle justify-around items-center z-[100] px-0 pt-1.5 pb-[env(safe-area-inset-bottom,6px)]">
         {MOBILE_TABS.map(({ id, label, path }) => {
           const active = nav === id;
-          const guestLocked = isGuest && !["Marketplace", "Collection"].includes(id);
+          const guestLocked = isGuest && id !== "Marketplace";
           const isGuestProfile = isGuest && id === "Profile";
           return (
             <button

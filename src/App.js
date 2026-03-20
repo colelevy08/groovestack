@@ -398,8 +398,8 @@ export default function App() {
 
       <Sidebar
         nav={nav} setNav={n => {
-          // Guest can browse Marketplace and Collection, but other tabs require auth
-          if (isGuest && !["Marketplace", "Collection"].includes(n)) { setShowAuth(true); return; }
+          // Guests can only browse Marketplace — all other tabs require auth
+          if (isGuest && n !== "Marketplace") { setShowAuth(true); return; }
           setViewingUserProfile(null); setNav(n);
         }}
         following={following} profile={profile} currentUser={currentUser}
