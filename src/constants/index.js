@@ -44,6 +44,46 @@ export const ACCENT_COLORS = [
   "#f97316","#06b6d4","#84cc16","#ef4444","#8b5cf6",
 ];
 
+// Price range buckets for marketplace filter UI
+export const PRICE_RANGES = [
+  { label: "Under $10",    min: 0,   max: 10   },
+  { label: "$10 – $25",    min: 10,  max: 25   },
+  { label: "$25 – $50",    min: 25,  max: 50   },
+  { label: "$50 – $100",   min: 50,  max: 100  },
+  { label: "$100 – $250",  min: 100, max: 250  },
+  { label: "$250 – $500",  min: 250, max: 500  },
+  { label: "$500+",        min: 500, max: Infinity },
+];
+
+// Notification event types — used by NotificationScreen and notification badge
+export const NOTIFICATION_TYPES = {
+  LIKE:           "like",
+  COMMENT:        "comment",
+  FOLLOW:         "follow",
+  OFFER:          "offer",
+  OFFER_ACCEPTED: "offer_accepted",
+  OFFER_DECLINED: "offer_declined",
+  SALE:           "sale",
+  PRICE_DROP:     "price_drop",
+  WISHLIST_MATCH: "wishlist_match",
+  MENTION:        "mention",
+  NEW_RECORD:     "new_record",
+  VERIFIED:       "verified",
+};
+
+// Order / transaction statuses — used by marketplace purchase flow
+export const ORDER_STATUSES = {
+  PENDING:    "pending",
+  ACCEPTED:   "accepted",
+  PAID:       "paid",
+  SHIPPED:    "shipped",
+  DELIVERED:  "delivered",
+  COMPLETED:  "completed",
+  CANCELLED:  "cancelled",
+  REFUNDED:   "refunded",
+  DISPUTED:   "disputed",
+};
+
 // Static profiles for all non-current users — keyed by username handle.
 // Each profile includes a display name, bio, location, favorite genre, accent color, followers list,
 // and avatar/header image URLs (DiceBear + Picsum for a polished look).
@@ -68,6 +108,18 @@ export const USER_PROFILES = {
   "cass.stacks":    { displayName:"Cass O'Brien",     bio:"Punk and post-punk archivist. Have pressed several records myself.",            location:"Dublin, IE",     favGenre:"Punk",        accent:"#0ea5e9", followers:["creator","bjorn.grooves"], avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=cass.stacks", headerUrl:"https://picsum.photos/seed/cass.stacks/1200/400" },
   "beau.plays":     { displayName:"Beau Laurent",     bio:"French house and disco. Every Saturday is a dance party.",                     location:"Paris, FR",      favGenre:"Electronic",  accent:"#f59e0b", followers:["creator","cleo.spins"], avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=beau.plays", headerUrl:"https://picsum.photos/seed/beau.plays/1200/400" },
   "zara.grooves":   { displayName:"Zara Khan",        bio:"Reggae and dub. Lee Scratch Perry is my spirit animal.",                       location:"Manchester, UK", favGenre:"Reggae",      accent:"#10b981", followers:["creator","lena.records"], avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=zara.grooves", headerUrl:"https://picsum.photos/seed/zara.grooves/1200/400" },
+  // ── New profiles ────────────────────────────────────────────────────────
+  "nico.crates":    { displayName:"Nico Alvarez",     bio:"Brazilian music obsessive. Bossa nova, tropicalia, MPB. Just moved to LA.",     location:"Los Angeles, CA",favGenre:"World",       accent:"#f97316", followers:["creator","felix.rpm","yuki.vinyl"], avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=nico.crates", headerUrl:"https://picsum.photos/seed/nico.crates/1200/400" },
+  "ada.tracks":     { displayName:"Ada Osei",         bio:"Audiophile engineer. Acoustic treatment nerd. The room matters more than the gear.", location:"Atlanta, GA", favGenre:"R&B",         accent:"#ec4899", followers:["creator","thomas.wax","mara.vinyl"], avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=ada.tracks", headerUrl:"https://picsum.photos/seed/ada.tracks/1200/400" },
+  "kai.wax":        { displayName:"Kai Brennan",      bio:"Radiohead completist. Every pressing, every format. Also into krautrock.",       location:"Portland, OR",   favGenre:"Alternative", accent:"#a78bfa", followers:["creator","cleo.spins","juniper.sounds"], avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=kai.wax", headerUrl:"https://picsum.photos/seed/kai.wax/1200/400" },
+  "sol.spins":      { displayName:"Sol Mensah",       bio:"Afrobeat and highlife. If it has polyrhythms, I need it on wax.",                location:"Accra, GH",      favGenre:"World",       accent:"#10b981", followers:["creator","zara.grooves","max.plays"], avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=sol.spins", headerUrl:"https://picsum.photos/seed/sol.spins/1200/400" },
+  "tova.vinyl":     { displayName:"Tova Bergman",     bio:"Inherited my grandmother's collection. 50s-60s vocal jazz and standards.",       location:"Minneapolis, MN",favGenre:"Jazz",        accent:"#f59e0b", followers:["creator","mara.vinyl","lena.records"], avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=tova.vinyl", headerUrl:"https://picsum.photos/seed/tova.vinyl/1200/400" },
+  "wren.stacks":    { displayName:"Wren Kimura",      bio:"Modern psych and garage rock. Ty Segall hoarder. King Gizzard evangelist.",     location:"San Francisco, CA",favGenre:"Rock",      accent:"#84cc16", followers:["creator","cleo.spins"], avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=wren.stacks", headerUrl:"https://picsum.photos/seed/wren.stacks/1200/400" },
+  "romy.rpm":       { displayName:"Romy Delacroix",   bio:"Synth-pop and new wave. Depeche Mode is a religion, not a band.",               location:"Lyon, FR",       favGenre:"Pop",         accent:"#8b5cf6", followers:["creator","beau.plays","otto.wax"], avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=romy.rpm", headerUrl:"https://picsum.photos/seed/romy.rpm/1200/400" },
+  "hal.grooves":    { displayName:"Hal Nakamura",     bio:"Blues purist. Robert Johnson to Gary Clark Jr. The 12-bar is eternal.",          location:"Memphis, TN",    favGenre:"Blues",       accent:"#ef4444", followers:["creator","thomas.wax","dax.wax"], avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=hal.grooves", headerUrl:"https://picsum.photos/seed/hal.grooves/1200/400" },
+  "june.vinyl":     { displayName:"June Okafor",      bio:"Neo-soul and contemporary R&B. D'Angelo changed my life. Erykah Badu too.",    location:"Philadelphia, PA",favGenre:"R&B",        accent:"#06b6d4", followers:["creator","lena.records","nadia.rpm"], avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=june.vinyl", headerUrl:"https://picsum.photos/seed/june.vinyl/1200/400" },
+  "arlo.wax":       { displayName:"Arlo McBride",     bio:"Outlaw country and Americana. Townes Van Zandt is the greatest songwriter.",    location:"Austin, TX",     favGenre:"Country",     accent:"#f97316", followers:["creator","milo.vinyl","thomas.wax"], avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=arlo.wax", headerUrl:"https://picsum.photos/seed/arlo.wax/1200/400" },
+  "emi.spins":      { displayName:"Emi Watanabe",     bio:"Minimalist composition and ambient. Steve Reich on repeat. Silence is music.",   location:"Kyoto, JP",      favGenre:"Classical",   accent:"#0ea5e9", followers:["creator","petra.spins","soren.stacks"], avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=emi.spins", headerUrl:"https://picsum.photos/seed/emi.spins/1200/400" },
 };
 
 // Synthetic wishlists for static users — albums they're looking for.
@@ -93,4 +145,16 @@ export const USER_WISHLISTS = {
   "cass.stacks":    [{ id: "w28", album: "Damaged", artist: "Black Flag" }, { id: "w29", album: "Entertainment!", artist: "Gang of Four" }],
   "beau.plays":     [{ id: "w30", album: "Homework", artist: "Daft Punk" }],
   "zara.grooves":   [{ id: "w31", album: "Catch a Fire", artist: "Bob Marley & The Wailers" }],
+  // ── Wishlists for new profiles ──────────────────────────────────────────
+  "nico.crates":    [{ id: "w32", album: "Getz/Gilberto", artist: "Stan Getz & Joao Gilberto" }, { id: "w33", album: "Tropicalia", artist: "Various Artists" }, { id: "w34", album: "Africa Brasil", artist: "Jorge Ben Jor" }],
+  "ada.tracks":     [{ id: "w35", album: "Voodoo", artist: "D'Angelo" }, { id: "w36", album: "Channel Orange", artist: "Frank Ocean" }],
+  "kai.wax":        [{ id: "w37", album: "Kid A", artist: "Radiohead" }, { id: "w38", album: "In Rainbows", artist: "Radiohead" }, { id: "w39", album: "Future Days", artist: "Can" }],
+  "sol.spins":      [{ id: "w40", album: "Zombie", artist: "Fela Kuti" }, { id: "w41", album: "Expensive Shit", artist: "Fela Kuti" }],
+  "tova.vinyl":     [{ id: "w42", album: "Ella and Louis", artist: "Ella Fitzgerald & Louis Armstrong" }, { id: "w43", album: "In the Wee Small Hours", artist: "Frank Sinatra" }],
+  "wren.stacks":    [{ id: "w44", album: "Nonagon Infinity", artist: "King Gizzard & The Lizard Wizard" }, { id: "w45", album: "Manipulator", artist: "Ty Segall" }],
+  "romy.rpm":       [{ id: "w46", album: "Violator", artist: "Depeche Mode" }, { id: "w47", album: "Disintegration", artist: "The Cure" }],
+  "hal.grooves":    [{ id: "w48", album: "King of the Delta Blues Singers", artist: "Robert Johnson" }, { id: "w49", album: "Born Under a Bad Sign", artist: "Albert King" }],
+  "june.vinyl":     [{ id: "w50", album: "Voodoo", artist: "D'Angelo" }, { id: "w51", album: "Baduizm", artist: "Erykah Badu" }],
+  "arlo.wax":       [{ id: "w52", album: "Townes Van Zandt", artist: "Townes Van Zandt" }, { id: "w53", album: "Red Headed Stranger", artist: "Willie Nelson" }],
+  "emi.spins":      [{ id: "w54", album: "Music for 18 Musicians", artist: "Steve Reich" }, { id: "w55", album: "The Disintegration Loops", artist: "William Basinski" }],
 };

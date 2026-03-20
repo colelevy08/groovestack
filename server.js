@@ -10,24 +10,79 @@ const stripe = process.env.STRIPE_SECRET_KEY
   : null;
 
 const app = express();
+const SERVER_START_TIME = Date.now();
 
-// CORS — allow localhost in dev and the production frontend URL
+// ── In-memory rate limiter ────────────────────────────────────────────────────
+const rateLimitBuckets = new Map(); // key: `${ip}:${bucket}` → { count, resetAt }
+
+function rateLimit(bucket, maxRequests, windowMs) {
+  return (req, res, next) => {
+    const ip = req.ip || req.connection.remoteAddress || 'unknown';
+    const key = `${ip}:${bucket}`;
+    const now = Date.now();
+
+    let entry = rateLimitBuckets.get(key);
+    if (!entry || now > entry.resetAt) {
+      entry = { count: 0, resetAt: now + windowMs };
+      rateLimitBuckets.set(key, entry);
+    }
+
+    entry.count++;
+    res.setHeader('X-RateLimit-Limit', maxRequests);
+    res.setHeader('X-RateLimit-Remaining', Math.max(0, maxRequests - entry.count));
+    res.setHeader('X-RateLimit-Reset', Math.ceil(entry.resetAt / 1000));
+
+    if (entry.count > maxRequests) {
+      return res.status(429).json({ error: 'Too many requests. Please try again later.', code: 'RATE_LIMIT_EXCEEDED' });
+    }
+    next();
+  };
+}
+
+// Periodically clean up expired rate-limit entries (every 5 min)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitBuckets) {
+    if (now > entry.resetAt) rateLimitBuckets.delete(key);
+  }
+}, 5 * 60 * 1000);
+
+// ── CORS — allow localhost, Vercel URL, and production frontend ───────────────
 const ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:3002',
+  'http://localhost:5173',
   process.env.FRONTEND_URL,
+  process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null,
 ].filter(Boolean);
 
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (!origin || ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Device-Id, X-Username, X-Sample-Rate, X-Bit-Depth, X-Channels');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Device-Id, X-Username, X-Sample-Rate, X-Bit-Depth, X-Channels, Stripe-Signature');
+  res.setHeader('Access-Control-Max-Age', '86400');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
 });
+
+// ── Request logging middleware ─────────────────────────────────────────────────
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const status = res.statusCode;
+    const level = status >= 500 ? 'ERROR' : status >= 400 ? 'WARN' : 'INFO';
+    console.log(`[${level}] ${req.method} ${req.path} ${status} ${duration}ms`);
+  });
+  next();
+});
+
+// Apply general rate limiting (100 req/min) to all routes
+app.use(rateLimit('general', 100, 60 * 1000));
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -741,6 +796,48 @@ if (pool) {
       );
     `))
     .then(() => console.log('   Collection & social tables: ready'))
+    .then(() => pool.query(`
+      CREATE TABLE IF NOT EXISTS record_likes (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        UNIQUE(user_id, record_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_record_likes_record ON record_likes(record_id);
+
+      CREATE TABLE IF NOT EXISTS record_saves (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        UNIQUE(user_id, record_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_record_saves_user ON record_saves(user_id);
+
+      CREATE TABLE IF NOT EXISTS post_likes (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        UNIQUE(user_id, post_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_post_likes_post ON post_likes(post_id);
+
+      CREATE TABLE IF NOT EXISTS post_bookmarks (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        UNIQUE(user_id, post_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_post_bookmarks_user ON post_bookmarks(user_id);
+
+      DO $$ BEGIN
+        ALTER TABLE purchases ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending';
+      END $$;
+    `))
+    .then(() => console.log('   Likes, saves, bookmarks & order status: ready'))
     .catch(err => console.error('   DB init error:', err.message));
 }
 
@@ -762,12 +859,18 @@ function makeToken(user) {
 
 // ── Auth API routes ──────────────────────────────────────────────────────────
 
+const authRateLimit = rateLimit('auth', 10, 60 * 1000);
+
 // POST /api/auth/signup — create account
-app.post('/api/auth/signup', async (req, res) => {
+app.post('/api/auth/signup', authRateLimit, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
   const { email, password, username, displayName } = req.body;
-  if (!email || !password || !username) return res.status(400).json({ error: 'Email, password, and username are required' });
-  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  if (!email || !password || !username) return res.status(400).json({ error: 'Email, password, and username are required', code: 'MISSING_FIELDS' });
+  if (typeof email !== 'string' || typeof password !== 'string' || typeof username !== 'string') return res.status(400).json({ error: 'email, password, and username must be strings', code: 'INVALID_TYPES' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Invalid email format', code: 'INVALID_EMAIL' });
+  if (password.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters', code: 'WEAK_PASSWORD' });
+  if (username.length < 2 || username.length > 30) return res.status(400).json({ error: 'Username must be 2-30 characters', code: 'INVALID_USERNAME' });
+  if (!/^[a-zA-Z0-9_.-]+$/.test(username)) return res.status(400).json({ error: 'Username may only contain letters, numbers, underscores, hyphens, and dots', code: 'INVALID_USERNAME_CHARS' });
 
   try {
     // Check username uniqueness
@@ -789,10 +892,11 @@ app.post('/api/auth/signup', async (req, res) => {
 });
 
 // POST /api/auth/login — sign in
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authRateLimit, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+  if (!email || !password) return res.status(400).json({ error: 'Email and password are required', code: 'MISSING_FIELDS' });
+  if (typeof email !== 'string' || typeof password !== 'string') return res.status(400).json({ error: 'email and password must be strings', code: 'INVALID_TYPES' });
 
   try {
     const result = await pool.query('SELECT * FROM profiles WHERE email = $1', [email.toLowerCase()]);
@@ -864,6 +968,14 @@ app.get('/api/auth/check-username/:username', async (req, res) => {
   }
 });
 
+// POST /api/auth/forgot-password — request password reset (placeholder for future email integration)
+app.post('/api/auth/forgot-password', authRateLimit, async (req, res) => {
+  const { email } = req.body;
+  if (!email || typeof email !== 'string') return res.status(400).json({ error: 'Email is required', code: 'MISSING_FIELDS' });
+  // Always return success to avoid leaking whether an email exists
+  res.json({ ok: true, message: 'If an account with that email exists, a password reset link has been sent.' });
+});
+
 // ── Stripe Checkout — platform fee: 5% or $1 min ────────────────────────────
 
 const SHIPPING_FEE_CENTS = 600; // $6.00
@@ -930,14 +1042,34 @@ app.get('/api/checkout/fee', (req, res) => {
   res.json({ fee: (feeCents / 100).toFixed(2), feeCents, shipping: (SHIPPING_FEE_CENTS / 100).toFixed(2) });
 });
 
-app.get('/api/health', (_req, res) => res.json({
-  status: 'ok',
-  vinylBuddy: {
-    sessions: vinylSessions.length,
-    devices: devicesById.size,
-    identifyProvider: AUDD_API_TOKEN ? 'audd' : 'none',
-  },
-}));
+app.get('/api/health', async (_req, res) => {
+  let dbStatus = 'not_configured';
+  if (pool) {
+    try {
+      await pool.query('SELECT 1');
+      dbStatus = 'connected';
+    } catch {
+      dbStatus = 'error';
+    }
+  }
+
+  const mem = process.memoryUsage();
+  res.json({
+    status: 'ok',
+    uptime: Math.floor((Date.now() - SERVER_START_TIME) / 1000),
+    database: dbStatus,
+    memory: {
+      rss: Math.round(mem.rss / 1024 / 1024) + ' MB',
+      heapUsed: Math.round(mem.heapUsed / 1024 / 1024) + ' MB',
+      heapTotal: Math.round(mem.heapTotal / 1024 / 1024) + ' MB',
+    },
+    vinylBuddy: {
+      sessions: vinylSessions.length,
+      devices: devicesById.size,
+      identifyProvider: AUDD_API_TOKEN ? 'audd' : 'none',
+    },
+  });
+});
 
 // ── Discogs price lookup ─────────────────────────────────
 app.get('/api/prices/lookup', async (req, res) => {
@@ -1032,7 +1164,9 @@ app.get('/api/prices/lookup', async (req, res) => {
 app.post('/api/records', authMiddleware, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
   const { album, artist, year, format, label, condition, forSale, price, rating, review, tags, accent, verified } = req.body;
-  if (!album || !artist) return res.status(400).json({ error: 'Album and artist are required' });
+  if (!album || !artist) return res.status(400).json({ error: 'Album and artist are required', code: 'MISSING_FIELDS' });
+  if (typeof album !== 'string' || typeof artist !== 'string') return res.status(400).json({ error: 'album and artist must be strings', code: 'INVALID_TYPES' });
+  if (forSale && (!price || parseFloat(price) <= 0)) return res.status(400).json({ error: 'Price must be positive when listing for sale', code: 'INVALID_PRICE' });
   try {
     const result = await pool.query(
       `INSERT INTO records (user_id, album, artist, year, format, label, condition, for_sale, price, rating, review, tags, accent, verified)
@@ -1196,7 +1330,9 @@ app.get('/api/comments/post/:postId', async (req, res) => {
 app.post('/api/offers', authMiddleware, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
   const { toUser, recordId, type, price, tradeRecordId, album, artist } = req.body;
-  if (!toUser) return res.status(400).json({ error: 'toUser is required' });
+  if (!toUser) return res.status(400).json({ error: 'toUser is required', code: 'MISSING_FIELDS' });
+  if (typeof toUser !== 'string') return res.status(400).json({ error: 'toUser must be a string', code: 'INVALID_TYPES' });
+  if (toUser === req.user.username) return res.status(400).json({ error: 'Cannot make an offer to yourself', code: 'SELF_OFFER' });
   try {
     const result = await pool.query(
       `INSERT INTO offers (from_user, to_user, record_id, type, price, trade_record_id, album, artist) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
@@ -1297,7 +1433,9 @@ app.get('/api/purchases', authMiddleware, async (req, res) => {
 app.post('/api/messages', authMiddleware, async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not configured' });
   const { toUser, text } = req.body;
-  if (!toUser || !text) return res.status(400).json({ error: 'toUser and text are required' });
+  if (!toUser || !text) return res.status(400).json({ error: 'toUser and text are required', code: 'MISSING_FIELDS' });
+  if (typeof toUser !== 'string' || typeof text !== 'string') return res.status(400).json({ error: 'toUser and text must be strings', code: 'INVALID_TYPES' });
+  if (text.trim().length === 0) return res.status(400).json({ error: 'Message text cannot be empty', code: 'EMPTY_MESSAGE' });
   try {
     const result = await pool.query(
       'INSERT INTO messages (from_user, to_user, text) VALUES ($1,$2,$3) RETURNING *',
@@ -1400,10 +1538,377 @@ app.get('/api/follows/:username', async (req, res) => {
   }
 });
 
+// ── Records: search ───────────────────────────────────────────────────────────
+
+// GET /api/records/search — full-text search across records (album, artist, label)
+app.get('/api/records/search', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured', code: 'NO_DB' });
+  const { q } = req.query;
+  if (!q || typeof q !== 'string' || q.trim().length === 0) {
+    return res.status(400).json({ error: 'Search query "q" is required', code: 'MISSING_QUERY' });
+  }
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+  try {
+    const pattern = `%${q.trim()}%`;
+    const result = await pool.query(
+      `SELECT * FROM records
+       WHERE album ILIKE $1 OR artist ILIKE $1 OR label ILIKE $1
+       ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      [pattern, limit, offset]
+    );
+    res.json({ results: result.rows, total: result.rows.length, query: q.trim() });
+  } catch (err) {
+    console.error('Record search error:', err.message);
+    res.status(500).json({ error: 'Search failed', code: 'SEARCH_ERROR' });
+  }
+});
+
+// GET /api/records/:id — get single record by ID
+app.get('/api/records/:id', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured', code: 'NO_DB' });
+  const id = parseInt(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'Invalid record ID', code: 'INVALID_ID' });
+  try {
+    const result = await pool.query('SELECT * FROM records WHERE id = $1', [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Record not found', code: 'NOT_FOUND' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Get record error:', err.message);
+    res.status(500).json({ error: 'Server error', code: 'INTERNAL_ERROR' });
+  }
+});
+
+// POST /api/records/:id/like — toggle like on record (requires auth)
+app.post('/api/records/:id/like', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured', code: 'NO_DB' });
+  const recordId = parseInt(req.params.id);
+  if (!Number.isFinite(recordId) || recordId <= 0) return res.status(400).json({ error: 'Invalid record ID', code: 'INVALID_ID' });
+  try {
+    // Check record exists
+    const record = await pool.query('SELECT id FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found', code: 'NOT_FOUND' });
+
+    // Toggle like
+    const existing = await pool.query(
+      'SELECT id FROM record_likes WHERE user_id = $1 AND record_id = $2',
+      [req.user.username, recordId]
+    );
+    if (existing.rows.length > 0) {
+      await pool.query('DELETE FROM record_likes WHERE user_id = $1 AND record_id = $2', [req.user.username, recordId]);
+      const count = await pool.query('SELECT COUNT(*) FROM record_likes WHERE record_id = $1', [recordId]);
+      return res.json({ liked: false, likes: parseInt(count.rows[0].count) });
+    }
+    await pool.query('INSERT INTO record_likes (user_id, record_id) VALUES ($1, $2)', [req.user.username, recordId]);
+    const count = await pool.query('SELECT COUNT(*) FROM record_likes WHERE record_id = $1', [recordId]);
+    res.json({ liked: true, likes: parseInt(count.rows[0].count) });
+  } catch (err) {
+    console.error('Like record error:', err.message);
+    res.status(500).json({ error: 'Server error', code: 'INTERNAL_ERROR' });
+  }
+});
+
+// POST /api/records/:id/save — toggle save/bookmark on record (requires auth)
+app.post('/api/records/:id/save', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured', code: 'NO_DB' });
+  const recordId = parseInt(req.params.id);
+  if (!Number.isFinite(recordId) || recordId <= 0) return res.status(400).json({ error: 'Invalid record ID', code: 'INVALID_ID' });
+  try {
+    const record = await pool.query('SELECT id FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found', code: 'NOT_FOUND' });
+
+    const existing = await pool.query(
+      'SELECT id FROM record_saves WHERE user_id = $1 AND record_id = $2',
+      [req.user.username, recordId]
+    );
+    if (existing.rows.length > 0) {
+      await pool.query('DELETE FROM record_saves WHERE user_id = $1 AND record_id = $2', [req.user.username, recordId]);
+      return res.json({ saved: false });
+    }
+    await pool.query('INSERT INTO record_saves (user_id, record_id) VALUES ($1, $2)', [req.user.username, recordId]);
+    res.json({ saved: true });
+  } catch (err) {
+    console.error('Save record error:', err.message);
+    res.status(500).json({ error: 'Server error', code: 'INTERNAL_ERROR' });
+  }
+});
+
+// ── Users: search ─────────────────────────────────────────────────────────────
+
+// GET /api/users/search — search users by username or display name
+app.get('/api/users/search', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured', code: 'NO_DB' });
+  const { q } = req.query;
+  if (!q || typeof q !== 'string' || q.trim().length === 0) {
+    return res.status(400).json({ error: 'Search query "q" is required', code: 'MISSING_QUERY' });
+  }
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  try {
+    const pattern = `%${q.trim()}%`;
+    const result = await pool.query(
+      `SELECT id, username, display_name, bio, avatar_url, location
+       FROM profiles
+       WHERE username ILIKE $1 OR display_name ILIKE $1
+       ORDER BY username ASC LIMIT $2`,
+      [pattern, limit]
+    );
+    res.json({ results: result.rows.map(u => ({ id: u.id, username: u.username, displayName: u.display_name, bio: u.bio, avatarUrl: u.avatar_url, location: u.location })), query: q.trim() });
+  } catch (err) {
+    console.error('User search error:', err.message);
+    res.status(500).json({ error: 'Search failed', code: 'SEARCH_ERROR' });
+  }
+});
+
+// ── Public stats ──────────────────────────────────────────────────────────────
+
+// GET /api/stats — public stats (total users, total records, total transactions)
+app.get('/api/stats', async (_req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured', code: 'NO_DB' });
+  try {
+    const [users, records, transactions] = await Promise.all([
+      pool.query('SELECT COUNT(*) FROM profiles'),
+      pool.query('SELECT COUNT(*) FROM records'),
+      pool.query('SELECT COUNT(*) FROM purchases'),
+    ]);
+    res.json({
+      totalUsers: parseInt(users.rows[0].count),
+      totalRecords: parseInt(records.rows[0].count),
+      totalTransactions: parseInt(transactions.rows[0].count),
+    });
+  } catch (err) {
+    console.error('Stats error:', err.message);
+    res.status(500).json({ error: 'Server error', code: 'INTERNAL_ERROR' });
+  }
+});
+
+// ── Social feed ───────────────────────────────────────────────────────────────
+
+// GET /api/feed — social feed with pagination (public posts + records activity)
+app.get('/api/feed', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured', code: 'NO_DB' });
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+  try {
+    const result = await pool.query(
+      `SELECT p.*, pr.display_name, pr.avatar_url,
+              r.album AS tagged_album, r.artist AS tagged_artist, r.accent AS tagged_accent
+       FROM posts p
+       LEFT JOIN profiles pr ON pr.username = p.user_id
+       LEFT JOIN records r ON r.id = p.tagged_record_id
+       ORDER BY p.created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    res.json({
+      items: result.rows.map(row => ({
+        id: row.id,
+        userId: row.user_id,
+        displayName: row.display_name || row.user_id,
+        avatarUrl: row.avatar_url || '',
+        caption: row.caption,
+        mediaUrl: row.media_url,
+        mediaType: row.media_type,
+        taggedRecord: row.tagged_record_id ? { id: row.tagged_record_id, album: row.tagged_album, artist: row.tagged_artist, accent: row.tagged_accent } : null,
+        likes: row.likes,
+        createdAt: row.created_at,
+      })),
+      limit,
+      offset,
+      hasMore: result.rows.length === limit,
+    });
+  } catch (err) {
+    console.error('Feed error:', err.message);
+    res.status(500).json({ error: 'Server error', code: 'INTERNAL_ERROR' });
+  }
+});
+
+// ── Post interactions ─────────────────────────────────────────────────────────
+
+// POST /api/posts/:id/like — toggle like on post (requires auth)
+app.post('/api/posts/:id/like', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured', code: 'NO_DB' });
+  const postId = parseInt(req.params.id);
+  if (!Number.isFinite(postId) || postId <= 0) return res.status(400).json({ error: 'Invalid post ID', code: 'INVALID_ID' });
+  try {
+    const post = await pool.query('SELECT id, likes FROM posts WHERE id = $1', [postId]);
+    if (post.rows.length === 0) return res.status(404).json({ error: 'Post not found', code: 'NOT_FOUND' });
+
+    const existing = await pool.query(
+      'SELECT id FROM post_likes WHERE user_id = $1 AND post_id = $2',
+      [req.user.username, postId]
+    );
+    if (existing.rows.length > 0) {
+      await pool.query('DELETE FROM post_likes WHERE user_id = $1 AND post_id = $2', [req.user.username, postId]);
+      await pool.query('UPDATE posts SET likes = GREATEST(likes - 1, 0) WHERE id = $1', [postId]);
+      const updated = await pool.query('SELECT likes FROM posts WHERE id = $1', [postId]);
+      return res.json({ liked: false, likes: updated.rows[0].likes });
+    }
+    await pool.query('INSERT INTO post_likes (user_id, post_id) VALUES ($1, $2)', [req.user.username, postId]);
+    await pool.query('UPDATE posts SET likes = likes + 1 WHERE id = $1', [postId]);
+    const updated = await pool.query('SELECT likes FROM posts WHERE id = $1', [postId]);
+    res.json({ liked: true, likes: updated.rows[0].likes });
+  } catch (err) {
+    console.error('Like post error:', err.message);
+    res.status(500).json({ error: 'Server error', code: 'INTERNAL_ERROR' });
+  }
+});
+
+// POST /api/posts/:id/bookmark — toggle bookmark on post (requires auth)
+app.post('/api/posts/:id/bookmark', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured', code: 'NO_DB' });
+  const postId = parseInt(req.params.id);
+  if (!Number.isFinite(postId) || postId <= 0) return res.status(400).json({ error: 'Invalid post ID', code: 'INVALID_ID' });
+  try {
+    const post = await pool.query('SELECT id FROM posts WHERE id = $1', [postId]);
+    if (post.rows.length === 0) return res.status(404).json({ error: 'Post not found', code: 'NOT_FOUND' });
+
+    const existing = await pool.query(
+      'SELECT id FROM post_bookmarks WHERE user_id = $1 AND post_id = $2',
+      [req.user.username, postId]
+    );
+    if (existing.rows.length > 0) {
+      await pool.query('DELETE FROM post_bookmarks WHERE user_id = $1 AND post_id = $2', [req.user.username, postId]);
+      return res.json({ bookmarked: false });
+    }
+    await pool.query('INSERT INTO post_bookmarks (user_id, post_id) VALUES ($1, $2)', [req.user.username, postId]);
+    res.json({ bookmarked: true });
+  } catch (err) {
+    console.error('Bookmark post error:', err.message);
+    res.status(500).json({ error: 'Server error', code: 'INTERNAL_ERROR' });
+  }
+});
+
+// ── Stripe webhook ────────────────────────────────────────────────────────────
+
+// POST /api/webhook — Stripe webhook handler for payment confirmation
+app.post('/api/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe not configured', code: 'NO_STRIPE' });
+
+  const sig = req.headers['stripe-signature'];
+  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  let event;
+
+  try {
+    if (endpointSecret && sig) {
+      event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
+    } else {
+      event = JSON.parse(req.body.toString());
+    }
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err.message);
+    return res.status(400).json({ error: 'Webhook verification failed', code: 'WEBHOOK_INVALID' });
+  }
+
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object;
+        const meta = session.metadata || {};
+        console.log(`[Stripe] Payment complete: record=${meta.recordId} buyer=${meta.buyer} seller=${meta.seller}`);
+
+        if (pool && meta.recordId) {
+          // Update order status to 'paid'
+          await pool.query(
+            `UPDATE purchases SET status = 'paid' WHERE stripe_session_id = $1`,
+            [session.id]
+          );
+          // If no purchase row yet, create one
+          const existing = await pool.query('SELECT id FROM purchases WHERE stripe_session_id = $1', [session.id]);
+          if (existing.rows.length === 0) {
+            await pool.query(
+              `INSERT INTO purchases (buyer, seller, record_id, album, artist, price, stripe_session_id, status)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, 'paid')`,
+              [meta.buyer || '', meta.seller || '', parseInt(meta.recordId) || null, '', '', String((session.amount_total || 0) / 100), session.id]
+            );
+          }
+        }
+        break;
+      }
+      case 'checkout.session.expired': {
+        const session = event.data.object;
+        if (pool) {
+          await pool.query(`UPDATE purchases SET status = 'expired' WHERE stripe_session_id = $1`, [session.id]);
+        }
+        break;
+      }
+      default:
+        console.log(`[Stripe] Unhandled event type: ${event.type}`);
+    }
+    res.json({ received: true });
+  } catch (err) {
+    console.error('Webhook processing error:', err.message);
+    res.status(500).json({ error: 'Webhook processing failed', code: 'WEBHOOK_ERROR' });
+  }
+});
+
+// ── Orders API ────────────────────────────────────────────────────────────────
+
+// GET /api/orders — list user's orders with status (requires auth)
+app.get('/api/orders', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured', code: 'NO_DB' });
+  try {
+    const result = await pool.query(
+      `SELECT p.*, r.album, r.artist, r.condition, r.accent
+       FROM purchases p
+       LEFT JOIN records r ON r.id = p.record_id
+       WHERE p.buyer = $1 OR p.seller = $1
+       ORDER BY p.created_at DESC`,
+      [req.user.username]
+    );
+    res.json({
+      orders: result.rows.map(row => ({
+        id: row.id,
+        buyer: row.buyer,
+        seller: row.seller,
+        recordId: row.record_id,
+        album: row.album || '',
+        artist: row.artist || '',
+        price: row.price,
+        condition: row.condition || '',
+        status: row.status || 'pending',
+        stripeSessionId: row.stripe_session_id || '',
+        shippingName: row.shipping_name || '',
+        shippingStreet: row.shipping_street || '',
+        shippingCity: row.shipping_city || '',
+        shippingState: row.shipping_state || '',
+        shippingZip: row.shipping_zip || '',
+        createdAt: row.created_at,
+      })),
+    });
+  } catch (err) {
+    console.error('List orders error:', err.message);
+    res.status(500).json({ error: 'Server error', code: 'INTERNAL_ERROR' });
+  }
+});
+
 const PORT = process.env.PORT || process.env.SERVER_PORT || 3001;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n🎵 Groovestack API server running on :${PORT}`);
   console.log(`   Claude vinyl verification: ready`);
   console.log(`   Discogs price lookup: /api/prices/lookup`);
   console.log(`   Vinyl Buddy API: /api/vinyl-buddy/* (${AUDD_API_TOKEN ? 'AudD enabled' : 'set AUDD_API_TOKEN to enable identification'})\n`);
 });
+
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+function gracefulShutdown(signal) {
+  console.log(`\n[${signal}] Shutting down gracefully...`);
+  server.close(() => {
+    console.log('   HTTP server closed');
+    if (pool) {
+      pool.end().then(() => {
+        console.log('   Database pool closed');
+        process.exit(0);
+      }).catch(() => process.exit(1));
+    } else {
+      process.exit(0);
+    }
+  });
+  // Force exit after 10 seconds
+  setTimeout(() => {
+    console.error('   Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

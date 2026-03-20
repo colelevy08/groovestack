@@ -23,6 +23,7 @@ import ProfileScreen from './components/screens/ProfileScreen';
 import FollowingScreen from './components/screens/FollowingScreen';
 import TransactionsScreen from './components/screens/TransactionsScreen';
 import VinylBuddyScreen from './components/screens/VinylBuddyScreen';
+import SettingsScreen from './components/screens/SettingsScreen';
 import UserProfilePage from './components/screens/UserProfilePage';
 
 // Modals
@@ -684,6 +685,14 @@ export default function App() {
                 onViewUser={onViewUser}
                 listeningHistory={listeningHistory}
                 onShareProfile={onShareProfile}
+              />
+            )}
+            {nav === "Settings" && (
+              <SettingsScreen
+                currentUser={currentUser}
+                profile={profile}
+                deviceCode={vinylBuddyDevice}
+                vinylBuddyActivated={vinylBuddyActivated}
               />
             )}
           </>

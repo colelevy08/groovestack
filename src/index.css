@@ -165,6 +165,16 @@
   }
 }
 
+/* ── Sidebar collapse transition ─────────────────────────── */
+.gs-sidebar-desktop {
+  transition: width 0.2s ease-out;
+}
+.gs-sidebar-collapsed .gs-sidebar-label {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+}
+
 /* ── Mobile responsive ───────────────────────────────────── */
 @media (max-width: 768px) {
   .gs-sidebar-desktop { display: none !important; }

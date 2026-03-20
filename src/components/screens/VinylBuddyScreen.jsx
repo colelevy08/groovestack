@@ -6,7 +6,7 @@ import AlbumArt from '../ui/AlbumArt';
 import Badge from '../ui/Badge';
 import Empty from '../ui/Empty';
 
-const TABS = ["overview", "history", "device"];
+const TABS = ["overview", "history", "stats", "device"];
 
 // ── CSS keyframes injected once ─────────────────────────────────────────────
 const STYLE_ID = "vb-keyframes";
@@ -497,6 +497,29 @@ function LandingPage({ onActivate }) {
               </button>
             </div>
           </div>
+
+          {/* Troubleshooting guide */}
+          <div className="mt-5 pt-4 border-t border-[#1a1a1a]">
+            <div className="text-[11px] font-bold text-gs-muted mb-2.5">Troubleshooting</div>
+            <div className="space-y-2.5">
+              {[
+                { q: "Where do I find the device code?", a: "Plug in your Vinyl Buddy via USB-C. The 12-character hex code appears on the OLED screen during initial setup." },
+                { q: "My device screen is blank", a: "Try a different USB-C cable or power source. Hold the reset button on the back of the device for 5 seconds." },
+                { q: "Code not accepted?", a: "Make sure the code is exactly 12 hex characters (0-9, A-F). The code is case-insensitive. Check for similar-looking characters like 0/O or 1/I." },
+                { q: "WiFi connection issues", a: "Ensure your Vinyl Buddy is within range of your WiFi router. The device only supports 2.4GHz networks, not 5GHz." },
+              ].map((item, i) => (
+                <details key={i} className="group">
+                  <summary className="text-[11px] text-gs-accent cursor-pointer list-none flex items-center gap-1.5 hover:text-[#38bdf8] transition-colors">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 transition-transform group-open:rotate-90">
+                      <path d="M9 18l6-6-6-6" />
+                    </svg>
+                    {item.q}
+                  </summary>
+                  <div className="text-[11px] text-[#666] leading-relaxed mt-1 ml-4">{item.a}</div>
+                </details>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -708,6 +731,11 @@ function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate, is
           <HistoryTab myListens={myListens} loading={loading} />
         )}
 
+        {/* Stats tab */}
+        {tab === "stats" && (
+          <StatsTab myListens={myListens} loading={loading} />
+        )}
+
         {/* Device tab */}
         {tab === "device" && (
           <DeviceCard currentUser={currentUser} deviceCode={deviceCode} onDeactivate={onDeactivate} isDemo={isDemo} />
@@ -838,13 +866,22 @@ function OverviewTab({ myListens, nowPlaying, isRecent, topArtist, topTrack, top
       </div>
 
       {/* Recent Activity */}
-      <div className="mb-2">
+      <div className="mb-4">
         <div className="text-[10px] text-gs-dim font-mono mb-2.5 uppercase tracking-[0.06em]">Recent Activity</div>
         <div className="flex flex-col gap-1.5">
           {myListens.slice(0, 5).map(session => (
             <SessionRow key={session.id} session={session} />
           ))}
         </div>
+      </div>
+
+      {/* Recommendations based on listening history */}
+      <RecommendationsSection myListens={myListens} />
+
+      {/* Recently Played widget */}
+      <div className="mb-2">
+        <div className="text-[10px] text-gs-dim font-mono mb-2.5 uppercase tracking-[0.06em]">Recently Played Widget</div>
+        <RecentlyPlayedWidget myListens={myListens} />
       </div>
     </>
   );
@@ -1004,6 +1041,263 @@ function SessionRow({ session }) {
         <div className="text-[10px] text-[#666]">{session.track.artist}</div>
       </div>
       <span className="text-[10px] text-gs-faint font-mono shrink-0">{relTime(session.timestampMs)}</span>
+    </div>
+  );
+}
+
+// ============================================================================
+// RECENTLY PLAYED WIDGET — embeddable compact list
+// ============================================================================
+function RecentlyPlayedWidget({ myListens }) {
+  const recent = myListens.slice(0, 4);
+  if (recent.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] overflow-hidden">
+      <div className="h-0.5 bg-gradient-to-r from-gs-accent to-transparent" />
+      <div className="p-3.5">
+        <div className="text-[10px] text-gs-dim font-mono mb-2.5 uppercase tracking-[0.06em] flex items-center gap-1.5">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+          Recently Played
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {recent.map(session => (
+            <div key={session.id} className="flex gap-2 items-center py-1">
+              <AlbumArt album={session.track.album} artist={session.track.artist} accent="#0ea5e9" size={28} />
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] font-semibold text-gs-text truncate">{session.track.title}</div>
+                <div className="text-[9px] text-gs-dim truncate">{session.track.artist}</div>
+              </div>
+              <span className="text-[9px] text-gs-faint font-mono shrink-0">{relTime(session.timestampMs)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// RECOMMENDATIONS — based on listening history, suggest records
+// ============================================================================
+function RecommendationsSection({ myListens }) {
+  // Build recommendations from artist frequency — suggest albums the user hasn't listened to
+  const recs = useMemo(() => {
+    const artistFreq = {};
+    for (const s of myListens) {
+      if (s.track.artist) artistFreq[s.track.artist] = (artistFreq[s.track.artist] || 0) + 1;
+    }
+    const listenedAlbums = new Set(myListens.map(s => `${s.track.artist}::${s.track.album}`));
+
+    // Mock recommended records based on top artists
+    const mockRecs = [
+      { title: "Houses of the Holy", artist: "Led Zeppelin", genre: "Rock", reason: "Based on your Led Zeppelin listens" },
+      { title: "The Dark Side of the Moon", artist: "Pink Floyd", genre: "Prog Rock", reason: "Based on your Pink Floyd listens" },
+      { title: "News of the World", artist: "Queen", genre: "Rock", reason: "Based on your Queen listens" },
+      { title: "L.A. Woman", artist: "The Doors", genre: "Rock", reason: "Based on your Doors listens" },
+      { title: "Let It Bleed", artist: "The Rolling Stones", genre: "Rock", reason: "Popular among vinyl collectors" },
+      { title: "Rumours", artist: "Fleetwood Mac", genre: "Rock", reason: "Top-selling vinyl on GrooveStack" },
+    ];
+
+    // Filter out already listened albums
+    return mockRecs
+      .filter(r => !listenedAlbums.has(`${r.artist}::${r.title}`))
+      .slice(0, 4);
+  }, [myListens]);
+
+  if (recs.length === 0) return null;
+
+  return (
+    <div className="mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+        </svg>
+        <span className="text-xs font-bold text-gs-text">Recommended For You</span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {recs.map((rec, i) => (
+          <div key={i} className="bg-gs-card border border-gs-border rounded-xl p-3 flex gap-3 items-center transition-all duration-200 hover:border-[#f59e0b33] cursor-pointer">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center text-sm shrink-0 bg-gradient-to-br from-[#f59e0b] to-[#f97316] font-bold text-white">
+              {rec.artist.charAt(0)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-bold text-gs-text truncate">{rec.title}</div>
+              <div className="text-[10px] text-gs-muted truncate">{rec.artist}</div>
+              <div className="text-[9px] text-[#f59e0b] mt-0.5">{rec.reason}</div>
+            </div>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" className="shrink-0 opacity-50">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// STATS TAB — genre breakdown pie chart, share stats, recently played widget
+// ============================================================================
+function StatsTab({ myListens, loading }) {
+  const [shareMsg, setShareMsg] = useState('');
+
+  // Genre breakdown from artist mapping
+  const genreData = useMemo(() => {
+    const genreMap = {
+      "Led Zeppelin": "Rock", "Pink Floyd": "Prog Rock", "Queen": "Rock",
+      "The Doors": "Rock", "The Beatles": "Rock", "The Who": "Rock",
+      "Eagles": "Rock", "Nirvana": "Grunge", "The Rolling Stones": "Rock",
+      "John Coltrane": "Jazz", "Miles Davis": "Jazz", "Charles Mingus": "Jazz",
+      "Herbie Hancock": "Jazz Fusion", "Nas": "Hip-Hop", "A Tribe Called Quest": "Hip-Hop",
+      "Madvillain": "Hip-Hop", "Aphex Twin": "Electronic", "Daft Punk": "Electronic",
+      "Flying Lotus": "Electronic", "Portishead": "Trip-Hop", "Massive Attack": "Trip-Hop",
+      "My Bloody Valentine": "Shoegaze", "Black Sabbath": "Metal", "Metallica": "Metal",
+      "Fleetwood Mac": "Rock",
+    };
+    const counts = {};
+    for (const s of myListens) {
+      const genre = genreMap[s.track.artist] || "Other";
+      counts[genre] = (counts[genre] || 0) + 1;
+    }
+    const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+    const colors = ["#0ea5e9", "#8b5cf6", "#f59e0b", "#22c55e", "#ef4444", "#ec4899", "#f97316", "#14b8a6", "#64748b"];
+    return Object.entries(counts)
+      .sort(([, a], [, b]) => b - a)
+      .map(([genre, count], i) => ({
+        genre,
+        count,
+        pct: Math.round((count / total) * 100),
+        color: colors[i % colors.length],
+      }));
+  }, [myListens]);
+
+  // Total listening time
+  const totalMinutes = useMemo(() => {
+    return Math.round(myListens.reduce((sum, s) => sum + (s.listenedSeconds || 0), 0) / 60);
+  }, [myListens]);
+
+  const totalHours = Math.floor(totalMinutes / 60);
+  const remainMins = totalMinutes % 60;
+
+  // Share stats
+  const handleShareStats = useCallback(() => {
+    const topGenre = genreData[0];
+    const summary = [
+      `My Vinyl Buddy Listening Stats:`,
+      `Total tracks: ${myListens.length}`,
+      `Listening time: ${totalHours > 0 ? `${totalHours}h ${remainMins}m` : `${remainMins}m`}`,
+      topGenre ? `Top genre: ${topGenre.genre} (${topGenre.pct}%)` : '',
+      `Unique artists: ${new Set(myListens.map(s => s.track.artist)).size}`,
+      '',
+      'groovestack.co/vinyl-buddy',
+    ].filter(Boolean).join('\n');
+
+    navigator.clipboard.writeText(summary).catch(() => {});
+    setShareMsg('Copied to clipboard!');
+    setTimeout(() => setShareMsg(''), 2000);
+  }, [myListens, genreData, totalHours, remainMins]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-3">
+        <Skeleton w="100%" h={200} rounded={14} />
+        <Skeleton w="100%" h={120} rounded={14} />
+      </div>
+    );
+  }
+
+  if (myListens.length === 0) {
+    return <Empty icon={"\uD83D\uDCCA"} text="Not enough data yet. Keep spinning records to see your stats!" />;
+  }
+
+  return (
+    <div>
+      {/* Listening Stats summary */}
+      <div className="grid grid-cols-3 gap-2.5 mb-4">
+        <div className="bg-gs-card border border-gs-border rounded-xl p-3 text-center">
+          <div className="text-xl font-extrabold text-gs-accent">{myListens.length}</div>
+          <div className="text-[10px] text-gs-dim font-mono">Tracks</div>
+        </div>
+        <div className="bg-gs-card border border-gs-border rounded-xl p-3 text-center">
+          <div className="text-xl font-extrabold text-[#8b5cf6]">{totalHours > 0 ? `${totalHours}h` : `${remainMins}m`}</div>
+          <div className="text-[10px] text-gs-dim font-mono">Listen Time</div>
+        </div>
+        <div className="bg-gs-card border border-gs-border rounded-xl p-3 text-center">
+          <div className="text-xl font-extrabold text-[#22c55e]">{new Set(myListens.map(s => s.track.artist)).size}</div>
+          <div className="text-[10px] text-gs-dim font-mono">Artists</div>
+        </div>
+      </div>
+
+      {/* Genre Breakdown Pie Chart (using divs) */}
+      <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+        <div className="text-[10px] text-gs-dim font-mono mb-4 uppercase tracking-[0.06em]">Genre Breakdown</div>
+        <div className="flex gap-5 items-center flex-col sm:flex-row">
+          {/* CSS pie chart using conic-gradient */}
+          <div className="shrink-0">
+            <div
+              className="w-[140px] h-[140px] rounded-full relative"
+              style={{
+                background: `conic-gradient(${genreData.map((g, i) => {
+                  const startPct = genreData.slice(0, i).reduce((sum, x) => sum + x.pct, 0);
+                  return `${g.color} ${startPct}% ${startPct + g.pct}%`;
+                }).join(', ')})`,
+                boxShadow: '0 0 0 3px #0a0a0a, 0 4px 20px rgba(0,0,0,0.3)',
+              }}
+            >
+              {/* Center hole for donut chart effect */}
+              <div className="absolute inset-[25%] rounded-full bg-gs-card flex items-center justify-center flex-col">
+                <div className="text-[15px] font-extrabold text-gs-text">{genreData.length}</div>
+                <div className="text-[8px] text-gs-dim font-mono">genres</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Legend */}
+          <div className="flex-1 flex flex-col gap-1.5 w-full">
+            {genreData.map(g => (
+              <div key={g.genre} className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-sm shrink-0" style={{ background: g.color }} />
+                <span className="text-xs text-gs-muted flex-1">{g.genre}</span>
+                <span className="text-[11px] font-semibold font-mono" style={{ color: g.color }}>{g.pct}%</span>
+                <span className="text-[10px] text-gs-faint font-mono w-8 text-right">{g.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Share Listening Stats button */}
+      <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[13px] font-bold text-gs-text mb-0.5">Share Your Stats</div>
+            <div className="text-[11px] text-gs-dim">Copy a summary of your listening stats to share</div>
+          </div>
+          <div className="relative">
+            <button
+              onClick={handleShareStats}
+              className="gs-btn-gradient px-4 py-2 text-xs text-white flex items-center gap-1.5"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>
+              </svg>
+              Share
+            </button>
+            {shareMsg && (
+              <div className="absolute -top-8 left-1/2 -translate-x-1/2 text-[10px] text-gs-accent bg-[#111] border border-gs-border rounded px-2 py-1 whitespace-nowrap" style={{ animation: "vb-fade-in 0.15s ease-out" }}>
+                {shareMsg}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Recently Played widget (embeddable preview) */}
+      <div className="mb-4">
+        <div className="text-[10px] text-gs-dim font-mono mb-2.5 uppercase tracking-[0.06em]">Profile Widget Preview</div>
+        <RecentlyPlayedWidget myListens={myListens} />
+      </div>
     </div>
   );
 }

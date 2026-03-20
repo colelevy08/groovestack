@@ -39,6 +39,8 @@ module.exports = {
         'toast-in': 'toastIn 0.3s ease-out',
         'toast-out': 'toastOut 0.2s ease-in forwards',
         'shimmer': 'shimmer 1.8s ease-in-out infinite',
+        'spin-slow': 'spinSlow 8s linear infinite',
+        'mode-switch': 'modeSwitch 0.35s ease-out',
       },
       keyframes: {
         fadeIn: {
@@ -89,6 +91,14 @@ module.exports = {
         pageIn: {
           '0%': { opacity: '0', transform: 'translateY(6px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        spinSlow: {
+          '0%': { transform: 'rotate(0deg)' },
+          '100%': { transform: 'rotate(360deg)' },
+        },
+        modeSwitch: {
+          '0%': { opacity: '0', transform: 'translateY(8px) scale(0.98)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
         },
         doubleTapHeart: {
           '0%': { opacity: '0', transform: 'translate(-50%, -50%) scale(0)' },
