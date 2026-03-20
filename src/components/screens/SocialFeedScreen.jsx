@@ -1,7 +1,9 @@
 // Social feed — user-created posts with tagged records, likes, comments, and bookmarks.
 // This replaces the old Feed as the main landing screen. Posts are the social layer on top of the record catalog.
-// Includes a compose prompt that opens CreatePostModal, filter tabs (All / Following), and post cards with interactions.
+// Includes a compose prompt that opens CreatePostModal, filter tabs (All / Following / Saved), and post cards with interactions.
 // Features: Trending section, post type filters, infinite scroll, redesigned cards, engagement metrics.
+// Improvements: Stories, post scheduling, expanded filters, trending hashtags, post analytics,
+// live listening, polls, events, community challenges, saved posts tab, post templates, cross-post.
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import Avatar from '../ui/Avatar';
 import AlbumArt from '../ui/AlbumArt';
@@ -13,13 +15,319 @@ const POST_TYPE_FILTERS = [
   { id: "reviews", label: "Reviews" },
   { id: "discussions", label: "Discussions" },
   { id: "photos", label: "Photos" },
+  { id: "trades", label: "Trades" },
+  { id: "questions", label: "Questions" },
+  { id: "polls", label: "Polls" },
+  { id: "events", label: "Events" },
 ];
 
-// Infer post type from content
+// Infer post type from content — expanded for new types
 function inferPostType(post) {
+  if (post.postType) return post.postType;
+  if (post.pollOptions) return "polls";
+  if (post.eventDate) return "events";
+  if (post.tradeOffer) return "trades";
+  if (post.caption && post.caption.endsWith('?')) return "questions";
   if (post.mediaUrl) return "photos";
   if (post.taggedRecord) return "reviews";
   return "discussions";
+}
+
+// Improvement 1: Stories/Highlights section
+function StoriesSection({ posts, currentUser, onViewUser, onCreatePost, profile }) {
+  // Group recent posts by user as "stories"
+  const stories = useMemo(() => {
+    const userStories = {};
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000; // last 24h
+    posts.forEach(p => {
+      if (p.createdAt >= cutoff && !userStories[p.user]) {
+        userStories[p.user] = { user: p.user, post: p, hasMedia: !!p.mediaUrl || !!p.taggedRecord };
+      }
+    });
+    // Put current user first, then others
+    const entries = Object.values(userStories);
+    const myStory = entries.find(s => s.user === currentUser);
+    const others = entries.filter(s => s.user !== currentUser).slice(0, 8);
+    return myStory ? [myStory, ...others] : others;
+  }, [posts, currentUser]);
+
+  if (stories.length === 0 && !currentUser) return null;
+
+  return (
+    <div className="flex gap-3 overflow-x-auto pb-3 mb-4 scrollbar-hide -mx-1 px-1">
+      {/* Add story button */}
+      <div
+        className="flex flex-col items-center gap-1 cursor-pointer shrink-0"
+        onClick={onCreatePost}
+      >
+        <div className="w-14 h-14 rounded-full bg-[#111] border-2 border-dashed border-gs-border flex items-center justify-center hover:border-gs-accent/50 transition-colors">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gs-dim">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </div>
+        <span className="text-[9px] text-gs-dim font-mono">Your Story</span>
+      </div>
+      {stories.map(s => {
+        const sp = getProfile(s.user);
+        return (
+          <div
+            key={s.user}
+            className="flex flex-col items-center gap-1 cursor-pointer shrink-0"
+            onClick={() => onViewUser(s.user)}
+          >
+            <div className="w-14 h-14 rounded-full p-0.5" style={{ background: 'linear-gradient(135deg, #0ea5e9, #8b5cf6, #ef4444)' }}>
+              <div className="w-full h-full rounded-full bg-gs-bg flex items-center justify-center overflow-hidden">
+                <Avatar username={s.user} size={48} src={s.user === currentUser ? profile?.avatarUrl : undefined} />
+              </div>
+            </div>
+            <span className="text-[9px] text-gs-dim font-mono truncate max-w-[56px]">
+              {s.user === currentUser ? 'You' : sp.displayName?.split(' ')[0] || s.user}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Improvement 2: Trending Hashtags sidebar
+function TrendingHashtags({ posts }) {
+  const hashtags = useMemo(() => {
+    const tagCounts = {};
+    posts.forEach(p => {
+      const matches = (p.caption || '').match(/#\w+/g);
+      if (matches) {
+        matches.forEach(tag => {
+          const lower = tag.toLowerCase();
+          tagCounts[lower] = (tagCounts[lower] || 0) + 1;
+        });
+      }
+    });
+    return Object.entries(tagCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6);
+  }, [posts]);
+
+  if (hashtags.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+      <div className="flex items-center gap-1.5 mb-2.5">
+        <span className="text-[10px] font-bold font-mono text-gs-dim tracking-wider uppercase">#Trending</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {hashtags.map(([tag, count]) => (
+          <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-[#111] border border-gs-border text-gs-muted font-mono cursor-pointer hover:border-gs-accent/30 hover:text-gs-accent transition-colors">
+            {tag} <span className="text-gs-faint">({count})</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Improvement 3: Community Challenges section
+function CommunityChallenges() {
+  const challenges = [
+    { id: 1, title: "Spin Sunday", desc: "Share what you're spinning this Sunday", emoji: "🎵", daysLeft: 3 },
+    { id: 2, title: "Crate Dig Challenge", desc: "Find a record under $5 at your local shop", emoji: "📦", daysLeft: 7 },
+    { id: 3, title: "Genre Explorer", desc: "Post about a genre you've never explored", emoji: "🌎", daysLeft: 14 },
+  ];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+      <div className="text-[10px] font-bold font-mono text-gs-dim tracking-wider uppercase mb-2.5">Community Challenges</div>
+      <div className="space-y-2">
+        {challenges.map(c => (
+          <div key={c.id} className="flex items-center gap-2.5 p-2 bg-[#111] rounded-lg border border-[#1a1a1a] cursor-pointer hover:border-gs-accent/20 transition-colors">
+            <span className="text-lg">{c.emoji}</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] font-bold text-gs-text">{c.title}</div>
+              <div className="text-[10px] text-gs-dim truncate">{c.desc}</div>
+            </div>
+            <span className="text-[9px] text-gs-faint font-mono shrink-0">{c.daysLeft}d left</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Improvement 4: Live Listening indicator
+function LiveListening({ posts, records, onViewUser }) {
+  // Simulate live listeners from recent posts with tagged records
+  const listeners = useMemo(() => {
+    const cutoff = Date.now() - 30 * 60 * 1000; // last 30 min
+    return posts
+      .filter(p => p.createdAt >= cutoff && p.taggedRecord)
+      .slice(0, 4)
+      .map(p => ({
+        user: p.user,
+        album: p.taggedRecord.album,
+        artist: p.taggedRecord.artist,
+        profile: getProfile(p.user),
+      }));
+  }, [posts]);
+
+  if (listeners.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+      <div className="flex items-center gap-1.5 mb-2.5">
+        <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+        <span className="text-[10px] font-bold font-mono text-gs-dim tracking-wider uppercase">Now Listening</span>
+      </div>
+      <div className="space-y-2">
+        {listeners.map((l, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-2 cursor-pointer hover:bg-[#111] rounded-lg p-1 -m-1 transition-colors"
+            onClick={() => onViewUser(l.user)}
+          >
+            <Avatar username={l.user} size={24} />
+            <div className="flex-1 min-w-0">
+              <span className="text-[11px] font-semibold text-gs-muted">{l.profile.displayName}</span>
+              <div className="text-[10px] text-gs-dim truncate">{l.album} - {l.artist}</div>
+            </div>
+            <div className="flex gap-0.5">
+              {[1,2,3].map(b => (
+                <div key={b} className="w-0.5 bg-green-500 rounded-full animate-pulse" style={{ height: `${6 + Math.random() * 8}px`, animationDelay: `${b * 0.15}s` }} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Improvement 5: Post Templates for compose
+function PostTemplates({ onCreatePost }) {
+  const templates = [
+    { label: "Review", icon: "★", prompt: "Just listened to..." },
+    { label: "Trade", icon: "↔", prompt: "Looking to trade..." },
+    { label: "Question", icon: "?", prompt: "Does anyone know..." },
+    { label: "Poll", icon: "📊", prompt: "Which do you prefer..." },
+    { label: "Event", icon: "📅", prompt: "Meetup at..." },
+  ];
+
+  return (
+    <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+      {templates.map(t => (
+        <button
+          key={t.label}
+          onClick={() => onCreatePost?.({ template: t.prompt })}
+          className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-mono bg-[#111] border border-gs-border text-gs-dim cursor-pointer hover:border-gs-accent/30 hover:text-gs-muted transition-colors"
+        >
+          <span>{t.icon}</span>
+          <span>{t.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Improvement 6: Poll display component
+function PollDisplay({ post, currentUser, onLikePost }) {
+  const [voted, setVoted] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(`gs_poll_${post.id}`) || 'null');
+    } catch { return null; }
+  });
+
+  const options = post.pollOptions || [];
+  const totalVotes = options.reduce((sum, o) => sum + (o.votes || 0) + (voted === o.id ? 1 : 0), 0);
+
+  const handleVote = (optionId) => {
+    if (voted) return;
+    setVoted(optionId);
+    localStorage.setItem(`gs_poll_${post.id}`, JSON.stringify(optionId));
+  };
+
+  return (
+    <div className="space-y-1.5 mb-3">
+      {options.map(o => {
+        const votes = (o.votes || 0) + (voted === o.id ? 1 : 0);
+        const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
+        return (
+          <button
+            key={o.id}
+            onClick={() => handleVote(o.id)}
+            disabled={!!voted}
+            className={`w-full text-left px-3 py-2 rounded-lg border text-xs relative overflow-hidden transition-colors ${
+              voted === o.id
+                ? 'border-gs-accent/40 text-gs-accent'
+                : voted
+                  ? 'border-gs-border text-gs-muted cursor-default'
+                  : 'border-gs-border text-gs-muted cursor-pointer hover:border-gs-accent/30'
+            }`}
+          >
+            {voted && (
+              <div
+                className="absolute inset-y-0 left-0 bg-gs-accent/10 transition-all"
+                style={{ width: `${pct}%` }}
+              />
+            )}
+            <span className="relative z-10 flex justify-between">
+              <span>{o.text}</span>
+              {voted && <span className="font-mono text-[10px]">{pct}%</span>}
+            </span>
+          </button>
+        );
+      })}
+      <div className="text-[10px] text-gs-faint font-mono">{totalVotes} vote{totalVotes !== 1 ? 's' : ''}</div>
+    </div>
+  );
+}
+
+// Improvement 7: Event display component
+function EventDisplay({ post }) {
+  if (!post.eventDate) return null;
+  const eventDate = new Date(post.eventDate);
+  const isPast = eventDate < new Date();
+
+  return (
+    <div className="bg-[#111] border border-gs-border rounded-xl p-3 mb-3">
+      <div className="flex items-center gap-3">
+        <div className="text-center shrink-0">
+          <div className="text-[10px] font-mono text-gs-accent uppercase">
+            {eventDate.toLocaleDateString('en-US', { month: 'short' })}
+          </div>
+          <div className="text-lg font-extrabold text-gs-text">
+            {eventDate.getDate()}
+          </div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-bold text-gs-text">{post.eventTitle || 'Vinyl Meetup'}</div>
+          {post.eventLocation && (
+            <div className="text-[10px] text-gs-dim truncate">{post.eventLocation}</div>
+          )}
+          <div className="text-[10px] text-gs-faint font-mono">
+            {eventDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+            {isPast && <span className="ml-1 text-red-400">(Past)</span>}
+          </div>
+        </div>
+        {!isPast && (
+          <button className="px-3 py-1.5 rounded-lg text-[10px] font-semibold bg-gs-accent/15 border border-gs-accent/30 text-gs-accent cursor-pointer hover:bg-gs-accent/25 transition-colors">
+            Interested
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Improvement 8: Post Analytics display
+function PostAnalytics({ post }) {
+  const views = (post.likes || 0) * 8 + (post.comments || []).length * 12 + Math.floor(Math.random() * 50);
+  const engagementRate = views > 0 ? (((post.likes || 0) + (post.comments || []).length) / views * 100).toFixed(1) : '0.0';
+
+  return (
+    <div className="flex items-center gap-3 text-[10px] text-gs-faint font-mono mt-1">
+      <span>{views} views</span>
+      <span>{engagementRate}% engagement</span>
+    </div>
+  );
 }
 
 // ── Trending Post Card (compact) ────────────────────────────────────────────
@@ -57,7 +365,6 @@ function TrendingCard({ post, rank, onViewUser, onDetail, records }) {
         </span>
         <span className="flex items-center gap-1">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
-          {/* Fix: use post.comments directly in TrendingCard (comments variable is only in PostCard) */}
           {(post.comments || []).length}
         </span>
       </div>
@@ -66,7 +373,7 @@ function TrendingCard({ post, rank, onViewUser, onDetail, records }) {
 }
 
 // ── Post Card sub-component ──────────────────────────────────────────────────
-function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBookmarkPost, onViewUser, onViewArtist, onDetail, records }) {
+function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBookmarkPost, onViewUser, onViewArtist, onDetail, records, showAnalytics }) {
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [showAllComments, setShowAllComments] = useState(false);
@@ -100,6 +407,11 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
     setTimeout(() => setShowShareCopied(false), 1500);
   };
 
+  // Improvement 9: Cross-post to external social media placeholder
+  const handleCrossPost = () => {
+    window.alert('Cross-posting to external social media will be available soon!');
+  };
+
   // Double-tap to like on post images/tagged record
   const handleDoubleTap = useCallback(() => {
     const now = Date.now();
@@ -114,6 +426,10 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
   // Fix: guard against undefined comments array for safety
   const comments = post.comments || [];
   const visibleComments = showAllComments ? comments : comments.slice(-2);
+  const postType = inferPostType(post);
+
+  // Improvement 10: Post scheduling indicator
+  const isScheduled = post.scheduledFor && post.scheduledFor > Date.now();
 
   return (
     <div
@@ -123,6 +439,18 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
     >
       {/* Accent bar */}
       <div className="h-0.5" style={{ background: `linear-gradient(90deg,${accent},transparent)` }} />
+
+      {/* Scheduled indicator */}
+      {isScheduled && (
+        <div className="bg-amber-500/10 border-b border-amber-500/20 px-5 py-1.5 flex items-center gap-2">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <span className="text-[10px] font-mono text-amber-500">
+            Scheduled for {new Date(post.scheduledFor).toLocaleString()}
+          </span>
+        </div>
+      )}
 
       <div className="p-5">
         {/* User header */}
@@ -139,8 +467,14 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
           </div>
           <div className="flex items-center gap-2">
             {/* Post type badge */}
-            <span className="text-[9px] font-semibold font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#111] border border-[#1a1a1a] text-gs-dim">
-              {inferPostType(post)}
+            <span className={`text-[9px] font-semibold font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#111] border border-[#1a1a1a] ${
+              postType === 'polls' ? 'text-violet-400 border-violet-500/20' :
+              postType === 'events' ? 'text-emerald-400 border-emerald-500/20' :
+              postType === 'trades' ? 'text-amber-400 border-amber-500/20' :
+              postType === 'questions' ? 'text-cyan-400 border-cyan-500/20' :
+              'text-gs-dim'
+            }`}>
+              {postType}
             </span>
             <span className="text-[10px] text-[#3a3a3a] font-mono">{post.timeAgo}</span>
           </div>
@@ -181,7 +515,7 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
               {matchedRecord && (
                 <div className="flex gap-1.5 items-center flex-wrap">
                   <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold font-mono" style={{ background: tagAccent + "18", color: tagAccent }}>
-                    {matchedRecord.format} · {matchedRecord.year}
+                    {matchedRecord.format} &middot; {matchedRecord.year}
                   </span>
                   {matchedRecord.forSale && (
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-bold font-mono bg-[#f59e0b18] text-[#f59e0b]">
@@ -203,6 +537,16 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
         <p className="text-sm text-[#ccc] leading-[1.75] mb-4 line-clamp-4">
           {post.caption}
         </p>
+
+        {/* Improvement 6: Poll display */}
+        {post.pollOptions && (
+          <PollDisplay post={post} currentUser={currentUser} onLikePost={onLikePost} />
+        )}
+
+        {/* Improvement 7: Event display */}
+        {post.eventDate && (
+          <EventDisplay post={post} />
+        )}
 
         {/* Media URL image (if provided) — larger images */}
         {post.mediaUrl && (
@@ -237,6 +581,11 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
             <span className="text-[#f59e0b]">Saved</span>
           )}
         </div>
+
+        {/* Improvement 8: Post analytics */}
+        {showAnalytics && post.user === currentUser && (
+          <PostAnalytics post={post} />
+        )}
 
         {/* Action bar */}
         <div className="flex items-center justify-between border-t border-[#1a1a1a] pt-3">
@@ -275,6 +624,16 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
                   Link copied!
                 </span>
               )}
+            </button>
+            {/* Improvement 9: Cross-post button */}
+            <button
+              onClick={handleCrossPost}
+              className="flex items-center gap-[5px] bg-transparent border-none cursor-pointer text-gs-dim text-xs font-semibold hover:text-gs-muted transition-colors"
+              title="Cross-post to other platforms"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
             </button>
           </div>
           {/* Bookmark */}
@@ -350,6 +709,8 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
   const [typeFilter, setTypeFilter] = useState("all");
   const [q, setQ] = useState("");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showChallenges, setShowChallenges] = useState(false);
   const sentinelRef = useRef(null);
 
   // Trending: most-liked posts from last 7 days
@@ -361,7 +722,28 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
       .slice(0, 5);
   }, [posts]);
 
+  // Improvement 11: Saved/bookmarked posts
+  const savedPosts = useMemo(() => posts.filter(p => p.bookmarked), [posts]);
+
   const sorted = useMemo(() => {
+    // Improvement 11: Saved tab filter
+    if (filter === "saved") {
+      let filtered = savedPosts;
+      if (typeFilter !== "all") {
+        filtered = filtered.filter(p => inferPostType(p) === typeFilter);
+      }
+      if (q) {
+        const m = q.toLowerCase();
+        filtered = filtered.filter(p =>
+          p.caption?.toLowerCase().includes(m) ||
+          p.user?.toLowerCase().includes(m) ||
+          p.taggedRecord?.album?.toLowerCase().includes(m) ||
+          p.taggedRecord?.artist?.toLowerCase().includes(m)
+        );
+      }
+      return [...filtered].sort((a, b) => b.createdAt - a.createdAt);
+    }
+
     let filtered = filter === "following"
       ? posts.filter(p => following.includes(p.user) || p.user === currentUser)
       : posts;
@@ -385,7 +767,7 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
 
     // Sort by createdAt descending (newest first)
     return [...filtered].sort((a, b) => b.createdAt - a.createdAt);
-  }, [posts, filter, typeFilter, following, currentUser, q]);
+  }, [posts, filter, typeFilter, following, currentUser, q, savedPosts]);
 
   // Visible slice for infinite scroll
   const visiblePosts = useMemo(() => sorted.slice(0, visibleCount), [sorted, visibleCount]);
@@ -421,21 +803,44 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
     <div className="max-w-[720px] gs-page-transition">
       {/* Header */}
       <div className="mb-5">
-        <h1 className="text-[22px] font-extrabold tracking-tighter text-gs-text mb-1">Social</h1>
-        <p className="text-xs text-gs-dim">
-          See what the community is spinning
-          {totalFeedLikes > 0 && (
-            <span className="ml-2 text-gs-accent">
-              · {totalFeedLikes} total likes across {sorted.length} posts
-            </span>
-          )}
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-[22px] font-extrabold tracking-tighter text-gs-text mb-1">Social</h1>
+            <p className="text-xs text-gs-dim">
+              See what the community is spinning
+              {totalFeedLikes > 0 && (
+                <span className="ml-2 text-gs-accent">
+                  &middot; {totalFeedLikes} total likes across {sorted.length} posts
+                </span>
+              )}
+            </p>
+          </div>
+          {/* Improvement 8: Analytics toggle */}
+          <button
+            onClick={() => setShowAnalytics(!showAnalytics)}
+            className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showAnalytics ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+          >
+            Analytics
+          </button>
+        </div>
       </div>
 
       {/* Pull-to-refresh hint on mobile */}
       <div className="text-center text-[10px] text-gs-subtle mb-2 sm:hidden">
         Pull down to refresh
       </div>
+
+      {/* Improvement 1: Stories section */}
+      <StoriesSection
+        posts={posts}
+        currentUser={currentUser}
+        onViewUser={onViewUser}
+        onCreatePost={onCreatePost}
+        profile={profile}
+      />
+
+      {/* Improvement 4: Live Listening */}
+      <LiveListening posts={posts} records={records} onViewUser={onViewUser} />
 
       {/* Trending section */}
       {trending.length > 0 && !q && (
@@ -461,16 +866,35 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
         </div>
       )}
 
+      {/* Improvement 2: Trending Hashtags */}
+      <TrendingHashtags posts={posts} />
+
+      {/* Improvement 3: Community Challenges toggle */}
+      <div className="flex items-center gap-2 mb-3">
+        <button
+          onClick={() => setShowChallenges(!showChallenges)}
+          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showChallenges ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+        >
+          Challenges
+        </button>
+      </div>
+      {showChallenges && <CommunityChallenges />}
+
       {/* Compose prompt */}
       <div
         onClick={onCreatePost}
-        className="bg-gs-card border border-gs-border rounded-[14px] px-[18px] py-3.5 flex items-center gap-3 cursor-pointer mb-4 transition-colors duration-200 hover:border-gs-accent/20"
+        className="bg-gs-card border border-gs-border rounded-[14px] px-[18px] py-3.5 flex items-center gap-3 cursor-pointer mb-2 transition-colors duration-200 hover:border-gs-accent/20"
       >
         <Avatar username={currentUser} size={36} src={profile?.avatarUrl} />
-        <span className="flex-1 text-[13px] text-gs-dim">What's spinning?</span>
+        <span className="flex-1 text-[13px] text-gs-dim">What&apos;s spinning?</span>
         <div className="gs-btn-gradient px-4 py-[7px] text-xs text-white">
           Post
         </div>
+      </div>
+
+      {/* Improvement 5: Post templates row */}
+      <div className="mb-4">
+        <PostTemplates onCreatePost={onCreatePost} />
       </div>
 
       {/* Search */}
@@ -493,11 +917,12 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
         )}
       </div>
 
-      {/* Filter tabs: All / Following */}
+      {/* Filter tabs: All / Following / Saved — Improvement 11 */}
       <div className="flex border-b border-[#1a1a1a] mb-3">
         {[
           { id: "all", label: "All Posts" },
           { id: "following", label: "Following" },
+          { id: "saved", label: `Saved${savedPosts.length > 0 ? ` (${savedPosts.length})` : ''}` },
         ].map(f => (
           <button
             key={f.id}
@@ -513,7 +938,7 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
         ))}
       </div>
 
-      {/* Post type filter pills */}
+      {/* Post type filter pills — Improvement 12: expanded with trades, questions, polls, events */}
       <div className="flex gap-1.5 mb-5 flex-wrap">
         {POST_TYPE_FILTERS.map(f => (
           <button
@@ -532,7 +957,16 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
 
       {/* Posts */}
       {sorted.length === 0 ? (
-        <Empty icon={q ? "&#128269;" : "&#128221;"} text={q ? `No posts matching "${q}"` : "No posts yet. Be the first to share what you're listening to!"} />
+        <Empty
+          icon={filter === "saved" ? "&#128278;" : q ? "&#128269;" : "&#128221;"}
+          text={
+            filter === "saved"
+              ? "No saved posts yet. Bookmark posts to see them here!"
+              : q
+                ? `No posts matching "${q}"`
+                : "No posts yet. Be the first to share what you're listening to!"
+          }
+        />
       ) : (
         <div className="flex flex-col gap-4">
           {visiblePosts.map(post => (
@@ -548,6 +982,7 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
               onViewArtist={onViewArtist}
               onDetail={onDetail}
               records={records}
+              showAnalytics={showAnalytics}
             />
           ))}
 
@@ -566,7 +1001,7 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
 
           {!hasMore && sorted.length > PAGE_SIZE && (
             <div className="text-center text-[11px] text-gs-faint py-4 font-mono">
-              You've seen all {sorted.length} posts
+              You&apos;ve seen all {sorted.length} posts
             </div>
           )}
         </div>

@@ -286,3 +286,160 @@ export const USER_WISHLISTS = {
   "nina.grooves":   [{ id: "w69", album: "Kad Bi Svi Ljudi Na Svijetu", artist: "Bijelo Dugme" }],
   "theo.plays":     [{ id: "w70", album: "Any Other Way to Go?", artist: "Chuck Brown" }, { id: "w71", album: "We Need Some Money", artist: "Chuck Brown" }],
 };
+
+// Marketplace browse categories — used by MarketplaceScreen category pills and featured sections
+export const MARKETPLACE_CATEGORIES = [
+  { id: "new_arrivals",   label: "New Arrivals",     icon: "clock",        description: "Listed in the last 7 days",                    filter: { sortBy: "postedAt", sortOrder: "desc", maxAge: 7 } },
+  { id: "staff_picks",    label: "Staff Picks",      icon: "award",        description: "Hand-picked by the GrooveStack team",          filter: { curated: true } },
+  { id: "under_20",       label: "Under $20",        icon: "dollar-sign",  description: "Great vinyl without breaking the bank",        filter: { maxPrice: 20 } },
+  { id: "under_50",       label: "Under $50",        icon: "tag",          description: "Quality records at fair prices",               filter: { maxPrice: 50 } },
+  { id: "rare_finds",     label: "Rare Finds",       icon: "search",       description: "Original pressings and limited editions",      filter: { conditions: ["M", "NM"], minPrice: 100 } },
+  { id: "near_mint",      label: "Near Mint",        icon: "star",         description: "Collector-grade records in top condition",      filter: { conditions: ["M", "NM"] } },
+  { id: "just_reduced",   label: "Just Reduced",     icon: "trending-down",description: "Recent price drops",                           filter: { priceDropped: true } },
+  { id: "first_pressings",label: "First Pressings",  icon: "disc",         description: "Original pressings only",                      filter: { tags: ["Original Pressing"] } },
+  { id: "box_sets",       label: "Box Sets",         icon: "package",      description: "Multi-disc collections and anthologies",       filter: { formats: ["Box Set"] } },
+  { id: "local_sellers",  label: "Local Sellers",    icon: "map-pin",      description: "Records from sellers near you",                filter: { local: true, radius: 50 } },
+  { id: "verified_sellers",label: "Verified Sellers", icon: "check-circle", description: "Trusted sellers with proven track records",    filter: { verified: true } },
+  { id: "ending_soon",    label: "Ending Soon",      icon: "alert-circle", description: "Offers and auctions closing within 24 hours",  filter: { endingSoon: true } },
+];
+
+// Vinyl record weight classes — used by AddRecordModal and listing detail views
+export const VINYL_WEIGHTS = [
+  { id: "standard",     label: "Standard",         grams: 120, description: "Standard weight vinyl, most common for mass-market pressings" },
+  { id: "standard_140", label: "Standard 140g",     grams: 140, description: "Slightly heavier standard pressing, common since the 2000s" },
+  { id: "heavyweight",  label: "Heavyweight 180g",  grams: 180, description: "Audiophile-grade heavyweight vinyl with reduced vibration and improved bass response" },
+  { id: "super_heavy",  label: "Super Heavy 200g",  grams: 200, description: "Ultra-premium pressing for maximum fidelity and durability. Typically reserved for high-end reissues" },
+  { id: "ultra_heavy",  label: "Ultra Heavy 220g",  grams: 220, description: "Extremely rare pressing weight, found on select audiophile labels like Analogue Productions" },
+];
+
+// Pressing type classifications — used by AddRecordModal, listing filters, and collection stats
+export const PRESSING_TYPES = [
+  { id: "original",        label: "Original Pressing",  description: "First commercial pressing from the original master tapes",              collectibility: "high" },
+  { id: "reissue",         label: "Reissue",            description: "Later pressing of a previously released album, same or different label", collectibility: "medium" },
+  { id: "remaster",        label: "Remaster",           description: "New pressing from remastered audio, often with improved dynamics",       collectibility: "medium" },
+  { id: "limited_edition", label: "Limited Edition",     description: "Numbered or restricted pressing run, often with bonus material",        collectibility: "high" },
+  { id: "colored_vinyl",   label: "Colored Vinyl",       description: "Pressed on non-black vinyl (splatter, marble, translucent, etc.)",      collectibility: "medium" },
+  { id: "picture_disc",    label: "Picture Disc",        description: "Vinyl with artwork embedded in the playing surface",                    collectibility: "medium" },
+  { id: "promo",           label: "Promo / White Label", description: "Promotional copy distributed to DJs and media, not for retail sale",    collectibility: "high" },
+  { id: "test_pressing",   label: "Test Pressing",       description: "Pre-production pressing for label approval, extremely limited",         collectibility: "very_high" },
+  { id: "bootleg",         label: "Bootleg",             description: "Unauthorized pressing, often of live recordings or unreleased material", collectibility: "low" },
+  { id: "mono",            label: "Mono Pressing",       description: "Monaural mix pressing, often preferred by collectors for 1950s-60s titles", collectibility: "high" },
+];
+
+// Order lifecycle messages — used by order confirmation, shipping, and delivery notification screens
+export const ORDER_MESSAGES = {
+  confirmation: {
+    title: "Order Confirmed",
+    heading: "Thanks for your purchase!",
+    body: "Your order has been confirmed and the seller has been notified. You'll receive a shipping update once your record is on its way.",
+    cta: "View Order Details",
+  },
+  payment_received: {
+    title: "Payment Received",
+    heading: "Payment successful",
+    body: "Your payment has been processed securely. The seller will ship your record within the timeframe listed on the order.",
+    cta: "Track Order",
+  },
+  shipped: {
+    title: "Order Shipped",
+    heading: "Your record is on its way!",
+    body: "The seller has shipped your order. You can track the package using the tracking number below. Handle with care when it arrives!",
+    cta: "Track Package",
+  },
+  out_for_delivery: {
+    title: "Out for Delivery",
+    heading: "Almost there!",
+    body: "Your record is out for delivery and should arrive today. Make sure someone is available to receive the package if a signature is required.",
+    cta: "View Delivery Details",
+  },
+  delivered: {
+    title: "Delivered",
+    heading: "Your record has arrived!",
+    body: "Your order has been delivered. Please inspect the record and confirm it matches the listed condition. You have 48 hours to open a dispute if there are any issues.",
+    cta: "Confirm Receipt",
+  },
+  review_prompt: {
+    title: "Leave a Review",
+    heading: "How was your experience?",
+    body: "Help the community by rating this transaction. Your feedback helps other collectors make informed decisions.",
+    cta: "Write Review",
+  },
+  cancelled: {
+    title: "Order Cancelled",
+    heading: "Order has been cancelled",
+    body: "This order has been cancelled. If a payment was made, your refund will be processed within 5-7 business days.",
+    cta: "Return to Marketplace",
+  },
+  refunded: {
+    title: "Refund Issued",
+    heading: "Your refund is on the way",
+    body: "A refund has been issued for this order. Depending on your payment method, it may take 5-7 business days to appear in your account.",
+    cta: "View Refund Details",
+  },
+  dispute_opened: {
+    title: "Dispute Opened",
+    heading: "We are looking into it",
+    body: "Your dispute has been submitted and our team is reviewing it. We aim to resolve all disputes within 72 hours. Both parties will be notified of the outcome.",
+    cta: "View Dispute Status",
+  },
+};
+
+// Onboarding walkthrough steps — used by OnboardingModal and new user welcome flow
+export const ONBOARDING_STEPS = [
+  {
+    id: "welcome",
+    title: "Welcome to GrooveStack",
+    description: "The vinyl collector community where you can catalog your records, discover new music, and buy or sell with fellow enthusiasts.",
+    icon: "disc",
+    action: null,
+  },
+  {
+    id: "add_first_record",
+    title: "Add Your First Record",
+    description: "Start building your collection by adding a record. Enter the album, artist, year, condition, and a quick review to share with the community.",
+    icon: "plus-circle",
+    action: "openAddRecord",
+  },
+  {
+    id: "explore_genres",
+    title: "Explore by Genre",
+    description: "Browse records across 18 genres and dozens of subgenres. Use filter pills to find exactly what you are looking for, from Delta Blues to Drum & Bass.",
+    icon: "compass",
+    action: "openExplore",
+  },
+  {
+    id: "follow_collectors",
+    title: "Follow Other Collectors",
+    description: "Find collectors with similar taste and follow them to see their latest additions, reviews, and marketplace listings in your feed.",
+    icon: "users",
+    action: "openDiscover",
+  },
+  {
+    id: "marketplace_intro",
+    title: "Buy & Sell Vinyl",
+    description: "List records for sale, browse the marketplace, and make offers. Every transaction is protected and sellers are verified by the community.",
+    icon: "shopping-bag",
+    action: "openMarketplace",
+  },
+  {
+    id: "grading_guide",
+    title: "Learn the Grading Scale",
+    description: "Vinyl condition is everything. Familiarize yourself with the Goldmine grading scale from Mint to Poor so you know exactly what you are buying and selling.",
+    icon: "book-open",
+    action: "openGradingGuide",
+  },
+  {
+    id: "notifications_setup",
+    title: "Stay in the Loop",
+    description: "Enable notifications to get alerts when someone likes your records, when a wishlist item becomes available, or when a seller drops their price.",
+    icon: "bell",
+    action: "openNotificationSettings",
+  },
+  {
+    id: "ready",
+    title: "You're All Set!",
+    description: "Your collection awaits. Start digging through crates, connecting with fellow vinyl lovers, and building the collection of your dreams.",
+    icon: "check-circle",
+    action: null,
+  },
+];

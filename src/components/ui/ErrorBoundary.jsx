@@ -1,11 +1,19 @@
 // Error boundary — catches React render errors and shows a friendly fallback message.
 // Wrap around any subtree to prevent the entire app from crashing.
+// Improvements: retry countdown timer, error report submission, dev-mode full stack trace.
 import { Component } from 'react';
 
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = {
+      hasError: false,
+      error: null,
+      errorInfo: null,
+      countdown: 0,
+      reportStatus: null,
+    };
+    this.countdownTimer = null;
   }
 
   static getDerivedStateFromError(error) {
@@ -14,14 +22,58 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('[ErrorBoundary]', error, errorInfo);
+    this.setState({ errorInfo });
   }
 
+  componentWillUnmount() {
+    if (this.countdownTimer) clearInterval(this.countdownTimer);
+  }
+
+  handleRetryWithCountdown = () => {
+    this.setState({ countdown: 5 });
+    this.countdownTimer = setInterval(() => {
+      this.setState(prev => {
+        const next = prev.countdown - 1;
+        if (next <= 0) {
+          clearInterval(this.countdownTimer);
+          this.countdownTimer = null;
+          return { hasError: false, error: null, errorInfo: null, countdown: 0, reportStatus: null };
+        }
+        return { countdown: next };
+      });
+    }, 1000);
+  };
+
   handleRetry = () => {
-    this.setState({ hasError: false, error: null });
+    this.setState({ hasError: false, error: null, errorInfo: null, reportStatus: null });
+  };
+
+  handleReportError = () => {
+    this.setState({ reportStatus: 'sending' });
+    const errorReport = {
+      message: this.state.error?.toString() || 'Unknown error',
+      stack: this.state.error?.stack || '',
+      componentStack: this.state.errorInfo?.componentStack || '',
+      url: window.location.href,
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+    };
+    // Store error report locally for later submission
+    try {
+      const reports = JSON.parse(localStorage.getItem('gs_error_reports') || '[]');
+      reports.push(errorReport);
+      localStorage.setItem('gs_error_reports', JSON.stringify(reports.slice(-20)));
+      this.setState({ reportStatus: 'sent' });
+    } catch {
+      this.setState({ reportStatus: 'failed' });
+    }
   };
 
   render() {
     if (this.state.hasError) {
+      const { countdown, reportStatus } = this.state;
+      const isDev = process.env.NODE_ENV === 'development';
+
       return (
         <div className="flex flex-col items-center justify-center min-h-[300px] p-8 text-center">
           <div className="w-14 h-14 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4">
@@ -35,13 +87,30 @@ export default class ErrorBoundary extends Component {
           <p className="text-[13px] text-gs-muted mb-4 max-w-xs">
             An unexpected error occurred. Try refreshing the page or click below to retry.
           </p>
-          <div className="flex gap-2">
-            <button
-              onClick={this.handleRetry}
-              className="gs-btn-gradient px-4 py-2 rounded-lg text-[13px] font-semibold"
-            >
-              Try Again
-            </button>
+          <div className="flex gap-2 mb-3">
+            {countdown > 0 ? (
+              <button
+                disabled
+                className="gs-btn-gradient px-4 py-2 rounded-lg text-[13px] font-semibold opacity-70 cursor-not-allowed"
+              >
+                Retrying in {countdown}s...
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={this.handleRetry}
+                  className="gs-btn-gradient px-4 py-2 rounded-lg text-[13px] font-semibold"
+                >
+                  Try Again
+                </button>
+                <button
+                  onClick={this.handleRetryWithCountdown}
+                  className="gs-btn-secondary px-4 py-2 rounded-lg text-[13px] font-semibold"
+                >
+                  Auto-Retry (5s)
+                </button>
+              </>
+            )}
             <button
               onClick={() => window.location.reload()}
               className="gs-btn-secondary px-4 py-2 rounded-lg text-[13px] font-semibold"
@@ -49,10 +118,38 @@ export default class ErrorBoundary extends Component {
               Refresh Page
             </button>
           </div>
-          {process.env.NODE_ENV === 'development' && this.state.error && (
-            <pre className="mt-4 text-[10px] text-red-400/70 bg-red-500/5 border border-red-500/10 rounded-lg p-3 max-w-md overflow-auto text-left">
-              {this.state.error.toString()}
-            </pre>
+
+          {/* Error report submission */}
+          <button
+            onClick={this.handleReportError}
+            disabled={reportStatus === 'sending' || reportStatus === 'sent'}
+            className="text-[11px] text-gs-dim hover:text-gs-muted transition-colors bg-transparent border-none cursor-pointer mb-3 disabled:cursor-not-allowed"
+          >
+            {reportStatus === 'sending' && 'Submitting report...'}
+            {reportStatus === 'sent' && 'Report saved -- thank you!'}
+            {reportStatus === 'failed' && 'Report failed. Click to retry.'}
+            {!reportStatus && 'Report this error'}
+          </button>
+
+          {/* Development-mode full stack trace */}
+          {isDev && this.state.error && (
+            <div className="mt-2 w-full max-w-lg">
+              <pre className="text-[10px] text-red-400/70 bg-red-500/5 border border-red-500/10 rounded-lg p-3 overflow-auto text-left whitespace-pre-wrap">
+                <span className="font-bold text-red-400">{this.state.error.toString()}</span>
+                {this.state.error.stack && (
+                  <>
+                    {'\n\n--- Stack Trace ---\n'}
+                    {this.state.error.stack}
+                  </>
+                )}
+                {this.state.errorInfo?.componentStack && (
+                  <>
+                    {'\n\n--- Component Stack ---'}
+                    {this.state.errorInfo.componentStack}
+                  </>
+                )}
+              </pre>
+            </div>
           )}
         </div>
       );
