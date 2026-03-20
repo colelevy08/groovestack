@@ -43,33 +43,7 @@ import VerifyRecordModal from './components/modals/VerifyRecordModal';
 import Toast from './components/ui/Toast';
 
 // ── Global font + reset ────────────────────────────────────────────────────────
-const FONT_STYLE = `
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500;700&display=swap');
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #080808; }
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: #0a0a0a; }
-  ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
-  select option { background: #111; }
-
-  /* ── Mobile responsive ─────────────────────────────────────────────── */
-  @media (max-width: 768px) {
-    /* Hide desktop sidebar, show mobile bottom bar */
-    .gs-sidebar-desktop { display: none !important; }
-    .gs-mobile-bar { display: flex !important; }
-    /* Main content: no sidebar offset, tighter padding, bottom padding for tab bar */
-    .gs-main { margin-left: 0 !important; padding: 16px 14px 80px !important; max-width: 100% !important; }
-    /* Record card grid: single column on mobile */
-    .gs-card-grid { grid-template-columns: 1fr !important; }
-    /* Profile stat grids: 2x2 instead of 4 across */
-    .gs-main [style*="repeat(4,1fr)"] { grid-template-columns: repeat(2,1fr) !important; }
-    /* Modals: tighter padding on mobile */
-    .gs-modal { border-radius: 12px !important; }
-    .gs-modal-body { padding: 16px !important; }
-    /* Form grids inside modals: stack on mobile */
-    .gs-modal-body > div[style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }
-  }
-`;
+// Global styles now in src/index.css with Tailwind
 
 export default function App() {
   // ── Auth state ──────────────────────────────────────────────────────────────
@@ -413,16 +387,14 @@ export default function App() {
   // ── Loading screen ────────────────────────────────────────────────────────
   if (authLoading) {
     return (
-      <div style={{ minHeight: '100vh', background: '#080808', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <style>{FONT_STYLE}</style>
-        <div style={{ color: '#555', fontSize: 14, fontFamily: "'DM Sans',sans-serif" }}>Loading...</div>
+      <div className="min-h-screen bg-gs-bg flex items-center justify-center">
+        <div className="text-gs-dim text-sm">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#080808", fontFamily: "'DM Sans',-apple-system,sans-serif", color: "#f5f5f5" }}>
-      <style>{FONT_STYLE}</style>
+    <div className="min-h-screen bg-gs-bg font-sans text-gs-text">
 
       <Sidebar
         nav={nav} setNav={n => {
@@ -581,16 +553,16 @@ export default function App() {
         open={!!verifyingRecord} onClose={() => setVerifyingRecord(null)}
         record={verifyingRecord} onVerified={onRecordVerified}
       />
-      {/* Auth modal — shown when guest tries a restricted action or clicks "Create Profile" */}
+      {/* Auth modal — shown when guest tries a restricted action */}
       {showAuth && (
         <div
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1100, backdropFilter: "blur(6px)" }}
+          className="fixed inset-0 bg-black/85 flex items-center justify-center z-[1100] backdrop-blur-sm animate-fade-in"
           onClick={e => e.target === e.currentTarget && setShowAuth(false)}
         >
-          <div style={{ position: "relative" }}>
+          <div className="relative">
             <button
               onClick={() => setShowAuth(false)}
-              style={{ position: "absolute", top: -40, right: 0, background: "none", border: "none", color: "#666", fontSize: 13, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}
+              className="absolute -top-10 right-0 bg-transparent border-none text-gs-dim text-[13px] cursor-pointer font-sans hover:text-gs-muted transition-colors"
             >
               Continue browsing →
             </button>

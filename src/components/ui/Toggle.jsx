@@ -1,16 +1,14 @@
 // Sliding on/off toggle switch with a text label.
-// Used in AddRecordModal to toggle the "List for sale" option.
 export default function Toggle({ on, onToggle, label }) {
   return (
-    <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+    <label className="flex items-center gap-2.5 cursor-pointer">
       <div
         onClick={onToggle}
-        style={{ width: 36, height: 20, borderRadius: 10, background: on ? "#0ea5e9" : "#2a2a2a", position: "relative", transition: "background 0.2s", cursor: "pointer" }}
+        className={`w-9 h-5 rounded-full relative transition-colors duration-200 cursor-pointer ${on ? 'bg-gs-accent' : 'bg-gs-border-hover'}`}
       >
-        {/* Knob slides right when on=true */}
-        <div style={{ position: "absolute", top: 3, left: on ? 19 : 3, width: 14, height: 14, borderRadius: "50%", background: "#fff", transition: "left 0.2s" }} />
+        <div className={`absolute top-[3px] w-3.5 h-3.5 rounded-full bg-white transition-all duration-200 ${on ? 'left-[19px]' : 'left-[3px]'}`} />
       </div>
-      <span style={{ fontSize: 13, fontWeight: 600, color: "#ccc" }}>{label}</span>
+      <span className="text-[13px] font-semibold text-neutral-300">{label}</span>
     </label>
   );
 }

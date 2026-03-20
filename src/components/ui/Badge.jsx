@@ -1,14 +1,10 @@
-// Small colored pill label — used for record condition grades (M, NM, VG+, etc.) and prices.
-// The color prop sets the text, border, and tinted background simultaneously.
+// Small colored pill — used for condition grades, prices, etc.
 export default function Badge({ label, color }) {
   return (
-    <span style={{
-      fontSize: "10px", fontWeight: 700, letterSpacing: "0.08em",
-      padding: "2px 7px", borderRadius: 4,
-      background: color + "22", color,
-      border: `1px solid ${color}44`,
-      fontFamily: "'DM Mono',monospace",
-    }}>
+    <span
+      className="text-[10px] font-bold tracking-wide px-2 py-0.5 rounded font-mono"
+      style={{ background: color + "22", color, border: `1px solid ${color}44` }}
+    >
       {label}
     </span>
   );
