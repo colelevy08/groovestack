@@ -1190,6 +1190,108 @@ if (pool) {
       CREATE INDEX IF NOT EXISTS idx_collection_shares_token ON collection_shares(share_token);
     `))
     .then(() => console.log('   Extended feature tables: ready'))
+    .then(() => pool.query(`
+      CREATE TABLE IF NOT EXISTS record_views (
+        id SERIAL PRIMARY KEY,
+        record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+        viewer_ip TEXT DEFAULT '',
+        viewer_user TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS idx_record_views_record ON record_views(record_id);
+
+      CREATE TABLE IF NOT EXISTS user_preferences (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT UNIQUE NOT NULL,
+        preferences JSONB DEFAULT '{}',
+        updated_at TIMESTAMPTZ DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS condition_change_history (
+        id SERIAL PRIMARY KEY,
+        record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+        old_condition TEXT NOT NULL,
+        new_condition TEXT NOT NULL,
+        changed_by TEXT NOT NULL,
+        reason TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS idx_condition_change_record ON condition_change_history(record_id);
+
+      CREATE TABLE IF NOT EXISTS authenticity_queue (
+        id SERIAL PRIMARY KEY,
+        record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+        submitted_by TEXT NOT NULL,
+        status TEXT DEFAULT 'pending',
+        reviewer TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT now(),
+        reviewed_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_authenticity_queue_status ON authenticity_queue(status);
+
+      CREATE TABLE IF NOT EXISTS order_cancellations (
+        id SERIAL PRIMARY KEY,
+        purchase_id INTEGER NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
+        cancelled_by TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
+
+      CREATE TABLE IF NOT EXISTS record_provenance (
+        id SERIAL PRIMARY KEY,
+        record_id INTEGER NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+        owner TEXT NOT NULL,
+        acquired_from TEXT DEFAULT '',
+        acquired_at TIMESTAMPTZ DEFAULT now(),
+        price_paid TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS idx_record_provenance_record ON record_provenance(record_id);
+
+      CREATE TABLE IF NOT EXISTS escrow_holds (
+        id SERIAL PRIMARY KEY,
+        buyer TEXT NOT NULL,
+        seller TEXT NOT NULL,
+        record_id INTEGER REFERENCES records(id) ON DELETE SET NULL,
+        amount TEXT NOT NULL,
+        status TEXT DEFAULT 'held',
+        created_at TIMESTAMPTZ DEFAULT now(),
+        released_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_escrow_holds_status ON escrow_holds(status);
+
+      CREATE TABLE IF NOT EXISTS disputes (
+        id SERIAL PRIMARY KEY,
+        purchase_id INTEGER REFERENCES purchases(id) ON DELETE SET NULL,
+        filed_by TEXT NOT NULL,
+        against TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        status TEXT DEFAULT 'open',
+        resolution TEXT DEFAULT '',
+        mediator TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT now(),
+        resolved_at TIMESTAMPTZ
+      );
+      CREATE INDEX IF NOT EXISTS idx_disputes_status ON disputes(status);
+
+      CREATE TABLE IF NOT EXISTS user_verification (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT UNIQUE NOT NULL,
+        level TEXT DEFAULT 'unverified',
+        email_verified BOOLEAN DEFAULT false,
+        id_verified BOOLEAN DEFAULT false,
+        seller_verified BOOLEAN DEFAULT false,
+        updated_at TIMESTAMPTZ DEFAULT now()
+      );
+
+      DO $$ BEGIN
+        ALTER TABLE purchases ADD COLUMN IF NOT EXISTS cancelled BOOLEAN DEFAULT false;
+        ALTER TABLE records ADD COLUMN IF NOT EXISTS catalog_number TEXT DEFAULT '';
+      END $$;
+    `))
+    .then(() => console.log('   Marketplace v2 tables: ready'))
     .catch(err => console.error('   DB init error:', err.message));
 }
 
@@ -3780,6 +3882,1164 @@ app.get('/api/health/detailed', async (_req, res) => {
     checks,
     timestamp: new Date().toISOString(),
   });
+});
+
+// ── In-memory stores for new features ─────────────────────────────────────────
+const recordViewCounts = new Map(); // recordId -> count
+const apiResponseTimes = []; // [{ endpoint, method, durationMs, timestamp }]
+const MAX_RESPONSE_TIME_ENTRIES = 5000;
+const endpointRateLimits = new Map(); // endpoint-specific rate limit overrides
+
+// ── Feature 1: Record view tracking ──────────────────────────────────────────
+
+// POST /api/records/:id/view — track a view on a record
+app.post('/api/records/:id/view', async (req, res) => {
+  const recordId = parseInt(req.params.id);
+  if (!Number.isFinite(recordId) || recordId <= 0) return res.status(400).json({ error: 'Invalid record ID', code: 'INVALID_ID' });
+
+  // Increment in-memory counter
+  recordViewCounts.set(recordId, (recordViewCounts.get(recordId) || 0) + 1);
+
+  if (pool) {
+    try {
+      const record = await pool.query('SELECT id FROM records WHERE id = $1', [recordId]);
+      if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found', code: 'NOT_FOUND' });
+
+      const viewerIp = req.ip || req.connection.remoteAddress || '';
+      const viewerUser = req.headers.authorization ? '' : ''; // anonymous by default
+      // Try to extract username from token if present
+      let viewerUsername = '';
+      try {
+        const auth = req.headers.authorization;
+        if (auth?.startsWith('Bearer ')) {
+          const decoded = jwt.verify(auth.slice(7), JWT_SECRET);
+          viewerUsername = decoded.username || '';
+        }
+      } catch { /* anonymous view */ }
+
+      await pool.query(
+        'INSERT INTO record_views (record_id, viewer_ip, viewer_user) VALUES ($1, $2, $3)',
+        [recordId, viewerIp, viewerUsername]
+      );
+    } catch (err) {
+      console.error('Record view tracking error:', err.message);
+    }
+  }
+
+  res.json({ ok: true, views: recordViewCounts.get(recordId) || 1 });
+});
+
+// GET /api/records/:id/views — get view count for a record
+app.get('/api/records/:id/views', async (req, res) => {
+  const recordId = parseInt(req.params.id);
+  if (!Number.isFinite(recordId) || recordId <= 0) return res.status(400).json({ error: 'Invalid record ID', code: 'INVALID_ID' });
+
+  let totalViews = recordViewCounts.get(recordId) || 0;
+
+  if (pool) {
+    try {
+      const result = await pool.query('SELECT COUNT(*) AS count FROM record_views WHERE record_id = $1', [recordId]);
+      totalViews = Math.max(totalViews, parseInt(result.rows[0].count));
+    } catch (err) {
+      console.error('Record views fetch error:', err.message);
+    }
+  }
+
+  res.json({ recordId, views: totalViews });
+});
+
+// ── Feature 2: User reputation system ────────────────────────────────────────
+
+// GET /api/users/:username/reputation — calculate reputation score
+app.get('/api/users/:username/reputation', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const username = req.params.username.toLowerCase();
+  try {
+    const [salesResult, reviewsResult, disputesResult, purchasesResult] = await Promise.all([
+      pool.query('SELECT COUNT(*) AS count FROM purchases WHERE seller = $1 AND status = \'paid\'', [username]),
+      pool.query('SELECT COUNT(*) AS count, COALESCE(AVG(rating), 0) AS avg_rating FROM records WHERE user_id = $1 AND rating > 0', [username]),
+      pool.query('SELECT COUNT(*) AS count FROM disputes WHERE against = $1', [username]),
+      pool.query('SELECT COUNT(*) AS count FROM purchases WHERE buyer = $1 AND status = \'paid\'', [username]),
+    ]);
+
+    const completedSales = parseInt(salesResult.rows[0].count);
+    const completedPurchases = parseInt(purchasesResult.rows[0].count);
+    const avgRating = parseFloat(reviewsResult.rows[0].avg_rating) || 0;
+    const disputeCount = parseInt(disputesResult.rows[0].count);
+
+    // Score: base 50 + sales*2 + purchases*1 + avgRating*5 - disputes*15, clamped 0-100
+    const rawScore = 50 + (completedSales * 2) + (completedPurchases * 1) + (avgRating * 5) - (disputeCount * 15);
+    const score = Math.max(0, Math.min(100, Math.round(rawScore)));
+
+    let level = 'newcomer';
+    if (score >= 90) level = 'trusted';
+    else if (score >= 70) level = 'established';
+    else if (score >= 50) level = 'active';
+
+    res.json({
+      username,
+      reputationScore: score,
+      level,
+      breakdown: { completedSales, completedPurchases, avgRating: Math.round(avgRating * 100) / 100, disputeCount },
+    });
+  } catch (err) {
+    console.error('Reputation error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 3: Record authenticity verification queue ────────────────────────
+
+// POST /api/records/:id/authenticity — submit record for authenticity verification
+app.post('/api/records/:id/authenticity', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const recordId = parseInt(req.params.id);
+  if (!Number.isFinite(recordId) || recordId <= 0) return res.status(400).json({ error: 'Invalid record ID', code: 'INVALID_ID' });
+  try {
+    const record = await pool.query('SELECT id, user_id FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+
+    // Check if already in queue
+    const existing = await pool.query(
+      'SELECT id, status FROM authenticity_queue WHERE record_id = $1 AND status = \'pending\'',
+      [recordId]
+    );
+    if (existing.rows.length > 0) return res.status(409).json({ error: 'Record is already in the verification queue', queueId: existing.rows[0].id });
+
+    const result = await pool.query(
+      'INSERT INTO authenticity_queue (record_id, submitted_by) VALUES ($1, $2) RETURNING *',
+      [recordId, req.user.username]
+    );
+    res.json({ ok: true, submission: result.rows[0] });
+  } catch (err) {
+    console.error('Authenticity submit error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/authenticity/queue — list pending authenticity verifications
+app.get('/api/authenticity/queue', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const status = req.query.status || 'pending';
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const result = await pool.query(
+      `SELECT aq.*, r.album, r.artist, r.label, r.year FROM authenticity_queue aq
+       LEFT JOIN records r ON r.id = aq.record_id
+       WHERE aq.status = $1 ORDER BY aq.created_at ASC LIMIT $2`,
+      [status, limit]
+    );
+    res.json({ queue: result.rows });
+  } catch (err) {
+    console.error('Authenticity queue error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/authenticity/:id/review — review an authenticity submission
+app.put('/api/authenticity/:id/review', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { status, notes } = req.body;
+  if (!status || !['verified', 'rejected', 'needs_info'].includes(status)) {
+    return res.status(400).json({ error: 'Status must be verified, rejected, or needs_info' });
+  }
+  try {
+    const result = await pool.query(
+      'UPDATE authenticity_queue SET status = $1, reviewer = $2, notes = $3, reviewed_at = now() WHERE id = $4 RETURNING *',
+      [status, req.user.username, notes || '', req.params.id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Submission not found' });
+
+    // If verified, update the record's verified flag
+    if (status === 'verified') {
+      await pool.query('UPDATE records SET verified = true WHERE id = $1', [result.rows[0].record_id]);
+    }
+    res.json({ ok: true, submission: result.rows[0] });
+  } catch (err) {
+    console.error('Authenticity review error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 4: Shipping rate calculator ──────────────────────────────────────
+
+// GET /api/shipping/rate — calculate shipping rate by weight and distance
+app.get('/api/shipping/rate', (req, res) => {
+  const weightOz = parseFloat(req.query.weight) || 8; // default 8oz for a single LP
+  const distanceMiles = parseFloat(req.query.distance) || 500;
+  const method = String(req.query.method || 'standard').toLowerCase();
+
+  // Base rates per method
+  const rates = {
+    standard: { base: 4.00, perOz: 0.15, perMile: 0.002, estimatedDays: '5-7' },
+    priority: { base: 7.50, perOz: 0.20, perMile: 0.003, estimatedDays: '2-3' },
+    express: { base: 15.00, perOz: 0.30, perMile: 0.005, estimatedDays: '1-2' },
+  };
+
+  const rate = rates[method] || rates.standard;
+  const cost = rate.base + (weightOz * rate.perOz) + (distanceMiles * rate.perMile);
+  const roundedCost = Math.round(cost * 100) / 100;
+
+  res.json({
+    weightOz,
+    distanceMiles,
+    method: method in rates ? method : 'standard',
+    cost: roundedCost,
+    estimatedDays: rate.estimatedDays,
+    breakdown: {
+      baseFee: rate.base,
+      weightFee: Math.round(weightOz * rate.perOz * 100) / 100,
+      distanceFee: Math.round(distanceMiles * rate.perMile * 100) / 100,
+    },
+  });
+});
+
+// ── Feature 5: Order cancellation with reason ────────────────────────────────
+
+// POST /api/orders/:id/cancel — cancel an order with a reason
+app.post('/api/orders/:id/cancel', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const purchaseId = parseInt(req.params.id);
+  if (!Number.isFinite(purchaseId) || purchaseId <= 0) return res.status(400).json({ error: 'Invalid order ID', code: 'INVALID_ID' });
+  const { reason } = req.body;
+  if (!reason || typeof reason !== 'string' || reason.trim().length < 5) {
+    return res.status(400).json({ error: 'A cancellation reason of at least 5 characters is required', code: 'MISSING_REASON' });
+  }
+  try {
+    const purchase = await pool.query('SELECT * FROM purchases WHERE id = $1', [purchaseId]);
+    if (purchase.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+    const p = purchase.rows[0];
+    if (p.buyer !== req.user.username && p.seller !== req.user.username) {
+      return res.status(403).json({ error: 'Not your order' });
+    }
+    if (p.cancelled) return res.status(400).json({ error: 'Order is already cancelled' });
+    if (p.status === 'shipped' || p.status === 'delivered') {
+      return res.status(400).json({ error: 'Cannot cancel an order that has been shipped or delivered' });
+    }
+
+    await pool.query('UPDATE purchases SET cancelled = true, status = \'cancelled\' WHERE id = $1', [purchaseId]);
+    await pool.query(
+      'INSERT INTO order_cancellations (purchase_id, cancelled_by, reason) VALUES ($1, $2, $3)',
+      [purchaseId, req.user.username, reason.trim()]
+    );
+
+    // Re-list the record if it was taken off sale
+    if (p.record_id) {
+      await pool.query('UPDATE records SET for_sale = true WHERE id = $1', [p.record_id]);
+    }
+
+    console.log(`[EMAIL_TRIGGER] Order #${purchaseId} cancelled by ${req.user.username}. Notify: ${p.buyer}, ${p.seller}`);
+    res.json({ ok: true, message: 'Order cancelled successfully' });
+  } catch (err) {
+    console.error('Cancel order error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 6: Automated email notification triggers (console placeholder) ───
+
+// POST /api/notifications/email-trigger — trigger an email notification (logs to console)
+app.post('/api/notifications/email-trigger', authMiddleware, async (req, res) => {
+  const { recipientUsername, eventType, subject, body } = req.body;
+  if (!recipientUsername || !eventType) {
+    return res.status(400).json({ error: 'recipientUsername and eventType are required', code: 'MISSING_FIELDS' });
+  }
+
+  const validEvents = ['order_confirmed', 'order_shipped', 'order_cancelled', 'offer_received', 'offer_accepted', 'new_follower', 'price_drop', 'wishlist_match'];
+  if (!validEvents.includes(eventType)) {
+    return res.status(400).json({ error: `Invalid eventType. Must be one of: ${validEvents.join(', ')}`, code: 'INVALID_EVENT' });
+  }
+
+  // Placeholder: log to console instead of sending actual email
+  console.log(`[EMAIL_TRIGGER] Event: ${eventType} | To: ${recipientUsername} | Subject: ${subject || eventType} | Body: ${(body || '').slice(0, 100)}`);
+
+  // Also create an in-app notification if DB is available
+  if (pool) {
+    try {
+      await pool.query(
+        'INSERT INTO notifications (user_id, type, title, body) VALUES ($1, $2, $3, $4)',
+        [recipientUsername, eventType, subject || eventType, body || '']
+      );
+    } catch (err) {
+      console.error('Email trigger notification error:', err.message);
+    }
+  }
+
+  res.json({ ok: true, message: 'Email notification triggered (logged to console)', eventType, recipient: recipientUsername });
+});
+
+// ── Feature 7: Record condition change history ───────────────────────────────
+
+// POST /api/records/:id/condition-change — log a condition change
+app.post('/api/records/:id/condition-change', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const recordId = parseInt(req.params.id);
+  if (!Number.isFinite(recordId) || recordId <= 0) return res.status(400).json({ error: 'Invalid record ID', code: 'INVALID_ID' });
+  const { newCondition, reason } = req.body;
+  if (!newCondition) return res.status(400).json({ error: 'newCondition is required', code: 'MISSING_FIELDS' });
+
+  const validConditions = ['M', 'NM', 'VG+', 'VG', 'G+', 'G', 'F', 'P'];
+  if (!validConditions.includes(newCondition)) {
+    return res.status(400).json({ error: `Condition must be one of: ${validConditions.join(', ')}`, code: 'INVALID_CONDITION' });
+  }
+
+  try {
+    const record = await pool.query('SELECT id, user_id, condition FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+    if (record.rows[0].user_id !== req.user.username) return res.status(403).json({ error: 'Not your record' });
+
+    const oldCondition = record.rows[0].condition;
+    if (oldCondition === newCondition) return res.status(400).json({ error: 'Condition is unchanged' });
+
+    await pool.query(
+      'INSERT INTO condition_change_history (record_id, old_condition, new_condition, changed_by, reason) VALUES ($1, $2, $3, $4, $5)',
+      [recordId, oldCondition, newCondition, req.user.username, reason || '']
+    );
+    await pool.query('UPDATE records SET condition = $1, updated_at = now() WHERE id = $2', [newCondition, recordId]);
+
+    res.json({ ok: true, oldCondition, newCondition });
+  } catch (err) {
+    console.error('Condition change error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/records/:id/condition-history — get condition change history
+app.get('/api/records/:id/condition-history', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const recordId = parseInt(req.params.id);
+  if (!Number.isFinite(recordId) || recordId <= 0) return res.status(400).json({ error: 'Invalid record ID', code: 'INVALID_ID' });
+  try {
+    const result = await pool.query(
+      'SELECT * FROM condition_change_history WHERE record_id = $1 ORDER BY created_at DESC',
+      [recordId]
+    );
+    res.json({ history: result.rows });
+  } catch (err) {
+    console.error('Condition history error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 8: User preferences storage ──────────────────────────────────────
+
+// GET /api/preferences — get user preferences
+app.get('/api/preferences', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query('SELECT preferences FROM user_preferences WHERE user_id = $1', [req.user.username]);
+    res.json({ preferences: result.rows.length > 0 ? result.rows[0].preferences : {} });
+  } catch (err) {
+    console.error('Get preferences error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/preferences — update user preferences
+app.put('/api/preferences', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { preferences } = req.body;
+  if (!preferences || typeof preferences !== 'object') return res.status(400).json({ error: 'preferences object is required', code: 'MISSING_FIELDS' });
+  try {
+    await pool.query(
+      `INSERT INTO user_preferences (user_id, preferences, updated_at)
+       VALUES ($1, $2, now())
+       ON CONFLICT (user_id) DO UPDATE SET preferences = $2, updated_at = now()`,
+      [req.user.username, JSON.stringify(preferences)]
+    );
+    res.json({ ok: true, preferences });
+  } catch (err) {
+    console.error('Update preferences error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 9: Marketplace fee calculator ────────────────────────────────────
+
+// GET /api/marketplace/fee-calculator — calculate marketplace fees for a sale
+app.get('/api/marketplace/fee-calculator', (req, res) => {
+  const price = parseFloat(req.query.price) || 0;
+  if (price <= 0) return res.status(400).json({ error: 'Price must be positive', code: 'INVALID_PRICE' });
+
+  const platformFeePercent = 0.05; // 5%
+  const platformFeeMin = 1.00;
+  const platformFee = Math.max(Math.round(price * platformFeePercent * 100) / 100, platformFeeMin);
+  const paymentProcessingPercent = 0.029; // 2.9% Stripe
+  const paymentProcessingFixed = 0.30;
+  const paymentFee = Math.round((price * paymentProcessingPercent + paymentProcessingFixed) * 100) / 100;
+  const shippingFee = SHIPPING_FEE_CENTS / 100;
+  const totalFees = Math.round((platformFee + paymentFee) * 100) / 100;
+  const sellerPayout = Math.round((price - totalFees) * 100) / 100;
+  const buyerTotal = Math.round((price + shippingFee + platformFee) * 100) / 100;
+
+  res.json({
+    listingPrice: price,
+    platformFee,
+    platformFeePercent: platformFeePercent * 100,
+    paymentProcessingFee: paymentFee,
+    shippingFee,
+    totalFees,
+    sellerPayout,
+    buyerTotal,
+  });
+});
+
+// ── Feature 10: Record availability checker ──────────────────────────────────
+
+// GET /api/records/:id/availability — check if a record is still for sale
+app.get('/api/records/:id/availability', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const recordId = parseInt(req.params.id);
+  if (!Number.isFinite(recordId) || recordId <= 0) return res.status(400).json({ error: 'Invalid record ID', code: 'INVALID_ID' });
+  try {
+    const record = await pool.query('SELECT id, for_sale, price, condition, user_id FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found', code: 'NOT_FOUND' });
+
+    const r = record.rows[0];
+    // Check if there's a pending/paid purchase for this record
+    const pendingPurchase = await pool.query(
+      'SELECT id FROM purchases WHERE record_id = $1 AND status IN (\'pending\', \'paid\') AND cancelled = false',
+      [recordId]
+    );
+    const hasPendingPurchase = pendingPurchase.rows.length > 0;
+
+    res.json({
+      recordId,
+      available: r.for_sale && !hasPendingPurchase,
+      forSale: r.for_sale,
+      hasPendingPurchase,
+      price: r.price,
+      condition: r.condition,
+      seller: r.user_id,
+    });
+  } catch (err) {
+    console.error('Availability check error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 11: Bulk price update ────────────────────────────────────────────
+
+// PUT /api/records/bulk-price — update prices for multiple records at once
+app.put('/api/records/bulk-price', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { updates } = req.body;
+  if (!Array.isArray(updates) || updates.length === 0) return res.status(400).json({ error: 'updates array is required', code: 'MISSING_FIELDS' });
+  if (updates.length > 50) return res.status(400).json({ error: 'Maximum 50 price updates per request', code: 'TOO_MANY' });
+
+  const results = [];
+  let updated = 0;
+  let failed = 0;
+  for (const { id, price } of updates) {
+    try {
+      if (!id || !price || parseFloat(price) < 0) {
+        failed++;
+        results.push({ id, success: false, error: 'Invalid id or price' });
+        continue;
+      }
+      const record = await pool.query('SELECT id, user_id, price FROM records WHERE id = $1', [id]);
+      if (record.rows.length === 0 || record.rows[0].user_id !== req.user.username) {
+        failed++;
+        results.push({ id, success: false, error: 'Record not found or not owned' });
+        continue;
+      }
+
+      // Log old price to price history
+      await pool.query(
+        'INSERT INTO price_history (record_id, price, changed_by) VALUES ($1, $2, $3)',
+        [id, record.rows[0].price, req.user.username]
+      );
+      await pool.query('UPDATE records SET price = $1, updated_at = now() WHERE id = $2', [price, id]);
+      updated++;
+      results.push({ id, success: true, oldPrice: record.rows[0].price, newPrice: price });
+    } catch (err) {
+      failed++;
+      results.push({ id, success: false, error: err.message });
+    }
+  }
+  res.json({ updated, failed, total: updates.length, results });
+});
+
+// ── Feature 12: User dashboard stats ─────────────────────────────────────────
+
+// GET /api/dashboard/stats — comprehensive dashboard stats for current user
+app.get('/api/dashboard/stats', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const username = req.user.username;
+    const [
+      recordsResult, forSaleResult, salesResult, purchasesResult,
+      offersReceivedResult, offersSentResult, followersResult, followingResult,
+      unreadNotifResult, wishlistResult, likesReceivedResult,
+    ] = await Promise.all([
+      pool.query('SELECT COUNT(*) AS count FROM records WHERE user_id = $1', [username]),
+      pool.query('SELECT COUNT(*) AS count, COALESCE(SUM(CAST(COALESCE(NULLIF(price,\'\'), \'0\') AS NUMERIC)), 0) AS total_value FROM records WHERE user_id = $1 AND for_sale = true', [username]),
+      pool.query('SELECT COUNT(*) AS count, COALESCE(SUM(CAST(COALESCE(NULLIF(price,\'\'), \'0\') AS NUMERIC)), 0) AS total_revenue FROM purchases WHERE seller = $1 AND status = \'paid\'', [username]),
+      pool.query('SELECT COUNT(*) AS count, COALESCE(SUM(CAST(COALESCE(NULLIF(price,\'\'), \'0\') AS NUMERIC)), 0) AS total_spent FROM purchases WHERE buyer = $1 AND status = \'paid\'', [username]),
+      pool.query('SELECT COUNT(*) AS count FROM offers WHERE to_user = $1 AND status = \'pending\'', [username]),
+      pool.query('SELECT COUNT(*) AS count FROM offers WHERE from_user = $1 AND status = \'pending\'', [username]),
+      pool.query('SELECT COUNT(*) AS count FROM follows WHERE following = $1', [username]),
+      pool.query('SELECT COUNT(*) AS count FROM follows WHERE follower = $1', [username]),
+      pool.query('SELECT COUNT(*) AS count FROM notifications WHERE user_id = $1 AND read = false', [username]),
+      pool.query('SELECT COUNT(*) AS count FROM wishlist WHERE user_id = $1', [username]),
+      pool.query('SELECT COUNT(*) AS count FROM record_likes rl JOIN records r ON r.id = rl.record_id WHERE r.user_id = $1', [username]),
+    ]);
+
+    res.json({
+      username,
+      collection: {
+        totalRecords: parseInt(recordsResult.rows[0].count),
+        forSale: parseInt(forSaleResult.rows[0].count),
+        totalListingValue: parseFloat(forSaleResult.rows[0].total_value),
+      },
+      trading: {
+        completedSales: parseInt(salesResult.rows[0].count),
+        totalRevenue: parseFloat(salesResult.rows[0].total_revenue),
+        completedPurchases: parseInt(purchasesResult.rows[0].count),
+        totalSpent: parseFloat(purchasesResult.rows[0].total_spent),
+        pendingOffersReceived: parseInt(offersReceivedResult.rows[0].count),
+        pendingOffersSent: parseInt(offersSentResult.rows[0].count),
+      },
+      social: {
+        followers: parseInt(followersResult.rows[0].count),
+        following: parseInt(followingResult.rows[0].count),
+        likesReceived: parseInt(likesReceivedResult.rows[0].count),
+      },
+      unreadNotifications: parseInt(unreadNotifResult.rows[0].count),
+      wishlistItems: parseInt(wishlistResult.rows[0].count),
+    });
+  } catch (err) {
+    console.error('Dashboard stats error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 13: Record comparison ────────────────────────────────────────────
+
+// GET /api/records/compare?ids=1,2 — compare two records side by side
+app.get('/api/records/compare', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const ids = String(req.query.ids || '').split(',').map(id => parseInt(id.trim())).filter(id => Number.isFinite(id) && id > 0);
+  if (ids.length !== 2) return res.status(400).json({ error: 'Exactly 2 record IDs required (comma-separated)', code: 'INVALID_IDS' });
+
+  try {
+    const [r1Result, r2Result] = await Promise.all([
+      pool.query('SELECT * FROM records WHERE id = $1', [ids[0]]),
+      pool.query('SELECT * FROM records WHERE id = $1', [ids[1]]),
+    ]);
+    if (r1Result.rows.length === 0) return res.status(404).json({ error: `Record ${ids[0]} not found` });
+    if (r2Result.rows.length === 0) return res.status(404).json({ error: `Record ${ids[1]} not found` });
+
+    const r1 = r1Result.rows[0];
+    const r2 = r2Result.rows[0];
+
+    // Get like counts
+    const [l1, l2] = await Promise.all([
+      pool.query('SELECT COUNT(*) AS count FROM record_likes WHERE record_id = $1', [ids[0]]),
+      pool.query('SELECT COUNT(*) AS count FROM record_likes WHERE record_id = $1', [ids[1]]),
+    ]);
+
+    const conditionRanking = { M: 8, NM: 7, 'VG+': 6, VG: 5, 'G+': 4, G: 3, F: 2, P: 1 };
+
+    res.json({
+      records: [
+        { ...r1, likes: parseInt(l1.rows[0].count) },
+        { ...r2, likes: parseInt(l2.rows[0].count) },
+      ],
+      comparison: {
+        sameArtist: r1.artist.toLowerCase() === r2.artist.toLowerCase(),
+        sameAlbum: r1.album.toLowerCase() === r2.album.toLowerCase(),
+        priceDifference: Math.round((parseFloat(r1.price || 0) - parseFloat(r2.price || 0)) * 100) / 100,
+        betterCondition: (conditionRanking[r1.condition] || 0) > (conditionRanking[r2.condition] || 0) ? ids[0] : (conditionRanking[r1.condition] || 0) < (conditionRanking[r2.condition] || 0) ? ids[1] : 'equal',
+        betterValue: (parseFloat(r1.price || 0) / (conditionRanking[r1.condition] || 1)) < (parseFloat(r2.price || 0) / (conditionRanking[r2.condition] || 1)) ? ids[0] : ids[1],
+      },
+    });
+  } catch (err) {
+    console.error('Record compare error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 14: Collection merge view ────────────────────────────────────────
+
+// GET /api/collections/merge?users=user1,user2 — view merged collection of two users
+app.get('/api/collections/merge', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const users = String(req.query.users || '').split(',').map(u => u.trim().toLowerCase()).filter(Boolean);
+  if (users.length < 2 || users.length > 5) return res.status(400).json({ error: '2-5 usernames required (comma-separated)', code: 'INVALID_USERS' });
+  const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+  try {
+    const result = await pool.query(
+      `SELECT r.*, COUNT(rl.id) AS like_count FROM records r
+       LEFT JOIN record_likes rl ON rl.record_id = r.id
+       WHERE r.user_id = ANY($1)
+       GROUP BY r.id
+       ORDER BY r.artist ASC, r.album ASC
+       LIMIT $2`,
+      [users, limit]
+    );
+
+    // Group by owner
+    const byUser = {};
+    for (const r of result.rows) {
+      if (!byUser[r.user_id]) byUser[r.user_id] = [];
+      byUser[r.user_id].push(r);
+    }
+
+    // Find shared artists
+    const artistsByUser = {};
+    for (const u of users) {
+      artistsByUser[u] = new Set((byUser[u] || []).map(r => r.artist.toLowerCase()));
+    }
+    const sharedArtists = [...(artistsByUser[users[0]] || [])].filter(a =>
+      users.every(u => (artistsByUser[u] || new Set()).has(a))
+    );
+
+    res.json({
+      users,
+      totalRecords: result.rows.length,
+      records: result.rows,
+      sharedArtists,
+      byUser: Object.fromEntries(users.map(u => [u, (byUser[u] || []).length])),
+    });
+  } catch (err) {
+    console.error('Collection merge error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 15: Seller analytics ─────────────────────────────────────────────
+
+// GET /api/analytics/seller — seller analytics (sales by month, avg price, top buyers)
+app.get('/api/analytics/seller', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const username = req.user.username;
+
+    const [salesByMonth, topBuyers, avgPriceResult, totalResult] = await Promise.all([
+      pool.query(`
+        SELECT TO_CHAR(created_at, 'YYYY-MM') AS month, COUNT(*) AS count,
+               COALESCE(SUM(CAST(COALESCE(NULLIF(price,''), '0') AS NUMERIC)), 0) AS revenue
+        FROM purchases WHERE seller = $1 AND status = 'paid'
+        GROUP BY TO_CHAR(created_at, 'YYYY-MM') ORDER BY month DESC LIMIT 12
+      `, [username]),
+      pool.query(`
+        SELECT buyer, COUNT(*) AS purchase_count,
+               COALESCE(SUM(CAST(COALESCE(NULLIF(price,''), '0') AS NUMERIC)), 0) AS total_spent
+        FROM purchases WHERE seller = $1 AND status = 'paid'
+        GROUP BY buyer ORDER BY purchase_count DESC LIMIT 10
+      `, [username]),
+      pool.query(`
+        SELECT ROUND(AVG(CAST(COALESCE(NULLIF(price,''), '0') AS NUMERIC)), 2) AS avg_price
+        FROM purchases WHERE seller = $1 AND status = 'paid'
+      `, [username]),
+      pool.query('SELECT COUNT(*) AS count FROM purchases WHERE seller = $1 AND status = \'paid\'', [username]),
+    ]);
+
+    res.json({
+      username,
+      totalSales: parseInt(totalResult.rows[0].count),
+      averagePrice: parseFloat(avgPriceResult.rows[0].avg_price) || 0,
+      salesByMonth: salesByMonth.rows.map(r => ({ month: r.month, count: parseInt(r.count), revenue: parseFloat(r.revenue) })),
+      topBuyers: topBuyers.rows.map(r => ({ buyer: r.buyer, purchaseCount: parseInt(r.purchase_count), totalSpent: parseFloat(r.total_spent) })),
+    });
+  } catch (err) {
+    console.error('Seller analytics error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 16: Buyer analytics ──────────────────────────────────────────────
+
+// GET /api/analytics/buyer — buyer analytics (purchases by month, avg spend, top sellers)
+app.get('/api/analytics/buyer', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const username = req.user.username;
+
+    const [purchasesByMonth, topSellers, avgSpendResult, totalResult] = await Promise.all([
+      pool.query(`
+        SELECT TO_CHAR(created_at, 'YYYY-MM') AS month, COUNT(*) AS count,
+               COALESCE(SUM(CAST(COALESCE(NULLIF(price,''), '0') AS NUMERIC)), 0) AS spent
+        FROM purchases WHERE buyer = $1 AND status = 'paid'
+        GROUP BY TO_CHAR(created_at, 'YYYY-MM') ORDER BY month DESC LIMIT 12
+      `, [username]),
+      pool.query(`
+        SELECT seller, COUNT(*) AS purchase_count,
+               COALESCE(SUM(CAST(COALESCE(NULLIF(price,''), '0') AS NUMERIC)), 0) AS total_spent
+        FROM purchases WHERE buyer = $1 AND status = 'paid'
+        GROUP BY seller ORDER BY purchase_count DESC LIMIT 10
+      `, [username]),
+      pool.query(`
+        SELECT ROUND(AVG(CAST(COALESCE(NULLIF(price,''), '0') AS NUMERIC)), 2) AS avg_spend
+        FROM purchases WHERE buyer = $1 AND status = 'paid'
+      `, [username]),
+      pool.query('SELECT COUNT(*) AS count FROM purchases WHERE buyer = $1 AND status = \'paid\'', [username]),
+    ]);
+
+    res.json({
+      username,
+      totalPurchases: parseInt(totalResult.rows[0].count),
+      averageSpend: parseFloat(avgSpendResult.rows[0].avg_spend) || 0,
+      purchasesByMonth: purchasesByMonth.rows.map(r => ({ month: r.month, count: parseInt(r.count), spent: parseFloat(r.spent) })),
+      topSellers: topSellers.rows.map(r => ({ seller: r.seller, purchaseCount: parseInt(r.purchase_count), totalSpent: parseFloat(r.total_spent) })),
+    });
+  } catch (err) {
+    console.error('Buyer analytics error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 17: Record provenance/ownership chain ────────────────────────────
+
+// POST /api/records/:id/provenance — add provenance entry
+app.post('/api/records/:id/provenance', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const recordId = parseInt(req.params.id);
+  if (!Number.isFinite(recordId) || recordId <= 0) return res.status(400).json({ error: 'Invalid record ID', code: 'INVALID_ID' });
+  const { acquiredFrom, pricePaid, notes } = req.body;
+  try {
+    const record = await pool.query('SELECT id, user_id FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+    if (record.rows[0].user_id !== req.user.username) return res.status(403).json({ error: 'Not your record' });
+
+    const result = await pool.query(
+      'INSERT INTO record_provenance (record_id, owner, acquired_from, price_paid, notes) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [recordId, req.user.username, acquiredFrom || '', pricePaid || '', notes || '']
+    );
+    res.json({ ok: true, provenance: result.rows[0] });
+  } catch (err) {
+    console.error('Provenance add error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/records/:id/provenance — get ownership chain
+app.get('/api/records/:id/provenance', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const recordId = parseInt(req.params.id);
+  if (!Number.isFinite(recordId) || recordId <= 0) return res.status(400).json({ error: 'Invalid record ID', code: 'INVALID_ID' });
+  try {
+    const result = await pool.query(
+      'SELECT * FROM record_provenance WHERE record_id = $1 ORDER BY acquired_at ASC',
+      [recordId]
+    );
+    res.json({ recordId, chain: result.rows });
+  } catch (err) {
+    console.error('Provenance fetch error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 18: Escrow system for high-value trades ──────────────────────────
+
+// POST /api/escrow — create an escrow hold
+app.post('/api/escrow', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { seller, recordId, amount } = req.body;
+  if (!seller || !amount) return res.status(400).json({ error: 'seller and amount are required', code: 'MISSING_FIELDS' });
+  if (parseFloat(amount) <= 0) return res.status(400).json({ error: 'Amount must be positive', code: 'INVALID_AMOUNT' });
+  if (seller === req.user.username) return res.status(400).json({ error: 'Cannot create escrow with yourself' });
+  try {
+    const result = await pool.query(
+      'INSERT INTO escrow_holds (buyer, seller, record_id, amount) VALUES ($1, $2, $3, $4) RETURNING *',
+      [req.user.username, seller, recordId || null, amount]
+    );
+    console.log(`[EMAIL_TRIGGER] Escrow created: $${amount} from ${req.user.username} to ${seller} for record #${recordId || 'N/A'}`);
+    res.json({ ok: true, escrow: result.rows[0] });
+  } catch (err) {
+    console.error('Create escrow error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/escrow/:id/release — release escrow funds to seller
+app.put('/api/escrow/:id/release', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const escrow = await pool.query('SELECT * FROM escrow_holds WHERE id = $1', [req.params.id]);
+    if (escrow.rows.length === 0) return res.status(404).json({ error: 'Escrow not found' });
+    const e = escrow.rows[0];
+    if (e.buyer !== req.user.username) return res.status(403).json({ error: 'Only the buyer can release escrow' });
+    if (e.status !== 'held') return res.status(400).json({ error: `Escrow is already ${e.status}` });
+
+    const result = await pool.query(
+      'UPDATE escrow_holds SET status = \'released\', released_at = now() WHERE id = $1 RETURNING *',
+      [req.params.id]
+    );
+    console.log(`[EMAIL_TRIGGER] Escrow #${req.params.id} released: $${e.amount} to ${e.seller}`);
+    res.json({ ok: true, escrow: result.rows[0] });
+  } catch (err) {
+    console.error('Release escrow error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/escrow/:id/refund — refund escrow to buyer
+app.put('/api/escrow/:id/refund', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const escrow = await pool.query('SELECT * FROM escrow_holds WHERE id = $1', [req.params.id]);
+    if (escrow.rows.length === 0) return res.status(404).json({ error: 'Escrow not found' });
+    const e = escrow.rows[0];
+    if (e.seller !== req.user.username && e.buyer !== req.user.username) return res.status(403).json({ error: 'Not a party to this escrow' });
+    if (e.status !== 'held') return res.status(400).json({ error: `Escrow is already ${e.status}` });
+
+    const result = await pool.query(
+      'UPDATE escrow_holds SET status = \'refunded\', released_at = now() WHERE id = $1 RETURNING *',
+      [req.params.id]
+    );
+    console.log(`[EMAIL_TRIGGER] Escrow #${req.params.id} refunded: $${e.amount} to ${e.buyer}`);
+    res.json({ ok: true, escrow: result.rows[0] });
+  } catch (err) {
+    console.error('Refund escrow error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/escrow — list user's escrow holds
+app.get('/api/escrow', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      'SELECT * FROM escrow_holds WHERE buyer = $1 OR seller = $1 ORDER BY created_at DESC',
+      [req.user.username]
+    );
+    res.json({ escrows: result.rows });
+  } catch (err) {
+    console.error('List escrow error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 19: Dispute resolution workflow ──────────────────────────────────
+
+// POST /api/disputes — file a dispute
+app.post('/api/disputes', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { purchaseId, against, reason } = req.body;
+  if (!against || !reason) return res.status(400).json({ error: 'against and reason are required', code: 'MISSING_FIELDS' });
+  if (against === req.user.username) return res.status(400).json({ error: 'Cannot file a dispute against yourself' });
+  if (typeof reason !== 'string' || reason.trim().length < 10) return res.status(400).json({ error: 'Reason must be at least 10 characters' });
+  try {
+    const result = await pool.query(
+      'INSERT INTO disputes (purchase_id, filed_by, against, reason) VALUES ($1, $2, $3, $4) RETURNING *',
+      [purchaseId || null, req.user.username, against, reason.trim()]
+    );
+    console.log(`[EMAIL_TRIGGER] Dispute filed by ${req.user.username} against ${against}: ${reason.slice(0, 50)}`);
+    res.json({ ok: true, dispute: result.rows[0] });
+  } catch (err) {
+    console.error('File dispute error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/disputes — list user's disputes
+app.get('/api/disputes', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      'SELECT * FROM disputes WHERE filed_by = $1 OR against = $1 ORDER BY created_at DESC',
+      [req.user.username]
+    );
+    res.json({ disputes: result.rows });
+  } catch (err) {
+    console.error('List disputes error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/disputes/:id/resolve — resolve a dispute
+app.put('/api/disputes/:id/resolve', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { resolution, status } = req.body;
+  if (!resolution) return res.status(400).json({ error: 'resolution is required' });
+  const resolvedStatus = status || 'resolved';
+  if (!['resolved', 'dismissed', 'escalated'].includes(resolvedStatus)) {
+    return res.status(400).json({ error: 'Status must be resolved, dismissed, or escalated' });
+  }
+  try {
+    const dispute = await pool.query('SELECT * FROM disputes WHERE id = $1', [req.params.id]);
+    if (dispute.rows.length === 0) return res.status(404).json({ error: 'Dispute not found' });
+    if (dispute.rows[0].status !== 'open') return res.status(400).json({ error: 'Dispute is not open' });
+
+    const result = await pool.query(
+      'UPDATE disputes SET status = $1, resolution = $2, mediator = $3, resolved_at = now() WHERE id = $4 RETURNING *',
+      [resolvedStatus, resolution, req.user.username, req.params.id]
+    );
+    console.log(`[EMAIL_TRIGGER] Dispute #${req.params.id} resolved: ${resolvedStatus}. Notify: ${dispute.rows[0].filed_by}, ${dispute.rows[0].against}`);
+    res.json({ ok: true, dispute: result.rows[0] });
+  } catch (err) {
+    console.error('Resolve dispute error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 20: User verification levels ─────────────────────────────────────
+
+// GET /api/users/:username/verification — get user verification level
+app.get('/api/users/:username/verification', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const username = req.params.username.toLowerCase();
+  try {
+    const result = await pool.query('SELECT * FROM user_verification WHERE user_id = $1', [username]);
+    if (result.rows.length === 0) {
+      return res.json({ username, level: 'unverified', emailVerified: false, idVerified: false, sellerVerified: false });
+    }
+    const v = result.rows[0];
+    res.json({ username, level: v.level, emailVerified: v.email_verified, idVerified: v.id_verified, sellerVerified: v.seller_verified, updatedAt: v.updated_at });
+  } catch (err) {
+    console.error('Verification level error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/users/verification — update own verification level
+app.put('/api/users/verification', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { emailVerified, idVerified, sellerVerified } = req.body;
+  try {
+    // Determine level based on verification flags
+    const email = emailVerified || false;
+    const idV = idVerified || false;
+    const seller = sellerVerified || false;
+    let level = 'unverified';
+    if (seller) level = 'seller';
+    else if (idV) level = 'id_verified';
+    else if (email) level = 'email_verified';
+
+    await pool.query(
+      `INSERT INTO user_verification (user_id, level, email_verified, id_verified, seller_verified, updated_at)
+       VALUES ($1, $2, $3, $4, $5, now())
+       ON CONFLICT (user_id) DO UPDATE SET level = $2, email_verified = $3, id_verified = $4, seller_verified = $5, updated_at = now()`,
+      [req.user.username, level, email, idV, seller]
+    );
+    res.json({ ok: true, level, emailVerified: email, idVerified: idV, sellerVerified: seller });
+  } catch (err) {
+    console.error('Update verification error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 21: Per-endpoint rate limiting ───────────────────────────────────
+
+// POST /api/admin/rate-limits — configure rate limit for specific endpoint
+app.post('/api/admin/rate-limits', authMiddleware, (req, res) => {
+  const { endpoint, maxRequests, windowMs } = req.body;
+  if (!endpoint || !maxRequests || !windowMs) return res.status(400).json({ error: 'endpoint, maxRequests, and windowMs are required' });
+  if (maxRequests < 1 || maxRequests > 10000) return res.status(400).json({ error: 'maxRequests must be between 1 and 10000' });
+  if (windowMs < 1000 || windowMs > 3600000) return res.status(400).json({ error: 'windowMs must be between 1000 and 3600000' });
+
+  endpointRateLimits.set(endpoint, { maxRequests, windowMs, updatedBy: req.user.username, updatedAt: new Date().toISOString() });
+  res.json({ ok: true, endpoint, maxRequests, windowMs });
+});
+
+// GET /api/admin/rate-limits — list configured per-endpoint rate limits
+app.get('/api/admin/rate-limits', authMiddleware, (req, res) => {
+  const limits = {};
+  for (const [endpoint, config] of endpointRateLimits) {
+    limits[endpoint] = config;
+  }
+  res.json({ defaultLimit: { maxRequests: 100, windowMs: 60000 }, endpointOverrides: limits, activeBuckets: rateLimitBuckets.size });
+});
+
+// ── Feature 22: API response time tracking ───────────────────────────────────
+
+// Middleware to track response times (adds to in-memory array)
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    apiResponseTimes.push({
+      endpoint: req.path,
+      method: req.method,
+      status: res.statusCode,
+      durationMs: duration,
+      timestamp: new Date().toISOString(),
+    });
+    if (apiResponseTimes.length > MAX_RESPONSE_TIME_ENTRIES) {
+      apiResponseTimes.splice(0, apiResponseTimes.length - MAX_RESPONSE_TIME_ENTRIES);
+    }
+  });
+  next();
+});
+
+// GET /api/admin/response-times — get API response time stats
+app.get('/api/admin/response-times', authMiddleware, (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+  const recentEntries = apiResponseTimes.slice(-limit);
+
+  if (recentEntries.length === 0) return res.json({ totalTracked: 0, entries: [], stats: {} });
+
+  // Aggregate by endpoint
+  const byEndpoint = {};
+  for (const entry of recentEntries) {
+    const key = `${entry.method} ${entry.endpoint}`;
+    if (!byEndpoint[key]) byEndpoint[key] = { count: 0, totalMs: 0, maxMs: 0, minMs: Infinity };
+    byEndpoint[key].count++;
+    byEndpoint[key].totalMs += entry.durationMs;
+    byEndpoint[key].maxMs = Math.max(byEndpoint[key].maxMs, entry.durationMs);
+    byEndpoint[key].minMs = Math.min(byEndpoint[key].minMs, entry.durationMs);
+  }
+
+  const stats = Object.fromEntries(
+    Object.entries(byEndpoint).map(([key, val]) => [key, {
+      count: val.count,
+      avgMs: Math.round(val.totalMs / val.count),
+      maxMs: val.maxMs,
+      minMs: val.minMs === Infinity ? 0 : val.minMs,
+    }])
+  );
+
+  const allDurations = recentEntries.map(e => e.durationMs);
+  res.json({
+    totalTracked: apiResponseTimes.length,
+    recentCount: recentEntries.length,
+    globalAvgMs: Math.round(allDurations.reduce((a, b) => a + b, 0) / allDurations.length),
+    globalMaxMs: Math.max(...allDurations),
+    stats,
+    recent: recentEntries.slice(-20),
+  });
+});
+
+// ── Feature 23: Database connection pool stats ───────────────────────────────
+
+// GET /api/admin/db-pool-stats — get database connection pool statistics
+app.get('/api/admin/db-pool-stats', authMiddleware, (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+
+  res.json({
+    totalConnections: pool.totalCount,
+    idleConnections: pool.idleCount,
+    waitingClients: pool.waitingCount,
+    maxConnections: pool.options?.max || 10,
+    connectionString: pool.options?.connectionString ? '***configured***' : 'not_set',
+    ssl: pool.options?.ssl ? true : false,
+  });
+});
+
+// ── Feature 24: Automated price suggestions ──────────────────────────────────
+
+// GET /api/records/:id/price-suggestion — suggest price based on condition + market data
+app.get('/api/records/:id/price-suggestion', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const recordId = parseInt(req.params.id);
+  if (!Number.isFinite(recordId) || recordId <= 0) return res.status(400).json({ error: 'Invalid record ID', code: 'INVALID_ID' });
+  try {
+    const record = await pool.query('SELECT * FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+
+    const r = record.rows[0];
+    // Condition multipliers (relative to NM base)
+    const conditionMultipliers = { M: 1.2, NM: 1.0, 'VG+': 0.8, VG: 0.6, 'G+': 0.4, G: 0.3, F: 0.15, P: 0.05 };
+    const condMultiplier = conditionMultipliers[r.condition] || 0.5;
+
+    // Find similar records on the marketplace
+    const similar = await pool.query(
+      `SELECT price, condition FROM records
+       WHERE LOWER(artist) = LOWER($1) AND for_sale = true AND id != $2
+         AND price IS NOT NULL AND price != '' AND price != '0'
+       LIMIT 20`,
+      [r.artist, recordId]
+    );
+
+    let marketAvg = null;
+    let suggestion = null;
+    const dataPoints = [];
+
+    if (similar.rows.length > 0) {
+      const prices = similar.rows.map(s => {
+        const p = parseFloat(s.price) || 0;
+        const mult = conditionMultipliers[s.condition] || 0.5;
+        // Normalize price to NM equivalent
+        return mult > 0 ? p / mult : p;
+      }).filter(p => p > 0);
+
+      if (prices.length > 0) {
+        marketAvg = Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100;
+        suggestion = Math.round(marketAvg * condMultiplier * 100) / 100;
+        suggestion = Math.max(suggestion, 5); // minimum $5
+      }
+
+      for (const s of similar.rows) {
+        dataPoints.push({ price: parseFloat(s.price), condition: s.condition });
+      }
+    }
+
+    // Fallback: use condition-based default if no market data
+    if (!suggestion) {
+      const defaultPrices = { M: 40, NM: 30, 'VG+': 22, VG: 15, 'G+': 10, G: 7, F: 3, P: 1 };
+      suggestion = defaultPrices[r.condition] || 15;
+    }
+
+    res.json({
+      recordId,
+      artist: r.artist,
+      album: r.album,
+      condition: r.condition,
+      currentPrice: r.price,
+      suggestedPrice: suggestion,
+      marketAvgNormalized: marketAvg,
+      conditionMultiplier: condMultiplier,
+      dataPointCount: dataPoints.length,
+      dataPoints,
+      method: similar.rows.length > 0 ? 'market_comparison' : 'condition_default',
+    });
+  } catch (err) {
+    console.error('Price suggestion error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature 25: Record catalog number generation ─────────────────────────────
+
+// POST /api/records/:id/catalog-number — generate a unique catalog number for a record
+app.post('/api/records/:id/catalog-number', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const recordId = parseInt(req.params.id);
+  if (!Number.isFinite(recordId) || recordId <= 0) return res.status(400).json({ error: 'Invalid record ID', code: 'INVALID_ID' });
+  try {
+    const record = await pool.query('SELECT * FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+    if (record.rows[0].user_id !== req.user.username) return res.status(403).json({ error: 'Not your record' });
+
+    // Check if already has a catalog number
+    if (record.rows[0].catalog_number && record.rows[0].catalog_number.trim() !== '') {
+      return res.json({ recordId, catalogNumber: record.rows[0].catalog_number, alreadyExists: true });
+    }
+
+    // Generate catalog number: GS-{ARTIST_INITIALS}-{YEAR}-{ID_PADDED}
+    const r = record.rows[0];
+    const artistInitials = r.artist
+      .split(/\s+/)
+      .map(w => (w[0] || '').toUpperCase())
+      .join('')
+      .slice(0, 4) || 'XX';
+    const year = String(r.year || '0000').slice(0, 4).padStart(4, '0');
+    const paddedId = String(recordId).padStart(6, '0');
+    const catalogNumber = `GS-${artistInitials}-${year}-${paddedId}`;
+
+    await pool.query('UPDATE records SET catalog_number = $1 WHERE id = $2', [catalogNumber, recordId]);
+    res.json({ recordId, catalogNumber, alreadyExists: false });
+  } catch (err) {
+    console.error('Catalog number error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/records/by-catalog/:catalogNumber — look up record by catalog number
+app.get('/api/records/by-catalog/:catalogNumber', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const catalogNumber = String(req.params.catalogNumber || '').trim();
+  if (!catalogNumber) return res.status(400).json({ error: 'Catalog number is required' });
+  try {
+    const result = await pool.query('SELECT * FROM records WHERE catalog_number = $1', [catalogNumber]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Record not found for this catalog number' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Catalog lookup error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 const PORT = process.env.PORT || process.env.SERVER_PORT || 3001;

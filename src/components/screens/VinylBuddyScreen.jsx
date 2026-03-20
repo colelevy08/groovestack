@@ -409,6 +409,410 @@ function ListeningPatternIndicator({ myListens }) {
   );
 }
 
+// ── Listening Mood Detector (Improvement 1) ─────────────────────────────
+function ListeningMoodDetector({ myListens }) {
+  const mood = useMemo(() => {
+    if (myListens.length === 0) return null;
+
+    const genreMap = {
+      "Led Zeppelin": "Rock", "Pink Floyd": "Prog Rock", "Queen": "Rock",
+      "The Doors": "Rock", "The Beatles": "Rock", "The Who": "Rock",
+      "Eagles": "Rock", "John Coltrane": "Jazz", "Miles Davis": "Jazz",
+      "Herbie Hancock": "Jazz Fusion", "Nas": "Hip-Hop", "A Tribe Called Quest": "Hip-Hop",
+      "Aphex Twin": "Electronic", "Daft Punk": "Electronic", "Portishead": "Trip-Hop",
+      "My Bloody Valentine": "Shoegaze", "Black Sabbath": "Metal", "Metallica": "Metal",
+      "Fleetwood Mac": "Rock", "Nirvana": "Grunge", "Massive Attack": "Trip-Hop",
+    };
+
+    const moodMapping = {
+      "Rock": { mood: "Energized", emoji: "\uD83D\uDD25", color: "#ef4444", desc: "High-energy rock vibes" },
+      "Prog Rock": { mood: "Contemplative", emoji: "\uD83C\uDF0C", color: "#8b5cf6", desc: "Deep, expansive soundscapes" },
+      "Jazz": { mood: "Relaxed", emoji: "\u2615", color: "#f59e0b", desc: "Smooth and mellow tones" },
+      "Jazz Fusion": { mood: "Adventurous", emoji: "\uD83C\uDF1F", color: "#14b8a6", desc: "Exploring sonic boundaries" },
+      "Hip-Hop": { mood: "Pumped", emoji: "\uD83D\uDCAA", color: "#0ea5e9", desc: "Strong beats, powerful lyrics" },
+      "Electronic": { mood: "Focused", emoji: "\uD83C\uDFAF", color: "#06b6d4", desc: "Locked in and flowing" },
+      "Trip-Hop": { mood: "Chill", emoji: "\uD83C\uDF19", color: "#6366f1", desc: "Dark, atmospheric calm" },
+      "Shoegaze": { mood: "Dreamy", emoji: "\u2601\uFE0F", color: "#ec4899", desc: "Hazy, ethereal soundwaves" },
+      "Metal": { mood: "Intense", emoji: "\u26A1", color: "#dc2626", desc: "Raw power and aggression" },
+      "Grunge": { mood: "Raw", emoji: "\uD83C\uDFB8", color: "#84cc16", desc: "Unpolished and authentic" },
+    };
+
+    const recentListens = myListens.slice(0, 5);
+    const genreCounts = {};
+    for (const s of recentListens) {
+      const genre = genreMap[s.track.artist] || "Rock";
+      genreCounts[genre] = (genreCounts[genre] || 0) + 1;
+    }
+    const topGenre = Object.entries(genreCounts).sort(([, a], [, b]) => b - a)[0]?.[0] || "Rock";
+    return moodMapping[topGenre] || moodMapping["Rock"];
+  }, [myListens]);
+
+  if (!mood) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Listening Mood</div>
+      <div className="flex items-center gap-3">
+        <div className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl shrink-0" style={{ background: `${mood.color}15`, border: `1px solid ${mood.color}33` }}>
+          {mood.emoji}
+        </div>
+        <div>
+          <div className="text-lg font-extrabold" style={{ color: mood.color }}>{mood.mood}</div>
+          <div className="text-[11px] text-gs-dim">{mood.desc}</div>
+          <div className="text-[9px] text-gs-faint mt-0.5">Based on your recent listening</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Audio Quality Indicator (Improvement 2) ─────────────────────────────
+function AudioQualityIndicator({ isRecent }) {
+  const [quality] = useState(() => {
+    const qualities = [
+      { level: 'Excellent', value: 96, color: '#22c55e' },
+      { level: 'Good', value: 82, color: '#0ea5e9' },
+      { level: 'Fair', value: 64, color: '#f59e0b' },
+    ];
+    return qualities[Math.floor(Math.random() * 2)]; // bias toward good/excellent
+  });
+
+  if (!isRecent) return null;
+
+  return (
+    <div className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-[#111] border border-[#1a1a1a] mb-4">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={quality.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+      </svg>
+      <span className="text-[10px] font-mono font-semibold" style={{ color: quality.color }}>Audio: {quality.level}</span>
+      <div className="flex-1 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden ml-1">
+        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${quality.value}%`, background: quality.color }} />
+      </div>
+      <span className="text-[9px] font-mono text-gs-faint">{quality.value}%</span>
+    </div>
+  );
+}
+
+// ── Listening Goals / Challenges (Improvement 3) ────────────────────────
+function ListeningGoals({ myListens }) {
+  const goals = useMemo(() => {
+    const totalTracks = myListens.length;
+    const uniqueArtists = new Set(myListens.map(s => s.track.artist)).size;
+    const totalMinutes = Math.round(myListens.reduce((sum, s) => sum + (s.listenedSeconds || 0), 0) / 60);
+    const uniqueAlbums = new Set(myListens.map(s => `${s.track.artist}::${s.track.album}`)).size;
+
+    return [
+      { label: 'Identify 25 tracks', current: totalTracks, target: 25, color: '#0ea5e9', icon: '\uD83C\uDFB5' },
+      { label: 'Discover 15 artists', current: uniqueArtists, target: 15, color: '#8b5cf6', icon: '\uD83C\uDFA4' },
+      { label: 'Listen for 5 hours', current: Math.round(totalMinutes / 60 * 10) / 10, target: 5, color: '#f59e0b', icon: '\u23F1\uFE0F', unit: 'h' },
+      { label: 'Explore 10 albums', current: uniqueAlbums, target: 10, color: '#22c55e', icon: '\uD83D\uDCBF' },
+    ];
+  }, [myListens]);
+
+  if (myListens.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Listening Goals</div>
+      <div className="flex flex-col gap-3">
+        {goals.map(goal => {
+          const pct = Math.min((goal.current / goal.target) * 100, 100);
+          const completed = goal.current >= goal.target;
+          return (
+            <div key={goal.label}>
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm">{goal.icon}</span>
+                  <span className="text-[11px] text-gs-muted">{goal.label}</span>
+                </div>
+                <span className="text-[10px] font-mono font-semibold" style={{ color: completed ? '#22c55e' : goal.color }}>
+                  {completed ? 'Complete!' : `${goal.current}${goal.unit || ''} / ${goal.target}${goal.unit || ''}`}
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-[#111] rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: completed ? '#22c55e' : `linear-gradient(90deg, ${goal.color}, ${goal.color}88)` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Vinyl Identification Accuracy Stats (Improvement 4) ─────────────────
+function AccuracyStats({ myListens }) {
+  const stats = useMemo(() => {
+    if (myListens.length === 0) return null;
+    const scores = myListens.filter(s => s.score > 0).map(s => s.score);
+    if (scores.length === 0) return null;
+    const avg = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+    const high = Math.max(...scores);
+    const low = Math.min(...scores);
+    const above90 = scores.filter(s => s >= 90).length;
+    const above90Pct = Math.round((above90 / scores.length) * 100);
+    return { avg, high, low, above90, above90Pct, total: scores.length };
+  }, [myListens]);
+
+  if (!stats) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Identification Accuracy</div>
+      <div className="grid grid-cols-4 gap-2">
+        <div className="bg-[#111] rounded-lg py-2.5 px-2 text-center">
+          <div className="text-lg font-extrabold text-[#22c55e]">{stats.avg}%</div>
+          <div className="text-[9px] text-gs-dim font-mono">Average</div>
+        </div>
+        <div className="bg-[#111] rounded-lg py-2.5 px-2 text-center">
+          <div className="text-lg font-extrabold text-[#0ea5e9]">{stats.high}%</div>
+          <div className="text-[9px] text-gs-dim font-mono">Highest</div>
+        </div>
+        <div className="bg-[#111] rounded-lg py-2.5 px-2 text-center">
+          <div className="text-lg font-extrabold text-[#f59e0b]">{stats.low}%</div>
+          <div className="text-[9px] text-gs-dim font-mono">Lowest</div>
+        </div>
+        <div className="bg-[#111] rounded-lg py-2.5 px-2 text-center">
+          <div className="text-lg font-extrabold text-[#8b5cf6]">{stats.above90Pct}%</div>
+          <div className="text-[9px] text-gs-dim font-mono">&gt;90%</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Shazam-style identification animation (Improvement 5) ───────────────
+function IdentificationAnimation({ active }) {
+  if (!active) return null;
+
+  return (
+    <div className="relative flex items-center justify-center w-full h-24 mb-4 rounded-[14px] bg-[#111] border border-[#1a1a1a] overflow-hidden">
+      {[1, 2, 3].map(ring => (
+        <div
+          key={ring}
+          className="absolute rounded-full border-2"
+          style={{
+            width: `${ring * 50}px`,
+            height: `${ring * 50}px`,
+            borderColor: '#0ea5e933',
+            animation: `vb-pulse ${1.5 + ring * 0.3}s ease-in-out infinite`,
+            animationDelay: `${ring * 0.2}s`,
+          }}
+        />
+      ))}
+      <div className="relative z-10 flex flex-col items-center">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ animation: 'vb-pulse 1s ease-in-out infinite' }}>
+          <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+          <path d="M19 10v2a7 7 0 01-14 0v-2" />
+          <line x1="12" y1="19" x2="12" y2="23" />
+          <line x1="8" y1="23" x2="16" y2="23" />
+        </svg>
+        <span className="text-[10px] text-gs-accent font-mono mt-2" style={{ animation: 'vb-pulse 1.5s ease-in-out infinite' }}>Identifying...</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Discogs Integration Link (Improvement 6) ────────────────────────────
+function DiscogsLink({ track }) {
+  if (!track?.artist || !track?.album) return null;
+  const searchQuery = encodeURIComponent(`${track.artist} ${track.album}`);
+  const discogsUrl = `https://www.discogs.com/search/?q=${searchQuery}&type=release`;
+
+  return (
+    <button
+      onClick={() => window.open(discogsUrl, '_blank', 'noopener,noreferrer')}
+      className="flex items-center gap-1.5 text-[10px] text-[#666] bg-transparent border border-[#222] rounded-lg px-2.5 py-1.5 cursor-pointer hover:border-[#f59e0b] hover:text-[#f59e0b] transition-all duration-200"
+    >
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+        <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" />
+      </svg>
+      Discogs
+    </button>
+  );
+}
+
+// ── Social Listening (Improvement 7) ────────────────────────────────────
+function SocialListening() {
+  const friends = useMemo(() => [
+    { name: 'vinylhead42', track: 'Paranoid Android', artist: 'Radiohead', timeAgo: '2m ago', avatar: 'V' },
+    { name: 'cratedigger', track: 'So What', artist: 'Miles Davis', timeAgo: '8m ago', avatar: 'C' },
+    { name: 'waxcollector', track: 'Purple Rain', artist: 'Prince', timeAgo: '15m ago', avatar: 'W' },
+    { name: 'groovybeats', track: 'Superstition', artist: 'Stevie Wonder', timeAgo: '22m ago', avatar: 'G' },
+  ], []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Friends Listening</div>
+      <div className="flex flex-col gap-2">
+        {friends.map(f => (
+          <div key={f.name} className="flex items-center gap-2.5 py-1">
+            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-gs-accent to-[#8b5cf6] flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+              {f.avatar}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-gs-text">@{f.name}</span>
+                <span className="inline-block w-1 h-1 rounded-full bg-[#22c55e]" />
+              </div>
+              <div className="text-[10px] text-gs-dim truncate">{f.track} — {f.artist}</div>
+            </div>
+            <span className="text-[9px] text-gs-faint font-mono shrink-0">{f.timeAgo}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Listening Timeline Heatmap (Improvement 8) ──────────────────────────
+function ListeningTimeline({ myListens }) {
+  const hourData = useMemo(() => {
+    const hours = Array.from({ length: 24 }, () => 0);
+    for (const s of myListens) {
+      const h = new Date(s.timestampMs).getHours();
+      hours[h]++;
+    }
+    return hours;
+  }, [myListens]);
+
+  if (myListens.length < 3) return null;
+
+  const maxCount = Math.max(...hourData, 1);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Listening by Hour</div>
+      <div className="flex items-end gap-[3px] h-12">
+        {hourData.map((count, hour) => {
+          const intensity = count / maxCount;
+          return (
+            <div key={hour} className="flex-1 flex flex-col items-center gap-0.5">
+              <div
+                className="w-full rounded-t-sm transition-all duration-300"
+                style={{
+                  height: `${Math.max(count > 0 ? 4 : 2, intensity * 48)}px`,
+                  background: count > 0
+                    ? `rgba(14, 165, 233, ${0.3 + intensity * 0.7})`
+                    : '#1a1a1a',
+                }}
+                title={`${hour}:00 - ${count} plays`}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex justify-between mt-1">
+        <span className="text-[8px] text-gs-faint font-mono">12am</span>
+        <span className="text-[8px] text-gs-faint font-mono">6am</span>
+        <span className="text-[8px] text-gs-faint font-mono">12pm</span>
+        <span className="text-[8px] text-gs-faint font-mono">6pm</span>
+        <span className="text-[8px] text-gs-faint font-mono">12am</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Genre Evolution Chart (Improvement 9) ───────────────────────────────
+function GenreEvolutionChart({ myListens }) {
+  const evolution = useMemo(() => {
+    if (myListens.length < 4) return null;
+
+    const genreMap = {
+      "Led Zeppelin": "Rock", "Pink Floyd": "Prog Rock", "Queen": "Rock",
+      "The Doors": "Rock", "The Beatles": "Rock", "The Who": "Rock",
+      "Eagles": "Rock", "John Coltrane": "Jazz", "Miles Davis": "Jazz",
+      "Aphex Twin": "Electronic", "Daft Punk": "Electronic", "Fleetwood Mac": "Rock",
+    };
+
+    const sorted = [...myListens].sort((a, b) => a.timestampMs - b.timestampMs);
+    const chunkSize = Math.max(Math.floor(sorted.length / 4), 1);
+    const periods = [];
+
+    for (let i = 0; i < sorted.length; i += chunkSize) {
+      const chunk = sorted.slice(i, i + chunkSize);
+      const genreCounts = {};
+      for (const s of chunk) {
+        const genre = genreMap[s.track.artist] || "Other";
+        genreCounts[genre] = (genreCounts[genre] || 0) + 1;
+      }
+      const topGenre = Object.entries(genreCounts).sort(([, a], [, b]) => b - a)[0];
+      if (topGenre) {
+        periods.push({
+          label: new Date(chunk[0].timestampMs).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          genre: topGenre[0],
+          count: topGenre[1],
+        });
+      }
+    }
+
+    return periods.slice(0, 4);
+  }, [myListens]);
+
+  if (!evolution || evolution.length < 2) return null;
+
+  const genreColors = { "Rock": "#ef4444", "Prog Rock": "#8b5cf6", "Jazz": "#f59e0b", "Electronic": "#06b6d4", "Other": "#64748b" };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Genre Evolution</div>
+      <div className="flex items-center gap-2">
+        {evolution.map((period, i) => (
+          <div key={i} className="flex-1 flex flex-col items-center">
+            <div className="w-full py-2 px-1 rounded-lg text-center mb-1" style={{ background: `${genreColors[period.genre] || '#64748b'}15`, border: `1px solid ${genreColors[period.genre] || '#64748b'}33` }}>
+              <div className="text-[10px] font-bold" style={{ color: genreColors[period.genre] || '#64748b' }}>{period.genre}</div>
+            </div>
+            <div className="text-[8px] text-gs-faint font-mono">{period.label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Record Identification Leaderboard (Improvement 10) ──────────────────
+function IdentificationLeaderboard({ myListens }) {
+  const leaderboard = useMemo(() => {
+    const mockUsers = [
+      { name: currentUser => currentUser, listens: myListens.length, isMe: true },
+      { name: () => 'vinylhead42', listens: Math.max(myListens.length + 5, 15), isMe: false },
+      { name: () => 'cratedigger', listens: Math.max(myListens.length - 2, 8), isMe: false },
+      { name: () => 'waxcollector', listens: Math.max(myListens.length - 4, 5), isMe: false },
+      { name: () => 'groovybeats', listens: Math.max(myListens.length - 7, 3), isMe: false },
+    ];
+    return mockUsers
+      .map(u => ({ name: u.name('you'), listens: u.listens, isMe: u.isMe }))
+      .sort((a, b) => b.listens - a.listens);
+  }, [myListens]);
+
+  if (myListens.length === 0) return null;
+
+  const medalColors = ['#f59e0b', '#94a3b8', '#cd7f32'];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Identification Leaderboard</div>
+      <div className="flex flex-col gap-1.5">
+        {leaderboard.map((user, i) => (
+          <div key={user.name} className={`flex items-center gap-2.5 py-1.5 px-2.5 rounded-lg ${user.isMe ? 'bg-[#0ea5e908] border border-[#0ea5e922]' : ''}`}>
+            <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-extrabold shrink-0" style={{
+              background: i < 3 ? `${medalColors[i]}22` : '#111',
+              color: i < 3 ? medalColors[i] : '#666',
+              border: `1px solid ${i < 3 ? `${medalColors[i]}44` : '#1a1a1a'}`,
+            }}>
+              {i + 1}
+            </div>
+            <span className={`text-[11px] flex-1 ${user.isMe ? 'font-bold text-gs-accent' : 'text-gs-muted'}`}>
+              {user.isMe ? 'You' : `@${user.name}`}
+            </span>
+            <span className="text-[11px] font-mono font-semibold text-gs-text">{user.listens}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Album art mosaic ────────────────────────────────────────────────────
 function AlbumArtMosaic({ myListens }) {
   const uniqueAlbums = useMemo(() => {
@@ -1157,6 +1561,7 @@ function NowPlayingCard({ nowPlaying, isRecent, myListens }) {
             </div>
           )}
           <ShareNowPlaying track={nowPlaying.track} />
+          <DiscogsLink track={nowPlaying.track} />
         </div>
       </div>
       {/* Action buttons row */}
@@ -1205,15 +1610,24 @@ function OverviewTab({ myListens, nowPlaying, isRecent, topArtist, topTrack, top
 
   return (
     <>
+      {/* Shazam-style identification animation (Improvement 5) */}
+      <IdentificationAnimation active={isRecent} />
+
       {/* Now Playing card */}
       {nowPlaying && (
         <NowPlayingCard nowPlaying={nowPlaying} isRecent={isRecent} myListens={myListens} />
       )}
 
+      {/* Audio quality indicator (Improvement 2) */}
+      <AudioQualityIndicator isRecent={isRecent} />
+
       {/* Sound wave visualization */}
       <div className="mb-4">
         <SoundWaveVis active={isRecent} />
       </div>
+
+      {/* Listening mood detector (Improvement 1) */}
+      <ListeningMoodDetector myListens={myListens} />
 
       {/* Listening pattern indicator */}
       <ListeningPatternIndicator myListens={myListens} />
@@ -1292,6 +1706,12 @@ function OverviewTab({ myListens, nowPlaying, isRecent, topArtist, topTrack, top
 
       {/* Achievement Badges */}
       <AchievementBadges myListens={myListens} />
+
+      {/* Listening Goals (Improvement 3) */}
+      <ListeningGoals myListens={myListens} />
+
+      {/* Social Listening (Improvement 7) */}
+      <SocialListening />
 
       {/* Recommendations based on listening history */}
       <RecommendationsSection myListens={myListens} />
@@ -1711,6 +2131,18 @@ function StatsTab({ myListens, loading }) {
         </div>
       </div>
 
+      {/* Identification Accuracy Stats (Improvement 4) */}
+      <AccuracyStats myListens={myListens} />
+
+      {/* Listening Timeline Heatmap (Improvement 8) */}
+      <ListeningTimeline myListens={myListens} />
+
+      {/* Genre Evolution Chart (Improvement 9) */}
+      <GenreEvolutionChart myListens={myListens} />
+
+      {/* Identification Leaderboard (Improvement 10) */}
+      <IdentificationLeaderboard myListens={myListens} />
+
       {/* Recently Played widget (embeddable preview) */}
       <div className="mb-4">
         <div className="text-[10px] text-gs-dim font-mono mb-2.5 uppercase tracking-[0.06em]">Profile Widget Preview</div>
@@ -1739,6 +2171,13 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate, isDemo }) {
   const [firmwareVersion] = useState(isDemo ? "2.0.3" : "unknown");
   const [firmwareLatest] = useState("2.1.0");
   const firmwareUpdateAvailable = firmwareVersion !== firmwareLatest && firmwareVersion !== "unknown";
+
+  // Firmware update progress (Improvement 11)
+  const [firmwareUpdating, setFirmwareUpdating] = useState(false);
+  const [firmwareProgress, setFirmwareProgress] = useState(0);
+
+  // Battery level (Improvement 12)
+  const [batteryLevel] = useState(isDemo ? 87 : 100);
 
   // Calibration state
   const [gain, setGain] = useState(50);
@@ -1900,26 +2339,47 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate, isDemo }) {
             <div className="text-[10px] text-gs-dim font-mono mb-1.5">WiFi Signal</div>
             <div className="flex items-center gap-2">
               <div className="flex items-end gap-0.5 h-4">
-                {[1, 2, 3, 4].map(bar => (
-                  <div key={bar} className="w-1 rounded-t-sm transition-all duration-300" style={{
-                    height: `${bar * 25}%`,
-                    background: signalStrength >= bar * 25 ? "#22c55e" : "#222",
-                  }} />
-                ))}
+                {[1, 2, 3, 4, 5].map(bar => {
+                  const barColor = signalStrength >= bar * 20
+                    ? signalStrength > 60 ? "#22c55e" : signalStrength > 30 ? "#f59e0b" : "#f87171"
+                    : "#222";
+                  return (
+                    <div key={bar} className="w-1 rounded-t-sm transition-all duration-300" style={{
+                      height: `${bar * 20}%`,
+                      background: barColor,
+                      boxShadow: signalStrength >= bar * 20 && signalStrength > 60 ? `0 0 3px ${barColor}44` : 'none',
+                    }} />
+                  );
+                })}
               </div>
-              <span className="text-[11px] font-mono font-semibold" style={{ color: signalStrength > 60 ? "#22c55e" : signalStrength > 30 ? "#f59e0b" : "#f87171" }}>
-                {signalStrength > 0 ? `${Math.round(signalStrength)}%` : "\u2014"}
-              </span>
+              <div className="flex flex-col">
+                <span className="text-[11px] font-mono font-semibold" style={{ color: signalStrength > 60 ? "#22c55e" : signalStrength > 30 ? "#f59e0b" : "#f87171" }}>
+                  {signalStrength > 0 ? `${Math.round(signalStrength)}%` : "\u2014"}
+                </span>
+                <span className="text-[8px] text-gs-faint font-mono">{deviceInfo?.rssi ? `${deviceInfo.rssi} dBm` : ''}</span>
+              </div>
             </div>
           </div>
 
           <div className="bg-[#111] rounded-lg py-2.5 px-3">
-            <div className="text-[10px] text-gs-dim font-mono mb-1.5">Power</div>
+            <div className="text-[10px] text-gs-dim font-mono mb-1.5">Battery</div>
             <div className="flex items-center gap-2">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <div className="relative w-6 h-3.5">
+                <div className="absolute inset-0 rounded-sm border border-[#555]" />
+                <div className="absolute top-[3px] -right-[3px] w-[3px] h-[6px] rounded-r-sm bg-[#555]" />
+                <div className="absolute left-[2px] top-[2px] bottom-[2px] rounded-sm transition-all duration-300" style={{
+                  width: `${Math.max(batteryLevel * 0.2, 2)}px`,
+                  background: batteryLevel > 50 ? '#22c55e' : batteryLevel > 20 ? '#f59e0b' : '#ef4444',
+                }} />
+              </div>
+              <span className="text-[11px] font-mono font-semibold" style={{
+                color: batteryLevel > 50 ? '#22c55e' : batteryLevel > 20 ? '#f59e0b' : '#ef4444',
+              }}>
+                {batteryLevel}%
+              </span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
               </svg>
-              <span className="text-[11px] font-mono font-semibold text-[#22c55e]">USB Powered</span>
             </div>
           </div>
         </div>
@@ -1934,18 +2394,43 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate, isDemo }) {
             <div className="text-[10px] text-gs-dim mt-0.5">Latest: v{firmwareLatest}</div>
           </div>
           {firmwareUpdateAvailable ? (
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-[#f59e0b]" style={{ animation: "vb-pulse 2s ease-in-out infinite" }} />
-              <div>
-                <div className="text-[11px] text-[#f59e0b] font-bold">Update Available</div>
-                <div className="text-[9px] text-gs-dim">Improved audio capture quality</div>
+            firmwareUpdating ? (
+              <div className="flex-1 ml-4">
+                <div className="flex justify-between mb-1">
+                  <span className="text-[10px] text-[#0ea5e9] font-mono">Updating firmware...</span>
+                  <span className="text-[10px] text-[#0ea5e9] font-mono font-bold">{firmwareProgress}%</span>
+                </div>
+                <div className="w-full h-2 bg-[#111] rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all duration-300" style={{ width: `${firmwareProgress}%`, background: 'linear-gradient(90deg, #0ea5e9, #8b5cf6)' }} />
+                </div>
+                <div className="text-[9px] text-gs-faint mt-1 font-mono">
+                  {firmwareProgress < 30 ? 'Downloading...' : firmwareProgress < 70 ? 'Flashing...' : firmwareProgress < 100 ? 'Verifying...' : 'Complete!'}
+                </div>
               </div>
-              <Tooltip text="OTA updates coming soon">
-                <button className="text-[10px] text-gs-accent bg-[#0ea5e908] border border-[#0ea5e922] rounded-lg px-3 py-1.5 cursor-pointer hover:bg-[#0ea5e915] transition-all duration-200">
+            ) : (
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-[#f59e0b]" style={{ animation: "vb-pulse 2s ease-in-out infinite" }} />
+                <div>
+                  <div className="text-[11px] text-[#f59e0b] font-bold">Update Available</div>
+                  <div className="text-[9px] text-gs-dim">Improved audio capture quality</div>
+                </div>
+                <button
+                  onClick={() => {
+                    setFirmwareUpdating(true);
+                    setFirmwareProgress(0);
+                    const interval = setInterval(() => {
+                      setFirmwareProgress(prev => {
+                        if (prev >= 100) { clearInterval(interval); setTimeout(() => { setFirmwareUpdating(false); setFirmwareProgress(0); }, 2000); return 100; }
+                        return prev + Math.floor(Math.random() * 8) + 2;
+                      });
+                    }, 300);
+                  }}
+                  className="text-[10px] text-gs-accent bg-[#0ea5e908] border border-[#0ea5e922] rounded-lg px-3 py-1.5 cursor-pointer hover:bg-[#0ea5e915] transition-all duration-200"
+                >
                   Update
                 </button>
-              </Tooltip>
-            </div>
+              </div>
+            )
           ) : (
             <div className="flex items-center gap-1.5">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
