@@ -51,6 +51,24 @@ const FONT_STYLE = `
   ::-webkit-scrollbar-track { background: #0a0a0a; }
   ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
   select option { background: #111; }
+
+  /* ── Mobile responsive ─────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    /* Hide desktop sidebar, show mobile bottom bar */
+    .gs-sidebar-desktop { display: none !important; }
+    .gs-mobile-bar { display: flex !important; }
+    /* Main content: no sidebar offset, tighter padding, bottom padding for tab bar */
+    .gs-main { margin-left: 0 !important; padding: 16px 14px 80px !important; max-width: 100% !important; }
+    /* Record card grid: single column on mobile */
+    .gs-card-grid { grid-template-columns: 1fr !important; }
+    /* Profile stat grids: 2x2 instead of 4 across */
+    .gs-main [style*="repeat(4,1fr)"] { grid-template-columns: repeat(2,1fr) !important; }
+    /* Modals: tighter padding on mobile */
+    .gs-modal { border-radius: 12px !important; }
+    .gs-modal-body { padding: 16px !important; }
+    /* Form grids inside modals: stack on mobile */
+    .gs-modal-body > div[style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }
+  }
 `;
 
 export default function App() {
@@ -422,7 +440,7 @@ export default function App() {
         onSignIn={() => setShowAuth(true)}
       />
 
-      <main style={{ marginLeft: 196, padding: "26px 40px", maxWidth: 1400 }}>
+      <main className="gs-main" style={{ marginLeft: 196, padding: "26px 40px", maxWidth: 1400 }}>
         {/* Full user profile page — overrides nav routing when viewing another user's full profile */}
         {viewingUserProfile ? (
           <UserProfilePage
