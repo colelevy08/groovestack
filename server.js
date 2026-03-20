@@ -5,6 +5,10 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Pool } = require('pg');
 
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? require('stripe')(process.env.STRIPE_SECRET_KEY)
+  : null;
+
 const app = express();
 
 // CORS — allow localhost in dev and the production frontend URL
@@ -635,6 +639,72 @@ app.get('/api/auth/check-username/:username', async (req, res) => {
   } catch {
     res.json({ available: true });
   }
+});
+
+// ── Stripe Checkout — platform fee: 5% or $1 min ────────────────────────────
+
+const SHIPPING_FEE_CENTS = 600; // $6.00
+
+function calcPlatformFee(priceCents) {
+  return Math.max(Math.round(priceCents * 0.05), 100); // 5% or $1.00 min
+}
+
+// POST /api/checkout/create-session — creates a Stripe Checkout Session
+app.post('/api/checkout/create-session', authMiddleware, async (req, res) => {
+  if (!stripe) return res.status(503).json({ error: 'Stripe not configured' });
+  const { recordId, album, artist, price, condition, seller } = req.body;
+  if (!recordId || !price) return res.status(400).json({ error: 'Missing record info' });
+
+  const priceCents = Math.round(parseFloat(price) * 100);
+  const feeCents = calcPlatformFee(priceCents);
+  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: { name: `${album} — ${artist}`, description: `${condition} condition vinyl record` },
+            unit_amount: priceCents,
+          },
+          quantity: 1,
+        },
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: { name: 'Shipping & handling' },
+            unit_amount: SHIPPING_FEE_CENTS,
+          },
+          quantity: 1,
+        },
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: { name: 'Groovestack transaction fee (5%)' },
+            unit_amount: feeCents,
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url: `${frontendUrl}?checkout=success&record=${recordId}`,
+      cancel_url: `${frontendUrl}?checkout=cancel`,
+      metadata: { recordId: String(recordId), seller: seller || '', buyer: req.user.username, platformFeeCents: String(feeCents) },
+    });
+    res.json({ url: session.url, sessionId: session.id });
+  } catch (err) {
+    console.error('Stripe session error:', err.message);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
+
+// GET /api/checkout/fee?price=XX — preview fee for UI
+app.get('/api/checkout/fee', (req, res) => {
+  const priceCents = Math.round(parseFloat(req.query.price || 0) * 100);
+  const feeCents = calcPlatformFee(priceCents);
+  res.json({ fee: (feeCents / 100).toFixed(2), feeCents, shipping: (SHIPPING_FEE_CENTS / 100).toFixed(2) });
 });
 
 app.get('/api/health', (_req, res) => res.json({

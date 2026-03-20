@@ -170,6 +170,29 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Handle Stripe checkout return ──────────────────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkoutStatus = params.get('checkout');
+    const recordId = params.get('record');
+    if (checkoutStatus === 'success' && recordId) {
+      const id = parseInt(recordId, 10) || recordId;
+      const r = records.find(r => r.id === id);
+      if (r) {
+        setPurchases(ps => [{ id: Date.now(), recordId: r.id, album: r.album, artist: r.artist, price: r.price, condition: r.condition, accent: r.accent, format: r.format, year: r.year, seller: r.user, time: new Date().toLocaleString() }, ...ps]);
+        updateRecord(id, r => ({ ...r, forSale: false, price: null }));
+        setCart(c => c.filter(item => item.recordId !== id));
+        showToast("Purchase complete! 🎉");
+      }
+      // Clean URL
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (checkoutStatus === 'cancel') {
+      showToast("Checkout cancelled");
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Persistence ──────────────────────────────────────────────────────────────
   useEffect(() => { localStorage.setItem('gs_currentUser', currentUser); }, [currentUser]);
   useEffect(() => { try { localStorage.setItem('gs_records', JSON.stringify(records)); } catch {} }, [records]);

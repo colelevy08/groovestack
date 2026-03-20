@@ -140,15 +140,37 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
                   </div>
                 );
               })}
-              {/* Cart total */}
-              {cart.filter(item => records.find(r => r.id === item.recordId)?.forSale).length > 0 && (
-                <div className="bg-[#111] rounded-[10px] py-3.5 px-4 flex justify-between items-center mt-1">
-                  <span className="text-[13px] text-gs-muted">Cart Total ({cart.filter(item => records.find(r => r.id === item.recordId)?.forSale).length} items)</span>
-                  <span className="text-xl font-extrabold text-gs-text">
-                    ${cart.filter(item => records.find(r => r.id === item.recordId)?.forSale).reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0).toFixed(2)}
-                  </span>
-                </div>
-              )}
+              {/* Cart total with fees */}
+              {(() => {
+                const activeItems = cart.filter(item => records.find(r => r.id === item.recordId)?.forSale);
+                if (activeItems.length === 0) return null;
+                const subtotal = activeItems.reduce((sum, item) => sum + (parseFloat(item.price) || 0), 0);
+                const fees = activeItems.reduce((sum, item) => {
+                  const cents = Math.round(parseFloat(item.price) * 100);
+                  return sum + Math.max(Math.round(cents * 0.05), 100);
+                }, 0) / 100;
+                const shipping = activeItems.length * 6;
+                return (
+                  <div className="bg-[#111] rounded-[10px] py-3.5 px-4 mt-1 space-y-1.5">
+                    <div className="flex justify-between text-[13px] text-gs-muted">
+                      <span>Subtotal ({activeItems.length} items)</span>
+                      <span>${subtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-[13px] text-gs-muted">
+                      <span>Transaction fees (5%)</span>
+                      <span>${fees.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-[13px] text-gs-muted">
+                      <span>Shipping</span>
+                      <span>${shipping.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center border-t border-[#222] pt-2.5 mt-1">
+                      <span className="text-[13px] font-semibold text-gs-muted">Total</span>
+                      <span className="text-xl font-extrabold text-gs-text">${(subtotal + fees + shipping).toFixed(2)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
       )}
     </div>
