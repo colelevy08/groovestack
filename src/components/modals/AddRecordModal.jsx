@@ -256,24 +256,61 @@ function SpinnerDots() {
   );
 }
 
+// Draft autosave key for localStorage (#20)
+const DRAFT_KEY = 'gs_addRecordDraft';
+
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveDraft(data) {
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(data)); } catch { /* quota exceeded */ }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch {}
+}
+
 // Main form modal — collects all record metadata, then gates submission on AI vinyl verification
 export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
-  const [album, setAlbum] = useState('');
-  const [artist, setArtist] = useState('');
-  const [year, setYear] = useState('');
-  const [format, setFormat] = useState('LP');
-  const [label, setLabel] = useState('');
-  const [condition, setCondition] = useState('VG+');
-  const [rating, setRating] = useState(4);
-  const [review, setReview] = useState('');
-  const [forSale, setForSale] = useState(false);
-  const [price, setPrice] = useState('');
-  const [tags, setTags] = useState([]);
+  // Load draft from localStorage on first render (#20)
+  const draft = useRef(loadDraft());
+  const [album, setAlbum] = useState(draft.current?.album || '');
+  const [artist, setArtist] = useState(draft.current?.artist || '');
+  const [year, setYear] = useState(draft.current?.year || '');
+  const [format, setFormat] = useState(draft.current?.format || 'LP');
+  const [label, setLabel] = useState(draft.current?.label || '');
+  const [condition, setCondition] = useState(draft.current?.condition || 'VG+');
+  const [rating, setRating] = useState(draft.current?.rating || 4);
+  const [review, setReview] = useState(draft.current?.review || '');
+  const [forSale, setForSale] = useState(draft.current?.forSale || false);
+  const [price, setPrice] = useState(draft.current?.price || '');
+  const [tags, setTags] = useState(draft.current?.tags || []);
   const [err, setErr] = useState('');
   const [verified, setVerified] = useState(false);
   const [showVerify, setShowVerify] = useState(false);
   const [priceSuggestion, setPriceSuggestion] = useState(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
+
+  // Autosave draft to localStorage on field changes (#20)
+  const autosaveTimer = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    // Debounce autosave to avoid excessive writes
+    clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => {
+      if (album.trim() || artist.trim() || review.trim()) {
+        saveDraft({ album, artist, year, format, label, condition, rating, review, forSale, price, tags });
+      }
+    }, 500);
+    return () => clearTimeout(autosaveTimer.current);
+  }, [open, album, artist, year, format, label, condition, rating, review, forSale, price, tags]);
+
+  // Restore draft indicator
+  const hasDraft = draft.current && (draft.current.album || draft.current.artist);
 
   // Resets all fields back to defaults — called on cancel and after a successful add
   const reset = () => {
@@ -282,6 +319,8 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
     setForSale(false); setPrice(''); setTags([]); setErr('');
     setVerified(false); setShowVerify(false);
     setPriceSuggestion(null); setLoadingPrice(false);
+    clearDraft();
+    draft.current = null;
   };
 
   // Fetch Discogs market price suggestion
@@ -313,12 +352,19 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
       rating, review: review.trim(), likes: 0, comments: [], accent, tags,
       timeAgo: 'just now', liked: false, saved: false, verified,
     });
-    reset();
+    reset();       // also clears the draft
     onClose();
   };
 
   return (
     <Modal open={open} onClose={() => { if ((album.trim() || artist.trim()) && !window.confirm('Discard this record? Your entries will be lost.')) return; reset(); onClose(); }} title="Add Record to Collection" width="520px">
+      {/* Draft restored banner (#20) */}
+      {hasDraft && album && (
+        <div className="bg-sky-500/10 border border-sky-500/20 rounded-lg px-3.5 py-2 text-sky-400 text-[12px] mb-3 flex items-center justify-between">
+          <span>Draft restored from your last session.</span>
+          <button onClick={reset} className="text-sky-300 bg-transparent border-none cursor-pointer text-[11px] font-semibold hover:text-sky-200 ml-2">Clear</button>
+        </div>
+      )}
       {err && (
         <div className="bg-red-500/15 border border-red-500/25 rounded-lg px-3.5 py-2.5 text-red-400 text-[13px] mb-4">
           {err}

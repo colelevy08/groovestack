@@ -217,7 +217,7 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
             {post.mediaType === "video" ? (
               <video src={post.mediaUrl} controls className="w-full block" />
             ) : (
-              <img src={post.mediaUrl} alt="" className="w-full block max-h-[360px] sm:max-h-[480px] object-cover" onError={e => e.target.style.display = "none"} />
+              <img src={post.mediaUrl} alt={`Photo shared by ${post.user}${post.caption ? ': ' + post.caption.slice(0, 80) : ''}`} className="w-full block max-h-[360px] sm:max-h-[480px] object-cover" onError={e => e.target.style.display = "none"} />
             )}
           </div>
         )}

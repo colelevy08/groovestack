@@ -38,7 +38,7 @@ export default function Sidebar({
   return (
     <>
       {/* ── Desktop sidebar ──────────────────────────────────── */}
-      <div className={`gs-sidebar-desktop fixed left-0 top-0 bottom-0 ${sidebarW} bg-gs-sidebar border-r border-gs-border-subtle flex flex-col py-5 z-[100]`}>
+      <nav aria-label="Main navigation" className={`gs-sidebar-desktop fixed left-0 top-0 bottom-0 ${sidebarW} bg-gs-sidebar border-r border-gs-border-subtle flex flex-col py-5 z-[100]`}>
         {/* Logo + notifications + collapse toggle */}
         <div className={`${collapsed ? 'px-2' : 'px-4'} pb-4 flex items-center justify-between`}>
           <div className="flex items-center gap-2.5 min-w-0">
@@ -267,10 +267,10 @@ export default function Sidebar({
             </>
           )}
         </div>
-      </div>
+      </nav>
 
       {/* ── Mobile bottom tab bar ────────────────────────────── */}
-      <div className="gs-mobile-bar hidden fixed bottom-0 left-0 right-0 bg-gs-sidebar border-t border-gs-border-subtle justify-around items-center z-[100] px-1 pt-1.5 pb-[env(safe-area-inset-bottom,6px)]">
+      <nav aria-label="Mobile navigation" className="gs-mobile-bar hidden fixed bottom-0 left-0 right-0 bg-gs-sidebar border-t border-gs-border-subtle justify-around items-center z-[100] px-1 pt-1.5 pb-[env(safe-area-inset-bottom,6px)]">
         {MOBILE_TABS.map(({ id, label, path }) => {
           const active = nav === id;
           const guestLocked = isGuest && id !== "Marketplace";
@@ -305,7 +305,7 @@ export default function Sidebar({
             </button>
           );
         })}
-      </div>
+      </nav>
     </>
   );
 }

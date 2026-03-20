@@ -1,6 +1,7 @@
 // Generic centered overlay modal — used by all modal components.
 // Clicking the backdrop triggers onClose. Header is sticky for scrolling content.
-// Supports entrance/exit animations, keyboard trap, backdrop blur, and size variants.
+// Supports entrance/exit animations, keyboard trap, backdrop blur, size variants,
+// and focus management (returns focus to trigger element on close).
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 const SIZE_MAP = {
@@ -14,13 +15,16 @@ export default function Modal({ open, onClose, title, children, width = "480px",
   const [visible, setVisible] = useState(false);
   const [closing, setClosing] = useState(false);
   const modalRef = useRef(null);
+  const triggerRef = useRef(null); // Stores the element that had focus before modal opened (#5)
 
   // Resolve width: named size takes priority over raw width
   const resolvedWidth = size ? (SIZE_MAP[size] || SIZE_MAP.md) : width;
 
-  // Open animation
+  // Open animation + capture trigger element for focus return
   useEffect(() => {
     if (open) {
+      // Store the currently focused element so we can return focus on close
+      triggerRef.current = document.activeElement;
       setClosing(false);
       // Small delay so the DOM is mounted before animation class applies
       requestAnimationFrame(() => setVisible(true));
@@ -29,13 +33,17 @@ export default function Modal({ open, onClose, title, children, width = "480px",
     }
   }, [open]);
 
-  // Close with exit animation
+  // Close with exit animation + return focus to trigger (#5)
   const handleClose = useCallback(() => {
     setClosing(true);
     setTimeout(() => {
       setClosing(false);
       setVisible(false);
       onClose();
+      // Return focus to the element that triggered the modal
+      if (triggerRef.current && typeof triggerRef.current.focus === 'function') {
+        try { triggerRef.current.focus(); } catch { /* element may be unmounted */ }
+      }
     }, 150); // matches modal-out duration
   }, [onClose]);
 
@@ -102,13 +110,14 @@ export default function Modal({ open, onClose, title, children, width = "480px",
         ref={modalRef}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={title ? 'modal-title' : undefined}
+        aria-label={title || undefined}
         className={`gs-modal-box ${closing ? 'animate-modal-out' : 'animate-modal-in'}`}
         style={{ width: resolvedWidth }}
       >
-        {/* Sticky header */}
+        {/* Sticky header with proper heading hierarchy (#3) */}
         <div className="flex justify-between items-center px-5 py-4 border-b border-gs-border sticky top-0 bg-gs-surface z-[1]">
-          <span className="text-[15px] font-bold tracking-tight text-gs-text">{title}</span>
+          <h2 id="modal-title" className="text-[15px] font-bold tracking-tight text-gs-text m-0">{title}</h2>
           <button
             onClick={handleClose}
             aria-label="Close"

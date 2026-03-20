@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import VinylDisc from './VinylDisc';
 import { getCoverUrl } from '../../utils/coverArt';
 
-export default function AlbumArt({ album, artist, size = 72, accent = "#555", expandable }) {
+export default function AlbumArt({ album, artist, size = 72, accent = "#555", expandable, priority = false }) {
   const [url, setUrl] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
@@ -13,8 +13,14 @@ export default function AlbumArt({ album, artist, size = 72, accent = "#555", ex
   const [expanded, setExpanded] = useState(false);
   const containerRef = useRef(null);
 
-  // Lazy loading with IntersectionObserver
+  // Lazy loading with IntersectionObserver (skip for priority/above-the-fold images #16)
   useEffect(() => {
+    // Priority images (above-the-fold) skip lazy loading and load immediately
+    if (priority) {
+      setInView(true);
+      return;
+    }
+
     const el = containerRef.current;
     if (!el) return;
 
@@ -36,7 +42,7 @@ export default function AlbumArt({ album, artist, size = 72, accent = "#555", ex
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [priority]);
 
   useEffect(() => {
     if (!inView) return;
@@ -48,11 +54,21 @@ export default function AlbumArt({ album, artist, size = 72, accent = "#555", ex
 
     if (album || artist) {
       getCoverUrl(album, artist).then(result => {
-        if (!cancelled) setUrl(result);
+        if (!cancelled) {
+          setUrl(result);
+          // Preload priority images into browser cache (#16)
+          if (priority && result) {
+            const link = document.createElement('link');
+            link.rel = 'preload';
+            link.as = 'image';
+            link.href = result;
+            document.head.appendChild(link);
+          }
+        }
       });
     }
     return () => { cancelled = true; };
-  }, [album, artist, inView]);
+  }, [album, artist, inView, priority]);
 
   const handleClick = useCallback(() => {
     if (expandable && url && loaded) {

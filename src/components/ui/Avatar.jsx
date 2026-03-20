@@ -89,7 +89,7 @@ export default function Avatar({ username, size, onClick, src, sizeVariant, onli
   if (imgSrc) {
     return (
       <div {...wrapperProps}>
-        <img src={imgSrc} alt={username} className="w-full h-full object-cover block rounded-full" />
+        <img src={imgSrc} alt={`${p.displayName || username}'s avatar`} className="w-full h-full object-cover block rounded-full" />
         {StatusDot}
         {HoverCard}
       </div>

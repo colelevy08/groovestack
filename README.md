@@ -1,70 +1,139 @@
-# Getting Started with Create React App
+# GrooveStack 🎵
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+## Overview
 
-## Available Scripts
+GrooveStack is a social marketplace platform for vinyl record collectors. Buy, sell, trade, and discover vinyl records with a community of collectors. Features include AI-powered record verification, real-time track identification via the Vinyl Buddy hardware device, and Stripe-powered secure payments.
 
-In the project directory, you can run:
+## Features
 
-### `npm start`
+- **Marketplace** — Browse, buy, and sell vinyl records with Discogs-powered pricing
+- **Social Feed** — Share posts, tag records, like, comment, and bookmark
+- **Collection Management** — Track your vinyl collection with detailed metadata
+- **Trading System** — Send cash, trade, or combo offers with fair trade indicators
+- **Vinyl Buddy** — ESP32 hardware device that identifies playing records via audio fingerprinting
+- **AI Verification** — Claude Opus vision AI verifies physical vinyl authenticity
+- **Direct Messaging** — Real-time conversations with read receipts
+- **Stripe Payments** — Secure checkout with 5% platform fee
+- **User Profiles** — Custom avatars, headers, bios, wishlists, and shipping addresses
+- **Activity Tracking** — Orders, offers, cart, and purchase history with order tracking
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## Tech Stack
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+- **Frontend:** React 19, Tailwind CSS 3.4, CRA
+- **Backend:** Express.js 5, PostgreSQL, JWT auth
+- **Payments:** Stripe Checkout Sessions
+- **AI:** Claude Opus 4.6 (record verification), AudD API (audio fingerprinting)
+- **APIs:** Discogs (pricing), iTunes (album art), Wikipedia (artist info)
+- **Deployment:** Vercel (frontend), Railway (backend + PostgreSQL)
+- **Hardware:** ESP32-DevKitC V4 (Vinyl Buddy)
 
-### `npm test`
+## Getting Started
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+### Prerequisites
 
-### `npm run build`
+- Node.js 18+
+- PostgreSQL (or Railway for hosted DB)
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+### Installation
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+```bash
+git clone https://github.com/colelevy08/groovestack.git
+cd groovestack
+npm install
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+### Environment Variables
 
-### `npm run eject`
+Copy `.env.example` and fill in your values:
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+```bash
+cp .env.example .env
+```
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+Required variables:
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `JWT_SECRET` | Secret for JWT token signing |
+| `STRIPE_SECRET_KEY` | Stripe secret key for payments |
+| `ANTHROPIC_API_KEY` | For Claude AI verification |
+| `AUDD_API_TOKEN` | For Vinyl Buddy audio identification |
+| `REACT_APP_API_URL` | Backend URL (leave empty for local dev) |
+| `FRONTEND_URL` | Frontend URL (set in Railway for CORS) |
+| `DISCOGS_TOKEN` | For price lookups (optional, increases rate limit) |
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+### Development
 
-## Learn More
+```bash
+# Start both frontend and backend concurrently
+npm run dev
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+# Frontend only (port 3000)
+npm start
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+# Backend only (port 3001)
+npm run server
+```
 
-### Code Splitting
+### Production Build
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+```bash
+npm run build
+```
 
-### Analyzing the Bundle Size
+## Architecture
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+### Frontend (React SPA)
 
-### Making a Progressive Web App
+- All state managed in `App.js` root component
+- Screen-based navigation (not client-side routing)
+- Modal system for overlays (record details, offers, messaging)
+- `localStorage` for client-side persistence
+- Responsive layout: desktop sidebar + mobile bottom nav
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+### Backend (Express API)
 
-### Advanced Configuration
+- JWT authentication with bcrypt password hashing
+- PostgreSQL with auto-migration on startup
+- In-memory rate limiting (100 req/min general, 10 req/min auth)
+- Stripe webhook handling for payment confirmation
+- Graceful shutdown with connection draining
+- In-memory fallback when no database is configured
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+### Database Tables
 
-### Deployment
+`profiles`, `records`, `posts`, `comments`, `offers`, `purchases`, `messages`, `follows`, `vinyl_sessions`, `vinyl_devices`, `record_likes`, `record_saves`, `post_likes`, `post_bookmarks`
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+### API Endpoints
 
-### `npm run build` fails to minify
+| Group | Endpoints |
+|---|---|
+| **Auth** | signup, login, forgot-password, profile management |
+| **Records** | CRUD, search, like, save |
+| **Social** | posts, comments, feed |
+| **Marketplace** | offers, checkout, orders |
+| **Vinyl Buddy** | identify, heartbeat, history, devices |
+| **Utility** | prices/lookup, health, stats |
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+## Vinyl Buddy Hardware
+
+The Vinyl Buddy is an ESP32-based device that:
+
+1. Captures 2-second audio samples from your turntable
+2. Sends PCM audio to the GrooveStack server
+3. Server converts to WAV and queries AudD for fingerprint matching
+4. Identified tracks appear in your listening history
+
+**Setup:** Enter the 12-character device code displayed on the OLED screen in the Vinyl Buddy tab.
+
+## Deployment
+
+- **Frontend:** Push to `main` auto-deploys to Vercel
+- **Backend:** Push to `main` auto-deploys to Railway
+- Set environment variables in both platforms
+- Railway auto-injects `DATABASE_URL` and `PORT`
+
+## License
+
+MIT

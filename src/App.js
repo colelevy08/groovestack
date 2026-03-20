@@ -3,7 +3,7 @@
 // State is persisted to localStorage on every change (currentUser, records, following, profile, dmMessages).
 // Navigation state (nav) determines which screen is rendered in the main content area.
 // Auth is managed via Supabase — shows AuthScreen when no session is active.
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import INITIAL_RECORDS from './constants/records';
 import INITIAL_POSTS from './constants/posts';
 import INITIAL_LISTENING from './constants/listening';
@@ -14,17 +14,6 @@ import { API_BASE } from './utils/api';
 // Layout
 import Sidebar from './components/Sidebar';
 import AuthScreen from './components/AuthScreen';
-
-// Screens
-import SocialFeedScreen from './components/screens/SocialFeedScreen';
-import ExploreScreen from './components/screens/ExploreScreen';
-import CollectionScreen from './components/screens/CollectionScreen';
-import ProfileScreen from './components/screens/ProfileScreen';
-import FollowingScreen from './components/screens/FollowingScreen';
-import TransactionsScreen from './components/screens/TransactionsScreen';
-import VinylBuddyScreen from './components/screens/VinylBuddyScreen';
-import SettingsScreen from './components/screens/SettingsScreen';
-import UserProfilePage from './components/screens/UserProfilePage';
 
 // Modals
 import AddRecordModal from './components/modals/AddRecordModal';
@@ -42,6 +31,39 @@ import VerifyRecordModal from './components/modals/VerifyRecordModal';
 
 // UI
 import Toast from './components/ui/Toast';
+import SkipToContent from './components/ui/SkipToContent';
+import OfflineBanner from './components/ui/OfflineBanner';
+import ErrorBoundary from './components/ui/ErrorBoundary';
+import DataSyncIndicator from './components/ui/DataSyncIndicator';
+import ScrollToTop from './components/ui/ScrollToTop';
+import Confetti from './components/ui/Confetti';
+import OnboardingTour from './components/ui/OnboardingTour';
+import SwipeHandler from './components/ui/SwipeHandler';
+
+// Lazy-loaded screens (Performance #14)
+const SocialFeedScreen = lazy(() => import('./components/screens/SocialFeedScreen'));
+const ExploreScreen = lazy(() => import('./components/screens/ExploreScreen'));
+const CollectionScreen = lazy(() => import('./components/screens/CollectionScreen'));
+const ProfileScreen = lazy(() => import('./components/screens/ProfileScreen'));
+const FollowingScreen = lazy(() => import('./components/screens/FollowingScreen'));
+const TransactionsScreen = lazy(() => import('./components/screens/TransactionsScreen'));
+const VinylBuddyScreen = lazy(() => import('./components/screens/VinylBuddyScreen'));
+const SettingsScreen = lazy(() => import('./components/screens/SettingsScreen'));
+const UserProfilePage = lazy(() => import('./components/screens/UserProfilePage'));
+
+// Lazy loading fallback spinner
+function ScreenLoader() {
+  return (
+    <div className="flex items-center justify-center min-h-[300px]">
+      <div className="flex items-center gap-2">
+        <svg className="w-4 h-4 text-gs-accent animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path d="M21 12a9 9 0 11-6.219-8.56" />
+        </svg>
+        <span className="text-gs-dim text-sm">Loading...</span>
+      </div>
+    </div>
+  );
+}
 
 // ── Global font + reset ────────────────────────────────────────────────────────
 // Global styles now in src/index.css with Tailwind
@@ -107,6 +129,15 @@ export default function App() {
   const [showAuth, setShowAuth] = useState(false);
   const [toast, setToast] = useState({ visible: false, msg: "" });
 
+  // ── Data sync indicator state ──────────────────────────────────────────────
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // ── Confetti state (first purchase celebration) ────────────────────────────
+  const [showConfetti, setShowConfetti] = useState(false);
+
+  // ── Scroll-to-top trigger ─────────────────────────────────────────────────
+  const [scrollTopTrigger, setScrollTopTrigger] = useState(0);
+
   // ── Global search state ─────────────────────────────────────────────────────
   const [globalSearch, setGlobalSearch] = useState("");
   const [showGlobalSearch, setShowGlobalSearch] = useState(false);
@@ -161,8 +192,16 @@ export default function App() {
   const [userReports, setUserReports] = useState([]); // eslint-disable-line no-unused-vars
 
   // Shows the Toast bar and auto-hides it after 2.2 seconds
+  // Haptic feedback placeholder for mobile interactions (#28)
+  const triggerHaptic = (style = 'light') => {
+    if (navigator.vibrate) {
+      navigator.vibrate(style === 'heavy' ? 50 : style === 'medium' ? 30 : 10);
+    }
+  };
+
   const showToast = msg => {
     setToast({ visible: true, msg });
+    triggerHaptic('light');
     setTimeout(() => setToast(t => ({ ...t, visible: false })), 2200);
   };
 
@@ -269,7 +308,10 @@ export default function App() {
   useEffect(() => { localStorage.setItem('gs_notifCount', JSON.stringify(notifCount)); }, [notifCount]);
 
   // ── Update page transition key when nav changes ─────────────────────────
-  useEffect(() => { setPageTransitionKey(nav + '-' + Date.now()); }, [nav]);
+  useEffect(() => {
+    setPageTransitionKey(nav + '-' + Date.now());
+    setScrollTopTrigger(t => t + 1); // trigger scroll-to-top button on nav change (#27)
+  }, [nav]);
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
@@ -451,11 +493,18 @@ export default function App() {
   };
 
   // ── Record actions — passed to screens and modals as callbacks ───────────────
-  const onLike = id => { if (requireAuth()) return; updateRecord(id, r => ({ ...r, liked: !r.liked, likes: r.liked ? r.likes - 1 : r.likes + 1 })); };
+  // Optimistic updates for likes (#21) — update UI immediately
+  const onLike = id => {
+    if (requireAuth()) return;
+    triggerHaptic('medium');
+    updateRecord(id, r => ({ ...r, liked: !r.liked, likes: r.liked ? r.likes - 1 : r.likes + 1 }));
+  };
 
+  // Optimistic updates for saves (#21) — update UI immediately
   const onSave = id => {
     if (requireAuth()) return;
     const r = records.find(r => r.id === id);
+    triggerHaptic('light');
     updateRecord(id, r => ({ ...r, saved: !r.saved }));
     showToast(r?.saved ? "Removed from saved" : "Saved!");
   };
@@ -471,12 +520,21 @@ export default function App() {
 
   const onPurchase = id => {
     const r = records.find(r => r.id === id);
+    const isFirstPurchase = purchases.length === 0;
     if (r) {
       setPurchases(ps => [{ id: Date.now(), recordId: r.id, album: r.album, artist: r.artist, price: r.price, condition: r.condition, accent: r.accent, format: r.format, year: r.year, seller: r.user, time: new Date().toLocaleString() }, ...ps]);
     }
     updateRecord(id, r => ({ ...r, forSale: false, price: null }));
     setCart(c => c.filter(item => item.recordId !== id));
-    showToast("Purchase complete!");
+    triggerHaptic('heavy');
+    // Confetti animation on first purchase (#29)
+    if (isFirstPurchase) {
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 4000);
+      showToast("First purchase! Welcome to the club!");
+    } else {
+      showToast("Purchase complete!");
+    }
   };
 
   const onAddToCart = r => {
@@ -559,12 +617,14 @@ export default function App() {
     .filter(([, p]) => (p.followers || []).includes(currentUser))
     .map(([username]) => username), [currentUser]);
 
-  // ── Profile save with Supabase persistence ──────────────────────────────────
+  // ── Profile save with Supabase persistence + sync indicator (#22) ───────────
   const onProfileSave = async (p) => {
     setProfile(p);
     showToast("Profile updated!");
     if (session) {
+      setIsSyncing(true);
       try { await updateProfile(p); } catch { /* offline fallback */ }
+      finally { setIsSyncing(false); }
     }
   };
 
@@ -585,8 +645,47 @@ export default function App() {
     );
   }
 
+  // ── Swipe navigation for mobile (#26) ────────────────────────────────────
+  const NAV_ORDER = ["Social", "Marketplace", "Collection", "Vinyl Buddy", "Profile"];
+  const swipeLeft = () => {
+    const idx = NAV_ORDER.indexOf(nav);
+    if (idx < NAV_ORDER.length - 1) {
+      const next = NAV_ORDER[idx + 1];
+      if (isGuest && next !== "Marketplace") return;
+      setViewingUserProfile(null);
+      setNav(next);
+    }
+  };
+  const swipeRight = () => {
+    const idx = NAV_ORDER.indexOf(nav);
+    if (idx > 0) {
+      const next = NAV_ORDER[idx - 1];
+      if (isGuest && next !== "Marketplace") return;
+      setViewingUserProfile(null);
+      setNav(next);
+    }
+  };
+
   return (
+    <ErrorBoundary>
     <div className="min-h-screen bg-gs-bg font-sans text-gs-text">
+      {/* Accessibility: skip-to-content link (#1) */}
+      <SkipToContent />
+
+      {/* Offline detection banner (#18) */}
+      <OfflineBanner />
+
+      {/* Confetti animation on first purchase (#29) */}
+      <Confetti active={showConfetti} />
+
+      {/* Data sync indicator (#22) */}
+      <DataSyncIndicator syncing={isSyncing} />
+
+      {/* Scroll to top button (#27) */}
+      <ScrollToTop trigger={scrollTopTrigger} />
+
+      {/* Onboarding tour for new users (#30) */}
+      <OnboardingTour currentUser={currentUser} />
 
       <Sidebar
         nav={nav} setNav={n => {
@@ -607,7 +706,9 @@ export default function App() {
         cartCount={cartCount}
       />
 
-      <main className="gs-main ml-[196px] px-10 py-[26px] max-w-[1400px]">
+      <main id="main-content" className="gs-main ml-[196px] px-10 py-[26px] max-w-[1400px]" role="main">
+        <SwipeHandler onSwipeLeft={swipeLeft} onSwipeRight={swipeRight}>
+        <Suspense fallback={<ScreenLoader />}>
         <div key={pageTransitionKey} className="animate-fade-in">
         {/* Full user profile page — overrides nav routing when viewing another user's full profile */}
         {viewingUserProfile ? (
@@ -698,6 +799,8 @@ export default function App() {
           </>
         )}
         </div>
+        </Suspense>
+        </SwipeHandler>
       </main>
 
       {/* ── Modals ─────────────────────────────────────────────────────────────── */}
@@ -783,7 +886,11 @@ export default function App() {
           </div>
         </div>
       )}
-      <Toast message={toast.msg} visible={toast.visible} />
+      {/* aria-live region for toast notifications (#2) */}
+      <div aria-live="polite" aria-atomic="true" role="status">
+        <Toast message={toast.msg} visible={toast.visible} />
+      </div>
     </div>
+    </ErrorBoundary>
   );
 }

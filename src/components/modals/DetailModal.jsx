@@ -2,7 +2,7 @@
 // Shows full details (label, full review, all tags) and all action buttons.
 // Clicking "Comments" closes this and opens CommentsModal; clicking "Buy" closes this and opens BuyModal.
 // Clicking the poster row closes this and opens UserProfileModal.
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import Modal from '../ui/Modal';
 import AlbumArt from '../ui/AlbumArt';
 import Stars from '../ui/Stars';
@@ -10,9 +10,17 @@ import Badge from '../ui/Badge';
 import Avatar from '../ui/Avatar';
 import { condColor } from '../../utils/helpers';
 import { USER_WISHLISTS } from '../../constants';
+import { recordToJsonLd, injectJsonLd } from '../../utils/structuredData';
 
 export default function DetailModal({ open, onClose, record, onLike, onSave, onComment, onBuy, onViewUser, onViewArtist, onAddWishlistItem, currentUser, records, onOfferFromDetail, onVerifyRecord, onViewRecord }) {
   const [copied, setCopied] = useState(false);
+
+  // Inject structured data (JSON-LD) when viewing a record (#24)
+  useEffect(() => {
+    if (open && record) {
+      injectJsonLd(recordToJsonLd(record));
+    }
+  }, [open, record]);
 
   // When viewing your own record, find users who have it on their wishlist
   const isOwn = record?.user === currentUser;

@@ -85,6 +85,9 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
 
   return (
     <div>
+      {/* Screen-reader-only h1 for heading hierarchy (#3) */}
+      <h1 className="sr-only">Profile — {profile.displayName || currentUser}</h1>
+
       {/* ── Profile completion bar ─────────────────────────────────────── */}
       {completionPct < 100 && (
         <div className="gs-card mb-4 p-4">
@@ -147,7 +150,16 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
               </button>
             </div>
           </div>
-          <div className="text-xl font-extrabold text-gs-text tracking-tight mb-0.5">{profile.displayName}</div>
+          <div
+            className="text-xl font-extrabold text-gs-text tracking-tight mb-0.5 cursor-pointer hover:text-gs-accent transition-colors"
+            onDoubleClick={onEdit}
+            title="Double-click to edit display name"
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => { if (e.key === 'Enter') onEdit(); }}
+          >
+            {profile.displayName || currentUser}
+          </div>
           <div className="text-xs text-gs-accent font-mono mb-3">@{currentUser}</div>
           {profile.bio && <p className="text-[13px] text-gs-muted leading-relaxed mb-3.5 line-clamp-3">{profile.bio}</p>}
           <div className="flex gap-3.5 text-xs text-gs-dim mb-5 flex-wrap">

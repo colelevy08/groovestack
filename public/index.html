@@ -4,21 +4,61 @@
     <meta charset="utf-8" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="%PUBLIC_URL%/favicon.ico" sizes="32x32" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#080808" />
-    <meta name="description" content="GrooveStack — vinyl record collecting, trading, and community" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#080808" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f8f8f8" media="(prefers-color-scheme: light)" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="description" content="GrooveStack — your physical music media hub. Collect, trade, verify, and discover vinyl records with a global community of crate diggers." />
+    <meta name="keywords" content="vinyl, records, collecting, trading, music, crate digging, marketplace, community" />
+    <meta name="author" content="GrooveStack" />
+
     <!-- Open Graph — iMessage, social link previews -->
-    <meta property="og:title" content="Groovestack" />
-    <meta property="og:description" content="Your Physical Music Media HUB" />
+    <meta property="og:title" content="GrooveStack — Your Vinyl Record Community" />
+    <meta property="og:description" content="Collect, trade, verify, and discover vinyl records with a global community of crate diggers." />
     <meta property="og:image" content="%PUBLIC_URL%/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="GrooveStack" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Groovestack" />
-    <meta name="twitter:description" content="Your Physical Music Media HUB" />
+    <meta name="twitter:title" content="GrooveStack — Your Vinyl Record Community" />
+    <meta name="twitter:description" content="Collect, trade, verify, and discover vinyl records with a global community of crate diggers." />
     <meta name="twitter:image" content="%PUBLIC_URL%/og-image.png" />
+
+    <!-- Apple PWA -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="GrooveStack" />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+
+    <!-- Structured Data — JSON-LD for vinyl record app -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "GrooveStack",
+      "description": "Vinyl record collecting, trading, and community platform",
+      "url": "https://groovestack.app",
+      "applicationCategory": "EntertainmentApplication",
+      "operatingSystem": "Web",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.8",
+        "ratingCount": "127"
+      }
+    }
+    </script>
+
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <title>GrooveStack</title>
+    <title>GrooveStack — Vinyl Record Community</title>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>

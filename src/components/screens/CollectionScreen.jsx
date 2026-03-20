@@ -2,7 +2,7 @@
 // Filters the shared records array by r.user === currentUser.
 // The "Add Record" button (header and empty state) both open AddRecordModal via onAddRecord.
 // Features: statistics header, sort/filter/search, select mode, grouping, CSV export, "For Sale" badges.
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import Paginated from '../Paginated';
 import Empty from '../ui/Empty';
 import { CONDITIONS, FORMATS } from '../../constants';
@@ -46,10 +46,10 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, ..
   const [selected, setSelected] = useState(new Set());
   const [showFilters, setShowFilters] = useState(false);
 
-  // Filter records down to only those belonging to the logged-in user
-  const mine = records.filter(r => r.user === currentUser);
+  // Memoize the user's records to avoid re-filtering on every render (#15)
+  const mine = useMemo(() => records.filter(r => r.user === currentUser), [records, currentUser]);
 
-  // Apply search, format filter, condition filter
+  // Apply search, format filter, condition filter — memoized (#15)
   const filtered = useMemo(() => {
     let list = mine;
     if (search.trim()) {
@@ -64,6 +64,7 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, ..
     if (filterFormat !== "All") list = list.filter(r => r.format === filterFormat);
     if (filterCondition !== "All") list = list.filter(r => r.condition === filterCondition);
     return sortRecords(list, sortKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mine, search, filterFormat, filterCondition, sortKey]);
 
   // Statistics

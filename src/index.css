@@ -41,8 +41,15 @@
 }
 
 @layer base {
+  /* ── Focus ring styling for all interactive elements ── */
   *:focus-visible {
     @apply outline-2 outline-offset-2 outline-gs-accent;
+    outline-style: solid;
+  }
+  button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    @apply outline-2 outline-offset-2 outline-gs-accent;
+    outline-style: solid;
+    box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.15);
   }
   *, *::before, *::after {
     box-sizing: border-box;
@@ -52,9 +59,32 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-  ::-webkit-scrollbar { width: 4px; }
-  ::-webkit-scrollbar-track { background: #0a0a0a; }
-  ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+
+  /* ── Selection color styling ── */
+  ::selection {
+    background: rgba(14, 165, 233, 0.3);
+    color: #f5f5f5;
+  }
+  ::-moz-selection {
+    background: rgba(14, 165, 233, 0.3);
+    color: #f5f5f5;
+  }
+  [data-theme="light"] ::selection {
+    background: rgba(2, 132, 199, 0.25);
+    color: #111111;
+  }
+
+  /* ── Smooth scrollbar styling (dark theme) ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--gs-bg, #0a0a0a); }
+  ::-webkit-scrollbar-thumb { background: var(--gs-border-hover, #2a2a2a); border-radius: 3px; transition: background 0.15s; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--gs-dim, #555555); }
+  ::-webkit-scrollbar-corner { background: var(--gs-bg, #0a0a0a); }
+  /* Firefox scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--gs-border-hover, #2a2a2a) var(--gs-bg, #0a0a0a);
+  }
   select option { background: #111; }
 }
 
@@ -186,4 +216,58 @@
   }
   .gs-card-grid { grid-template-columns: 1fr !important; }
   .gs-modal-body { padding: 16px !important; }
+}
+
+/* ── Reduced motion — disable animations for users who prefer it ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .gs-card:hover { transform: none !important; }
+  .gs-btn-gradient:active { transform: none !important; }
+  .gs-back-to-top:hover { transform: none !important; }
+}
+
+/* ── Print styles — hide sidebar, nav, and non-essential UI ── */
+@media print {
+  .gs-sidebar-desktop,
+  .gs-mobile-bar,
+  .gs-back-to-top,
+  .gs-overlay,
+  nav,
+  [role="dialog"],
+  [aria-live],
+  button,
+  .gs-btn-gradient,
+  .gs-btn-secondary {
+    display: none !important;
+  }
+  .gs-main {
+    margin-left: 0 !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  .gs-card {
+    break-inside: avoid;
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+  }
+  a { text-decoration: underline; }
+  a[href]::after { content: " (" attr(href) ")"; font-size: 0.8em; }
+}
+
+/* ── Slide-down animation for offline banner ── */
+@keyframes slideDown {
+  0% { transform: translateY(-100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.animate-slide-down {
+  animation: slideDown 0.3s ease-out;
 }

@@ -43,6 +43,7 @@ const TYPE_CONFIG = {
 };
 
 // Simple single toast — backwards compatible with existing usage
+// Wrapped in aria-live region for screen reader accessibility (#2)
 export default function Toast({ message, visible, type, onClose, duration }) {
   const config = TYPE_CONFIG[type] || {
     bg: 'bg-gs-accent',
@@ -52,6 +53,9 @@ export default function Toast({ message, visible, type, onClose, duration }) {
 
   return (
     <div
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
       className={`fixed bottom-7 left-1/2 -translate-x-1/2 ${config.bg} text-black px-5 py-2.5 rounded-[10px] text-[13px] font-bold z-[2000] transition-all duration-300 shadow-lg ${config.shadow} flex items-center gap-2 ${
         visible ? 'opacity-100 translate-y-0 animate-toast-in pointer-events-auto' : 'opacity-0 translate-y-4 pointer-events-none'
       }`}
