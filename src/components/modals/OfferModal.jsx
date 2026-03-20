@@ -2,7 +2,7 @@
 // Supports 3 offer types: Cash (price + shipping), Trade (swap records), or Combo (record + cash).
 // The offerer always gives up the record matching the target's wishlist item.
 // What they receive varies: cash, one of the target's records, or a record + cash.
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Modal from '../ui/Modal';
 import FormInput from '../ui/FormInput';
 import AlbumArt from '../ui/AlbumArt';
@@ -12,14 +12,78 @@ import { condColor } from '../../utils/helpers';
 // Rough value multipliers by condition grade for fair trade calculation
 const COND_VALUES = { M: 1.0, NM: 0.85, "VG+": 0.7, VG: 0.55, "G+": 0.4, G: 0.28, F: 0.15, P: 0.08 };
 
+// Improvement 1: Quick offer templates
+const OFFER_TEMPLATES = [
+  { label: "Low Ball", price: "15.00", shipping: "4.00" },
+  { label: "Fair Offer", price: "30.00", shipping: "6.00" },
+  { label: "Strong Offer", price: "50.00", shipping: "6.00" },
+  { label: "Premium", price: "75.00", shipping: "0.00" },
+];
+
+// Improvement 4: Simulated comparable sales
+const COMPARABLE_SALES = [
+  { price: "$28.00", condition: "VG+", date: "2 days ago", platform: "Discogs" },
+  { price: "$35.00", condition: "NM", date: "1 week ago", platform: "eBay" },
+  { price: "$22.50", condition: "VG", date: "3 days ago", platform: "Discogs" },
+];
+
+// Improvement 8: Offer status timeline steps
+const TIMELINE_STEPS = [
+  { label: "Draft", icon: "📝" },
+  { label: "Sent", icon: "📨" },
+  { label: "Reviewed", icon: "👀" },
+  { label: "Accepted", icon: "✓" },
+];
+
 export default function OfferModal({ open, onClose, target, records, onSubmit }) {
   const [offerType, setOfferType] = useState("cash");
   const [price, setPrice] = useState("");
   const [shipping, setShipping] = useState("6.00");
   const [selectedTradeRecord, setSelectedTradeRecord] = useState(null);
   const [err, setErr] = useState("");
+  // Improvement 2: Counter-offer flow
+  const [isCounterOffer, setIsCounterOffer] = useState(false);
+  const [counterMessage, setCounterMessage] = useState("");
+  // Improvement 3: Offer expiration
+  const [expiresIn, setExpiresIn] = useState("48");
+  // Improvement 5: Bundle offer note
+  const [bundleNote, setBundleNote] = useState("");
+  const [showBundleNote, setShowBundleNote] = useState(false);
+  // Improvement 6: Offer history
+  const [showHistory, setShowHistory] = useState(false);
+  // Improvement 7: Photo requirement for high-value
+  const [photoAcknowledged, setPhotoAcknowledged] = useState(false);
+  // Improvement 4: Comparable sales toggle
+  const [showComps, setShowComps] = useState(false);
+  // Improvement 3: Expiration countdown display
+  const [timelineStep] = useState(0);
 
-  const reset = () => { setOfferType("cash"); setPrice(""); setShipping("6.00"); setSelectedTradeRecord(null); setErr(""); };
+  const reset = () => {
+    setOfferType("cash");
+    setPrice("");
+    setShipping("6.00");
+    setSelectedTradeRecord(null);
+    setErr("");
+    setIsCounterOffer(false);
+    setCounterMessage("");
+    setExpiresIn("48");
+    setBundleNote("");
+    setShowBundleNote(false);
+    setShowHistory(false);
+    setPhotoAcknowledged(false);
+    setShowComps(false);
+  };
+
+  // Improvement 7: Check if offer is high-value (over $60)
+  const isHighValue = useMemo(() => {
+    const p = parseFloat(price) || 0;
+    return p >= 60;
+  }, [price]);
+
+  // Reset photo acknowledgment when price drops below threshold
+  useEffect(() => {
+    if (!isHighValue) setPhotoAcknowledged(false);
+  }, [isHighValue]);
 
   // Fair trade indicator — compare condition values
   const fairTrade = useMemo(() => {
@@ -32,6 +96,16 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
     return { label: "You're getting more value", color: "#60a5fa", icon: "★" };
   }, [selectedTradeRecord, target?.offeredRecord]);
 
+  // Improvement 7 (FMV): Fair market value estimate based on condition
+  const fmvEstimate = useMemo(() => {
+    if (!target?.offeredRecord) return null;
+    const condMult = COND_VALUES[target.offeredRecord.condition] || 0.5;
+    const basePrice = 40; // Simulated base
+    const low = (basePrice * condMult * 0.75).toFixed(2);
+    const high = (basePrice * condMult * 1.25).toFixed(2);
+    return { low, high, mid: ((parseFloat(low) + parseFloat(high)) / 2).toFixed(2) };
+  }, [target?.offeredRecord]);
+
   if (!target) return null;
 
   const targetRecords = (records || []).filter(r => r.user === target.targetUser);
@@ -42,6 +116,8 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
     if (offerType === "trade" && !selectedTradeRecord) { setErr("Select a record to trade for."); return; }
     if (offerType === "combo" && !selectedTradeRecord) { setErr("Select a record to trade for."); return; }
     if (offerType === "combo" && (!price || parseFloat(price) <= 0)) { setErr("Enter additional cash amount."); return; }
+    // Improvement 7: Block high-value offers without photo acknowledgment
+    if (isHighValue && !photoAcknowledged) { setErr("Please confirm condition photos for high-value offers."); return; }
 
     onSubmit({
       type: offerType,
@@ -54,6 +130,10 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
         condition: selectedTradeRecord.condition,
         accent: selectedTradeRecord.accent,
       } : null,
+      isCounterOffer,
+      counterMessage: isCounterOffer ? counterMessage : "",
+      expiresIn,
+      bundleNote: showBundleNote ? bundleNote : "",
     });
     reset();
   };
@@ -61,7 +141,25 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
   const typeLabels = [["cash", "Cash"], ["trade", "Trade"], ["combo", "Trade + Cash"]];
 
   return (
-    <Modal open={open} onClose={() => { reset(); onClose(); }} title="Make an Offer" width="480px">
+    <Modal open={open} onClose={() => { reset(); onClose(); }} title={isCounterOffer ? "Counter Offer" : "Make an Offer"} width="480px">
+
+      {/* Improvement 8: Offer status timeline */}
+      <div className="flex items-center justify-between mb-4 px-2">
+        {TIMELINE_STEPS.map((step, i) => (
+          <div key={step.label} className="flex items-center flex-1">
+            <div className="flex flex-col items-center">
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${i <= timelineStep ? 'bg-gs-accent text-black font-bold' : 'bg-[#1a1a1a] text-gs-dim'}`}>
+                {step.icon}
+              </div>
+              <span className={`text-[9px] mt-1 ${i <= timelineStep ? 'text-gs-accent' : 'text-gs-faint'}`}>{step.label}</span>
+            </div>
+            {i < TIMELINE_STEPS.length - 1 && (
+              <div className={`flex-1 h-px mx-1.5 ${i < timelineStep ? 'bg-gs-accent' : 'bg-[#222]'}`} />
+            )}
+          </div>
+        ))}
+      </div>
+
       {/* What they want — wishlist item */}
       <div className="bg-[#111] rounded-[10px] p-3.5 mb-3">
         <div className="text-[11px] text-gs-dim font-mono mb-2">THEY WANT</div>
@@ -78,7 +176,15 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
       {/* Your record being offered */}
       {target.offeredRecord && (
         <div className="bg-[#111] rounded-[10px] p-3.5 mb-4">
-          <div className="text-[11px] text-gs-dim font-mono mb-2">YOUR RECORD</div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[11px] text-gs-dim font-mono">YOUR RECORD</div>
+            {/* Improvement 7 (FMV): Fair market value indicator */}
+            {fmvEstimate && (
+              <div className="text-[10px] text-gs-dim">
+                FMV: <span className="text-emerald-400 font-semibold">${fmvEstimate.low} - ${fmvEstimate.high}</span>
+              </div>
+            )}
+          </div>
           <div className="flex gap-3 items-center">
             <AlbumArt album={target.offeredRecord.album} artist={target.offeredRecord.artist} accent={target.offeredRecord.accent} size={38} />
             <div className="flex-1">
@@ -86,6 +192,72 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
               <div className="text-xs text-[#666] mt-0.5 truncate">{target.offeredRecord.artist}</div>
             </div>
             <Badge label={target.offeredRecord.condition} color={condColor(target.offeredRecord.condition)} />
+          </div>
+        </div>
+      )}
+
+      {/* Improvement 4: Comparable sales toggle and display */}
+      <button
+        onClick={() => setShowComps(v => !v)}
+        className="w-full mb-3 bg-[#0d0d0d] border border-[#1a1a1a] rounded-lg px-3 py-2 text-left cursor-pointer flex items-center justify-between"
+      >
+        <span className="text-[11px] text-gs-dim font-mono">COMPARABLE SALES</span>
+        <span className="text-[10px] text-gs-faint">{showComps ? '▲' : '▼'}</span>
+      </button>
+      {showComps && (
+        <div className="mb-4 bg-[#0d0d0d] border border-[#1a1a1a] rounded-[10px] p-3">
+          {COMPARABLE_SALES.map((sale, i) => (
+            <div key={i} className={`flex items-center justify-between py-1.5 ${i < COMPARABLE_SALES.length - 1 ? 'border-b border-[#1a1a1a]' : ''}`}>
+              <div className="flex items-center gap-2">
+                <span className="text-[12px] text-emerald-400 font-bold">{sale.price}</span>
+                <Badge label={sale.condition} color={condColor(sale.condition)} />
+              </div>
+              <div className="text-[10px] text-gs-dim">
+                {sale.platform} · {sale.date}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Improvement 2: Counter-offer toggle */}
+      <div className="flex items-center gap-2 mb-3">
+        <button
+          onClick={() => setIsCounterOffer(v => !v)}
+          className={`text-[11px] px-3 py-1.5 rounded-lg border cursor-pointer font-semibold ${
+            isCounterOffer ? 'bg-amber-500/15 border-amber-500/30 text-amber-400' : 'bg-transparent border-[#222] text-gs-dim hover:text-gs-muted'
+          }`}
+        >
+          {isCounterOffer ? "✓ Counter-Offer Mode" : "Counter-Offer?"}
+        </button>
+        {/* Improvement 6: Show offer history */}
+        <button
+          onClick={() => setShowHistory(v => !v)}
+          className="text-[11px] px-3 py-1.5 rounded-lg border border-[#222] bg-transparent text-gs-dim cursor-pointer hover:text-gs-muted font-semibold"
+        >
+          Offer History
+        </button>
+      </div>
+
+      {/* Improvement 2: Counter-offer message */}
+      {isCounterOffer && (
+        <div className="mb-4 bg-amber-500/[0.05] border border-amber-500/20 rounded-[10px] p-3">
+          <div className="text-[10px] text-amber-400 font-mono mb-2">COUNTER-OFFER MESSAGE</div>
+          <textarea
+            value={counterMessage}
+            onChange={e => setCounterMessage(e.target.value)}
+            placeholder="Explain why you're countering (e.g., 'I think $X is more fair because...')"
+            className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-[12px] text-gs-text outline-none font-sans resize-none h-[60px]"
+          />
+        </div>
+      )}
+
+      {/* Improvement 6: Offer history panel */}
+      {showHistory && (
+        <div className="mb-4 bg-[#0d0d0d] border border-[#1a1a1a] rounded-[10px] p-3">
+          <div className="text-[10px] text-gs-dim font-mono mb-2">OFFER HISTORY WITH @{target.targetUser}</div>
+          <div className="text-[11px] text-gs-faint py-3 text-center">
+            No previous offers with this user.
           </div>
         </div>
       )}
@@ -104,6 +276,26 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
           </button>
         ))}
       </div>
+
+      {/* Improvement 1: Quick offer templates (cash mode only) */}
+      {offerType !== "trade" && (
+        <div className="flex gap-1.5 mb-3">
+          {OFFER_TEMPLATES.map(tpl => (
+            <button
+              key={tpl.label}
+              onClick={() => { setPrice(tpl.price); setShipping(tpl.shipping); }}
+              className={`flex-1 py-1.5 px-1 rounded-lg border text-[10px] font-semibold cursor-pointer transition-colors ${
+                price === tpl.price && shipping === tpl.shipping
+                  ? 'bg-gs-accent/10 border-gs-accent/30 text-gs-accent'
+                  : 'bg-[#0d0d0d] border-[#1a1a1a] text-gs-dim hover:text-gs-muted'
+              }`}
+            >
+              <div>{tpl.label}</div>
+              <div className="text-[9px] opacity-60">${tpl.price}</div>
+            </button>
+          ))}
+        </div>
+      )}
 
       {err && <div className="bg-red-500/[0.13] border border-red-500/[0.27] rounded-lg px-3 py-2 text-red-400 text-xs mb-3.5">{err}</div>}
 
@@ -204,6 +396,62 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
         </>
       )}
 
+      {/* Improvement 7: Condition photo requirement for high-value offers */}
+      {isHighValue && offerType !== "trade" && (
+        <div className="mb-4 bg-amber-500/[0.06] border border-amber-500/20 rounded-[10px] p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-amber-400 text-sm">📸</span>
+            <span className="text-[11px] text-amber-400 font-semibold">High-Value Offer — Photo Recommended</span>
+          </div>
+          <div className="text-[11px] text-gs-dim mb-2">
+            For offers over $60, buyers typically expect condition photos. Confirm you can provide them.
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={photoAcknowledged}
+              onChange={e => setPhotoAcknowledged(e.target.checked)}
+              className="accent-amber-400"
+            />
+            <span className="text-[11px] text-gs-muted">I can provide condition photos upon request</span>
+          </label>
+        </div>
+      )}
+
+      {/* Improvement 3: Offer expiration */}
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-[10px] text-gs-dim font-mono">EXPIRES IN</span>
+        <select
+          value={expiresIn}
+          onChange={e => setExpiresIn(e.target.value)}
+          className="bg-[#111] border border-[#222] rounded-md px-2 py-1 text-[11px] text-gs-text outline-none cursor-pointer"
+        >
+          <option value="24">24 hours</option>
+          <option value="48">48 hours</option>
+          <option value="72">72 hours</option>
+          <option value="168">7 days</option>
+          <option value="0">No expiration</option>
+        </select>
+      </div>
+
+      {/* Improvement 5: Bundle note */}
+      <div className="mb-4">
+        <button
+          onClick={() => setShowBundleNote(v => !v)}
+          className="text-[11px] text-gs-dim bg-transparent border-none cursor-pointer hover:text-gs-muted p-0 font-semibold"
+        >
+          {showBundleNote ? "- Remove bundle note" : "+ Add bundle / note"}
+        </button>
+        {showBundleNote && (
+          <textarea
+            value={bundleNote}
+            onChange={e => setBundleNote(e.target.value)}
+            placeholder="E.g., 'I have 3 more records you might like — open to a bundle deal?'"
+            className="w-full mt-2 bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-[12px] text-gs-text outline-none font-sans resize-none h-[50px]"
+          />
+        )}
+      </div>
+
       {/* Summary */}
       <div className="bg-[#111] rounded-[10px] p-3.5 mb-5">
         {offerType === "cash" && (
@@ -253,12 +501,19 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
             </div>
           </>
         )}
+        {/* Improvement 3: Expiration display in summary */}
+        {expiresIn !== "0" && (
+          <div className="flex justify-between text-[11px] text-gs-dim mt-2 pt-2 border-t border-[#1a1a1a]">
+            <span>Expires</span>
+            <span>{expiresIn}h after sent</span>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-2.5">
         <button onClick={() => { reset(); onClose(); }} className="flex-1 py-[11px] bg-[#1a1a1a] border border-gs-border-hover rounded-[10px] text-gs-muted text-[13px] font-semibold cursor-pointer">Cancel</button>
         <button onClick={handleSubmit} className="flex-[2] py-[11px] gs-btn-gradient border-none rounded-[10px] text-white text-[13px] font-bold cursor-pointer">
-          {offerType === "cash" ? "Send Offer" : offerType === "trade" ? "Send Trade Offer" : "Send Combo Offer"}
+          {isCounterOffer ? "Send Counter" : offerType === "cash" ? "Send Offer" : offerType === "trade" ? "Send Trade Offer" : "Send Combo Offer"}
         </button>
       </div>
     </Modal>

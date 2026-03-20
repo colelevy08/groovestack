@@ -2,7 +2,7 @@
 // Contact list is populated from the following array; falls back to the first 6 users if following nobody.
 // messages state is a record keyed by username: { [username]: [{id, from, text, time}] }.
 // Auto-replies simulate responses from the other user ~900ms–1700ms after sending a message.
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import Avatar from '../ui/Avatar';
 import { getProfile } from '../../utils/helpers';
 import { USER_PROFILES } from '../../constants';
@@ -19,10 +19,35 @@ const AUTO_REPLIES = [
   "I paid way too much for mine. Worth every penny though.",
 ];
 
+const REACTION_EMOJIS = ["❤️", "😂", "🔥", "👍", "🎶", "💿"];
+
 export default function DMModal({ open, onClose, currentUser, following, messages, setMessages }) {
   const [activeThread, setActiveThread] = useState(null);
   const [draft, setDraft] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  // Improvement 1: Message search within conversation
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  // Improvement 2: Message reactions
+  const [reactions, setReactions] = useState({});
+  const [reactionPickerMsgId, setReactionPickerMsgId] = useState(null);
+  // Improvement 3: Pinned messages
+  const [pinnedMessages, setPinnedMessages] = useState({});
+  const [showPinned, setShowPinned] = useState(false);
+  // Improvement 5: Voice message placeholder
+  const [showVoiceUI, setShowVoiceUI] = useState(false);
+  // Improvement 6: Message scheduling
+  const [scheduleMode, setScheduleMode] = useState(false);
+  const [scheduleTime, setScheduleTime] = useState("");
+  // Improvement 7: Auto-reply setting
+  const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
+  const [autoReplyText, setAutoReplyText] = useState("Hey! I'll get back to you soon.");
+  const [showAutoReplySettings, setShowAutoReplySettings] = useState(false);
+  // Improvement 8: Conversation archive
+  const [archivedThreads, setArchivedThreads] = useState([]);
+  // Improvement 9: Attachment sharing
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+
   const endRef = useRef(null);
 
   useEffect(() => {
@@ -32,6 +57,7 @@ export default function DMModal({ open, onClose, currentUser, following, message
   const allUsers = Object.keys(USER_PROFILES);
   // Show followed users as contacts; fall back to first 6 users if the following list is empty
   const contacts = following.length > 0 ? following : allUsers.slice(0, 6);
+  const visibleContacts = contacts.filter(u => !archivedThreads.includes(u));
 
   // Check if a conversation has unread messages (last message is from the other user)
   const hasUnread = (username) => {
@@ -40,11 +66,72 @@ export default function DMModal({ open, onClose, currentUser, following, message
     return thread[thread.length - 1].from !== currentUser;
   };
 
+  // Improvement 4: Simulated online status
+  const onlineUsers = useMemo(() => {
+    const online = {};
+    contacts.forEach(u => {
+      online[u] = Math.random() > 0.4; // ~60% chance online
+    });
+    return online;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contacts.join(",")]);
+
+  // Improvement 1: Filtered messages by search
+  const thread = useMemo(() => messages[activeThread] || [], [messages, activeThread]);
+  const filteredThread = useMemo(() => {
+    if (!searchQuery.trim()) return thread;
+    const q = searchQuery.toLowerCase();
+    return thread.filter(m => m.text.toLowerCase().includes(q));
+  }, [thread, searchQuery]);
+
+  // Improvement 3: Pinned messages for active thread
+  const threadPinned = useMemo(() => {
+    const pinSet = pinnedMessages[activeThread] || new Set();
+    return thread.filter(m => pinSet.has(m.id));
+  }, [thread, pinnedMessages, activeThread]);
+
+  const togglePin = (msgId) => {
+    setPinnedMessages(prev => {
+      const threadPins = new Set(prev[activeThread] || []);
+      if (threadPins.has(msgId)) {
+        threadPins.delete(msgId);
+      } else {
+        threadPins.add(msgId);
+      }
+      return { ...prev, [activeThread]: threadPins };
+    });
+  };
+
+  // Improvement 2: Add reaction to a message
+  const addReaction = (msgId, emoji) => {
+    setReactions(prev => {
+      const msgReactions = { ...(prev[msgId] || {}) };
+      if (msgReactions[emoji]) {
+        delete msgReactions[emoji];
+      } else {
+        msgReactions[emoji] = currentUser;
+      }
+      return { ...prev, [msgId]: msgReactions };
+    });
+    setReactionPickerMsgId(null);
+  };
+
   // Appends the message to the active thread and schedules a random auto-reply
   const send = () => {
     if (!draft.trim() || !activeThread) return;
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+    // Improvement 6: Scheduled message
+    if (scheduleMode && scheduleTime) {
+      const msg = { id: Date.now(), from: currentUser, text: draft.trim(), time: timeStr, status: "scheduled", scheduledFor: scheduleTime };
+      setMessages(m => ({ ...m, [activeThread]: [...(m[activeThread] || []), msg] }));
+      setDraft("");
+      setScheduleMode(false);
+      setScheduleTime("");
+      return;
+    }
+
     const msg = { id: Date.now(), from: currentUser, text: draft.trim(), time: timeStr, status: "sent" };
     setMessages(m => ({ ...m, [activeThread]: [...(m[activeThread] || []), msg] }));
     setDraft("");
@@ -52,10 +139,10 @@ export default function DMModal({ open, onClose, currentUser, following, message
     // Mark as read after a short delay
     setTimeout(() => {
       setMessages(m => {
-        const thread = m[activeThread] || [];
+        const t = m[activeThread] || [];
         return {
           ...m,
-          [activeThread]: thread.map(msg2 => msg2.id === msg.id ? { ...msg2, status: "read" } : msg2),
+          [activeThread]: t.map(msg2 => msg2.id === msg.id ? { ...msg2, status: "read" } : msg2),
         };
       });
     }, 400);
@@ -72,7 +159,6 @@ export default function DMModal({ open, onClose, currentUser, following, message
     }, replyDelay);
   };
 
-  const thread = messages[activeThread] || [];
   const p = activeThread ? getProfile(activeThread) : null;
 
   if (!open) return null;
@@ -85,11 +171,41 @@ export default function DMModal({ open, onClose, currentUser, following, message
       <div className="bg-gs-surface border border-gs-border rounded-[18px] w-full max-w-[min(620px,95vw)] h-[540px] flex overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.85)]">
         {/* Contact list sidebar */}
         <div className="w-[190px] border-r border-[#1a1a1a] flex flex-col">
-          <div className="px-3.5 py-4 border-b border-[#1a1a1a]">
+          <div className="px-3.5 py-4 border-b border-[#1a1a1a] flex items-center justify-between">
             <div className="text-sm font-bold text-gs-text">Messages</div>
+            {/* Improvement 7: Auto-reply settings toggle */}
+            <button
+              onClick={() => setShowAutoReplySettings(v => !v)}
+              title="Auto-reply settings"
+              className="bg-transparent border-none cursor-pointer text-gs-dim hover:text-gs-muted text-sm p-0"
+            >
+              ⚙
+            </button>
           </div>
+
+          {/* Improvement 7: Auto-reply settings panel */}
+          {showAutoReplySettings && (
+            <div className="px-3 py-2.5 border-b border-[#1a1a1a] bg-[#0d0d0d]">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] text-gs-dim font-mono">AUTO-REPLY</span>
+                <button
+                  onClick={() => setAutoReplyEnabled(v => !v)}
+                  className={`w-8 h-4 rounded-full border-none cursor-pointer relative transition-colors ${autoReplyEnabled ? 'bg-gs-accent' : 'bg-[#333]'}`}
+                >
+                  <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${autoReplyEnabled ? 'left-4' : 'left-0.5'}`} />
+                </button>
+              </div>
+              <input
+                value={autoReplyText}
+                onChange={e => setAutoReplyText(e.target.value)}
+                className="w-full bg-[#111] border border-[#222] rounded-md px-2 py-1.5 text-[11px] text-gs-text outline-none"
+                placeholder="Auto-reply message..."
+              />
+            </div>
+          )}
+
           <div className="overflow-y-auto flex-1">
-            {contacts.map(u => {
+            {visibleContacts.map(u => {
               const up = getProfile(u);
               const t = messages[u] || [];
               const last = t[t.length - 1];
@@ -105,6 +221,10 @@ export default function DMModal({ open, onClose, currentUser, following, message
                     {unread && (
                       <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-gs-accent rounded-full border-2 border-gs-surface" />
                     )}
+                    {/* Improvement 4: Online status dot */}
+                    {onlineUsers[u] && !unread && (
+                      <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-gs-surface" />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className={`text-xs font-bold ${unread ? 'text-gs-text' : activeThread === u ? 'text-gs-text' : 'text-[#ccc]'}`}>{up.displayName}</div>
@@ -115,6 +235,30 @@ export default function DMModal({ open, onClose, currentUser, following, message
                 </button>
               );
             })}
+
+            {/* Improvement 8: Archived conversations section */}
+            {archivedThreads.length > 0 && (
+              <div className="px-3.5 py-2 border-t border-[#1a1a1a]">
+                <div className="text-[10px] text-gs-faint font-mono mb-1">ARCHIVED ({archivedThreads.length})</div>
+                {archivedThreads.map(u => {
+                  const up = getProfile(u);
+                  return (
+                    <button
+                      key={u}
+                      onClick={() => {
+                        setArchivedThreads(prev => prev.filter(a => a !== u));
+                        setActiveThread(u);
+                      }}
+                      className="flex gap-2 px-1 py-1.5 w-full bg-transparent border-none cursor-pointer text-left items-center opacity-50 hover:opacity-80"
+                    >
+                      <Avatar username={u} size={24} />
+                      <span className="text-[11px] text-gs-dim">{up.displayName}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {contacts.length === 0 && (
               <div className="p-8 text-center">
                 <div className="text-2xl mb-2">💬</div>
@@ -130,15 +274,89 @@ export default function DMModal({ open, onClose, currentUser, following, message
           <div className="flex justify-between items-center px-[18px] py-3.5 border-b border-[#1a1a1a]">
             {p
               ? <div className="flex gap-2.5 items-center">
-                  <Avatar username={activeThread} size={30} />
+                  <div className="relative">
+                    <Avatar username={activeThread} size={30} />
+                    {/* Improvement 4: Online status in header */}
+                    {onlineUsers[activeThread] && (
+                      <div className="absolute bottom-0 right-0 w-2 h-2 bg-emerald-400 rounded-full border border-gs-surface" />
+                    )}
+                  </div>
                   <div>
                     <div className="text-[13px] font-bold text-gs-text">{p.displayName}</div>
-                    <div className="text-[11px] text-gs-dim font-mono">@{activeThread}</div>
+                    <div className="text-[11px] text-gs-dim font-mono flex items-center gap-1.5">
+                      @{activeThread}
+                      {onlineUsers[activeThread] && <span className="text-emerald-400 text-[10px] font-sans">online</span>}
+                    </div>
                   </div>
                 </div>
               : <span className="text-[13px] text-gs-dim">Select a conversation</span>}
-            <button onClick={onClose} className="bg-[#1a1a1a] border-none rounded-md w-7 h-7 cursor-pointer text-gs-muted text-lg flex items-center justify-center">×</button>
+            <div className="flex items-center gap-1.5">
+              {/* Improvement 1: Search toggle */}
+              {activeThread && (
+                <button
+                  onClick={() => { setSearchOpen(v => !v); setSearchQuery(""); }}
+                  title="Search messages"
+                  className="bg-[#1a1a1a] border-none rounded-md w-7 h-7 cursor-pointer text-gs-muted text-sm flex items-center justify-center hover:text-gs-text"
+                >
+                  🔍
+                </button>
+              )}
+              {/* Improvement 3: Show pinned messages */}
+              {activeThread && threadPinned.length > 0 && (
+                <button
+                  onClick={() => setShowPinned(v => !v)}
+                  title="Pinned messages"
+                  className="bg-[#1a1a1a] border-none rounded-md w-7 h-7 cursor-pointer text-gs-muted text-sm flex items-center justify-center hover:text-gs-text"
+                >
+                  📌
+                </button>
+              )}
+              {/* Improvement 8: Archive conversation */}
+              {activeThread && (
+                <button
+                  onClick={() => {
+                    setArchivedThreads(prev => [...prev, activeThread]);
+                    setActiveThread(null);
+                  }}
+                  title="Archive conversation"
+                  className="bg-[#1a1a1a] border-none rounded-md w-7 h-7 cursor-pointer text-gs-muted text-sm flex items-center justify-center hover:text-gs-text"
+                >
+                  📥
+                </button>
+              )}
+              <button onClick={onClose} className="bg-[#1a1a1a] border-none rounded-md w-7 h-7 cursor-pointer text-gs-muted text-lg flex items-center justify-center">×</button>
+            </div>
           </div>
+
+          {/* Improvement 1: Search bar */}
+          {searchOpen && activeThread && (
+            <div className="px-[18px] py-2 border-b border-[#1a1a1a] bg-[#0d0d0d]">
+              <input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search messages..."
+                autoFocus
+                className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-1.5 text-[12px] text-gs-text outline-none font-sans"
+              />
+              {searchQuery && (
+                <div className="text-[10px] text-gs-dim mt-1">{filteredThread.length} result{filteredThread.length !== 1 ? 's' : ''} found</div>
+              )}
+            </div>
+          )}
+
+          {/* Improvement 3: Pinned messages panel */}
+          {showPinned && threadPinned.length > 0 && (
+            <div className="px-[18px] py-2 border-b border-[#1a1a1a] bg-[#0a0a0a] max-h-[100px] overflow-y-auto">
+              <div className="text-[10px] text-gs-dim font-mono mb-1.5">PINNED MESSAGES</div>
+              {threadPinned.map(m => (
+                <div key={m.id} className="text-[11px] text-gs-muted mb-1 flex items-center gap-1.5">
+                  <span>📌</span>
+                  <span className="font-bold text-gs-text">{m.from === currentUser ? 'You' : m.from}:</span>
+                  <span className="truncate">{m.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto px-[18px] py-3.5 flex flex-col gap-2.5">
             {/* Empty state — no conversation selected */}
@@ -157,24 +375,87 @@ export default function DMModal({ open, onClose, currentUser, following, message
                 <div className="text-gs-faint text-[12px] mt-1">Start the conversation — say hello!</div>
               </div>
             )}
-            {thread.map(msg => {
+            {(searchQuery ? filteredThread : thread).map(msg => {
               const isMine = msg.from === currentUser;
+              const msgReactions = reactions[msg.id] || {};
+              const isPinned = (pinnedMessages[activeThread] || new Set()).has(msg.id);
+              const reactionEntries = Object.entries(msgReactions);
               return (
-                <div key={msg.id} className={`flex gap-2 items-end ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
+                <div key={msg.id} className={`flex gap-2 items-end group ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
                   {!isMine && <Avatar username={msg.from} size={26} />}
-                  <div
-                    className={`max-w-[72%] px-[13px] py-[9px] text-[13px] leading-normal ${isMine ? 'rounded-[14px_14px_4px_14px] gs-btn-gradient text-white' : 'rounded-[14px_14px_14px_4px] bg-[#1a1a1a] text-[#ddd]'}`}
-                  >
-                    {msg.text}
-                    <div className={`flex items-center gap-1 mt-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
-                      <span className={`text-[10px] ${isMine ? 'text-white/[.47]' : 'text-gs-dim'}`}>{msg.time}</span>
-                      {/* Read receipts for sent messages */}
-                      {isMine && (
-                        <span className={`text-[10px] ${msg.status === "read" ? 'text-blue-400' : 'text-white/[.35]'}`}>
-                          {msg.status === "read" ? "✓✓" : "✓"}
-                        </span>
-                      )}
+                  <div className="relative max-w-[72%]">
+                    {/* Improvement 3: Pin indicator */}
+                    {isPinned && (
+                      <div className={`text-[9px] text-gs-dim mb-0.5 ${isMine ? 'text-right' : 'text-left'}`}>📌 Pinned</div>
+                    )}
+                    <div
+                      className={`px-[13px] py-[9px] text-[13px] leading-normal ${
+                        msg.status === "scheduled"
+                          ? 'rounded-[14px] bg-[#1a1a1a] border border-dashed border-[#333] text-[#888]'
+                          : isMine
+                            ? 'rounded-[14px_14px_4px_14px] gs-btn-gradient text-white'
+                            : 'rounded-[14px_14px_14px_4px] bg-[#1a1a1a] text-[#ddd]'
+                      }`}
+                    >
+                      {msg.text}
+                      <div className={`flex items-center gap-1 mt-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                        {/* Improvement 6: Scheduled indicator */}
+                        {msg.status === "scheduled" && (
+                          <span className="text-[10px] text-amber-400/70 mr-1">⏰ {msg.scheduledFor}</span>
+                        )}
+                        <span className={`text-[10px] ${isMine ? 'text-white/[.47]' : 'text-gs-dim'}`}>{msg.time}</span>
+                        {/* Read receipts for sent messages */}
+                        {isMine && msg.status !== "scheduled" && (
+                          <span className={`text-[10px] ${msg.status === "read" ? 'text-blue-400' : 'text-white/[.35]'}`}>
+                            {msg.status === "read" ? "✓✓" : "✓"}
+                          </span>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Improvement 2: Reaction display */}
+                    {reactionEntries.length > 0 && (
+                      <div className={`flex gap-0.5 mt-0.5 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                        {reactionEntries.map(([emoji]) => (
+                          <span key={emoji} className="text-[12px] bg-[#1a1a1a] rounded-full px-1.5 py-0.5 border border-[#222] cursor-pointer hover:bg-[#222]" onClick={() => addReaction(msg.id, emoji)}>
+                            {emoji}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Hover actions: react and pin */}
+                    <div className={`absolute top-0 ${isMine ? '-left-16' : '-right-16'} hidden group-hover:flex items-center gap-0.5`}>
+                      <button
+                        onClick={() => setReactionPickerMsgId(reactionPickerMsgId === msg.id ? null : msg.id)}
+                        className="bg-[#1a1a1a] border border-[#222] rounded-md w-6 h-6 text-[11px] cursor-pointer flex items-center justify-center hover:bg-[#222]"
+                        title="React"
+                      >
+                        😊
+                      </button>
+                      <button
+                        onClick={() => togglePin(msg.id)}
+                        className="bg-[#1a1a1a] border border-[#222] rounded-md w-6 h-6 text-[11px] cursor-pointer flex items-center justify-center hover:bg-[#222]"
+                        title={isPinned ? "Unpin" : "Pin"}
+                      >
+                        📌
+                      </button>
+                    </div>
+
+                    {/* Improvement 2: Reaction picker */}
+                    {reactionPickerMsgId === msg.id && (
+                      <div className={`absolute ${isMine ? 'right-0' : 'left-0'} -top-8 flex gap-0.5 bg-[#1a1a1a] border border-[#333] rounded-lg px-1.5 py-1 z-10 shadow-lg`}>
+                        {REACTION_EMOJIS.map(emoji => (
+                          <button
+                            key={emoji}
+                            onClick={() => addReaction(msg.id, emoji)}
+                            className="bg-transparent border-none cursor-pointer text-sm p-0.5 hover:scale-125 transition-transform"
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -195,15 +476,89 @@ export default function DMModal({ open, onClose, currentUser, following, message
             <div ref={endRef} />
           </div>
 
+          {/* Improvement 5: Voice message placeholder */}
+          {showVoiceUI && activeThread && (
+            <div className="px-[18px] py-2.5 border-t border-[#1a1a1a] bg-[#0d0d0d] flex items-center gap-3">
+              <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+              <div className="flex-1">
+                <div className="text-[12px] text-gs-muted font-semibold">Recording voice message...</div>
+                <div className="text-[10px] text-gs-dim">Feature coming soon</div>
+              </div>
+              <button
+                onClick={() => setShowVoiceUI(false)}
+                className="bg-[#1a1a1a] border border-[#222] rounded-md px-3 py-1.5 text-[11px] text-gs-muted cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
           {activeThread && (
-            <div className="px-[18px] py-3 border-t border-[#1a1a1a] flex gap-2">
-              <input
-                value={draft} onChange={e => setDraft(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && send()}
-                placeholder="Message..."
-                className="flex-1 bg-[#111] border border-[#222] rounded-[10px] px-[13px] py-[9px] text-[#f0f0f0] text-[13px] outline-none font-sans focus:border-gs-accent/30"
-              />
-              <button onClick={send} className="gs-btn-gradient px-4 py-[9px] border-none rounded-[10px] text-white font-bold text-xs cursor-pointer">Send</button>
+            <div className="px-[18px] py-3 border-t border-[#1a1a1a]">
+              {/* Improvement 6: Schedule mode indicator */}
+              {scheduleMode && (
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[10px] text-amber-400 font-mono">SCHEDULED SEND</span>
+                  <input
+                    type="time"
+                    value={scheduleTime}
+                    onChange={e => setScheduleTime(e.target.value)}
+                    className="bg-[#111] border border-[#222] rounded-md px-2 py-1 text-[11px] text-gs-text outline-none"
+                  />
+                  <button onClick={() => { setScheduleMode(false); setScheduleTime(""); }} className="text-[10px] text-gs-dim bg-transparent border-none cursor-pointer hover:text-gs-muted">Cancel</button>
+                </div>
+              )}
+              <div className="flex gap-2">
+                {/* Improvement 9: Attachment menu */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowAttachMenu(v => !v)}
+                    title="Attach file"
+                    className="bg-[#1a1a1a] border border-[#222] rounded-[10px] w-9 h-9 cursor-pointer text-gs-muted text-base flex items-center justify-center hover:text-gs-text hover:border-[#333]"
+                  >
+                    +
+                  </button>
+                  {showAttachMenu && (
+                    <div className="absolute bottom-full left-0 mb-1 bg-[#1a1a1a] border border-[#333] rounded-lg p-1.5 shadow-lg z-10 min-w-[120px]">
+                      <button
+                        onClick={() => setShowAttachMenu(false)}
+                        className="flex items-center gap-2 w-full bg-transparent border-none cursor-pointer text-[11px] text-gs-muted px-2 py-1.5 rounded-md hover:bg-[#222] text-left"
+                      >
+                        🖼 Photo
+                      </button>
+                      <button
+                        onClick={() => { setShowAttachMenu(false); setShowVoiceUI(true); }}
+                        className="flex items-center gap-2 w-full bg-transparent border-none cursor-pointer text-[11px] text-gs-muted px-2 py-1.5 rounded-md hover:bg-[#222] text-left"
+                      >
+                        🎤 Voice
+                      </button>
+                      <button
+                        onClick={() => setShowAttachMenu(false)}
+                        className="flex items-center gap-2 w-full bg-transparent border-none cursor-pointer text-[11px] text-gs-muted px-2 py-1.5 rounded-md hover:bg-[#222] text-left"
+                      >
+                        📎 File
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <input
+                  value={draft} onChange={e => setDraft(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && send()}
+                  placeholder={scheduleMode ? "Type a scheduled message..." : "Message..."}
+                  className="flex-1 bg-[#111] border border-[#222] rounded-[10px] px-[13px] py-[9px] text-[#f0f0f0] text-[13px] outline-none font-sans focus:border-gs-accent/30"
+                />
+                {/* Improvement 6: Schedule button */}
+                <button
+                  onClick={() => setScheduleMode(v => !v)}
+                  title="Schedule message"
+                  className={`border-none rounded-[10px] w-9 h-9 cursor-pointer text-sm flex items-center justify-center ${scheduleMode ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-[#1a1a1a] border border-[#222] text-gs-muted hover:text-gs-text'}`}
+                >
+                  ⏰
+                </button>
+                <button onClick={send} className="gs-btn-gradient px-4 py-[9px] border-none rounded-[10px] text-white font-bold text-xs cursor-pointer">
+                  {scheduleMode ? "Schedule" : "Send"}
+                </button>
+              </div>
             </div>
           )}
         </div>

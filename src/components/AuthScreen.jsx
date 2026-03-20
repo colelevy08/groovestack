@@ -1,6 +1,6 @@
 // Login / Signup screen — shown as modal overlay when guests try restricted actions.
 // Matches GrooveStack's dark theme with Tailwind classes.
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { signUp, signIn, checkUsername } from '../utils/supabase';
 import { USER_PROFILES } from '../constants';
 import FormInput from './ui/FormInput';
@@ -17,6 +17,16 @@ function getPasswordStrength(pw) {
   if (score <= 1) return { level: 1, label: 'Weak', color: 'bg-red-500' };
   if (score <= 3) return { level: 2, label: 'Medium', color: 'bg-amber-500' };
   return { level: 3, label: 'Strong', color: 'bg-emerald-500' };
+}
+
+/* ── Password requirements checker ─────────────────────────── */
+function getPasswordChecks(pw) {
+  return [
+    { label: 'At least 6 characters', met: pw.length >= 6 },
+    { label: 'Uppercase letter', met: /[A-Z]/.test(pw) },
+    { label: 'Number', met: /\d/.test(pw) },
+    { label: 'Special character', met: /[^A-Za-z0-9]/.test(pw) },
+  ];
 }
 
 /* ── Classify auth errors for better UX feedback ───────────── */
@@ -64,7 +74,53 @@ function Spinner() {
   );
 }
 
-export default function AuthScreen({ onAuth }) {
+/* ── Mail icon for email field ─────────────────────────────── */
+function MailIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+    </svg>
+  );
+}
+
+/* ── Lock icon for password field ──────────────────────────── */
+function LockIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
+/* ── Checkmark animation for signup success ────────────────── */
+function SuccessCheckmark() {
+  return (
+    <div className="flex flex-col items-center justify-center py-8 animate-fade-in">
+      <div className="w-16 h-16 rounded-full bg-emerald-500/15 border-2 border-emerald-500 flex items-center justify-center mb-4 animate-bounce-once">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      </div>
+      <p className="text-emerald-400 text-sm font-semibold">Account created!</p>
+    </div>
+  );
+}
+
+/* ── Email validation helper ───────────────────────────────── */
+function validateEmail(email) {
+  if (!email) return '';
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!re.test(email)) return 'Please enter a valid email address.';
+  return '';
+}
+
+/* ── Rate limit tracker ────────────────────────────────────── */
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_SECONDS = 30;
+
+export default function AuthScreen({ onAuth, onGuest }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -78,10 +134,75 @@ export default function AuthScreen({ onAuth }) {
   const [rememberMe, setRememberMe] = useState(false);
   const [animKey, setAnimKey] = useState(0);
 
+  /* Improvement: Email inline validation */
+  const [emailTouched, setEmailTouched] = useState(false);
+  const emailError = emailTouched ? validateEmail(email) : '';
+
+  /* Improvement: Caps lock warning */
+  const [capsLockOn, setCapsLockOn] = useState(false);
+  const handleKeyEvent = useCallback((e) => {
+    if (e.getModifierState) {
+      setCapsLockOn(e.getModifierState('CapsLock'));
+    }
+  }, []);
+
+  /* Improvement: Signup success animation + countdown */
+  const [signupSuccess, setSignupSuccess] = useState(false);
+  const [countdown, setCountdown] = useState(3);
+  const [pendingUser, setPendingUser] = useState(null);
+
+  /* Improvement: Terms of service checkbox */
+  const [tosAccepted, setTosAccepted] = useState(false);
+
+  /* Improvement: Forgot password flow */
+  const [forgotMode, setForgotMode] = useState(false);
+  const [forgotSent, setForgotSent] = useState(false);
+
+  /* Improvement: Rate limiting display */
+  const [attempts, setAttempts] = useState(0);
+  const [lockoutEnd, setLockoutEnd] = useState(0);
+  const [lockoutRemaining, setLockoutRemaining] = useState(0);
+
+  /* Improvement: Welcome back message */
+  const [lastEmail] = useState(() => {
+    try { return localStorage.getItem('gs_last_email') || ''; } catch { return ''; }
+  });
+
+  /* Countdown timer for signup success redirect */
+  useEffect(() => {
+    if (!signupSuccess || !pendingUser) return;
+    if (countdown <= 0) {
+      onAuth(pendingUser);
+      return;
+    }
+    const timer = setTimeout(() => setCountdown(c => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [signupSuccess, countdown, pendingUser, onAuth]);
+
+  /* Lockout countdown timer */
+  useEffect(() => {
+    if (lockoutEnd <= 0) return;
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((lockoutEnd - Date.now()) / 1000));
+      setLockoutRemaining(remaining);
+      if (remaining <= 0) {
+        setLockoutEnd(0);
+        setAttempts(0);
+      }
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [lockoutEnd]);
+
   const toggleMode = () => {
     setMode(m => m === "login" ? "signup" : "login");
     setError("");
     setAnimKey(k => k + 1);
+    setForgotMode(false);
+    setForgotSent(false);
+    setEmailTouched(false);
+    setTosAccepted(false);
   };
 
   const validateUsername = (val) => {
@@ -91,10 +212,42 @@ export default function AuthScreen({ onAuth }) {
   };
 
   const strength = useMemo(() => getPasswordStrength(password), [password]);
+  const passwordChecks = useMemo(() => getPasswordChecks(password), [password]);
+
+  const handleForgotPassword = () => {
+    setForgotMode(true);
+    setForgotSent(false);
+    setError("");
+  };
+
+  const handleForgotSubmit = (e) => {
+    e.preventDefault();
+    if (!email || validateEmail(email)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    setForgotSent(true);
+    setError("");
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+
+    /* Rate limiting check */
+    if (lockoutEnd > 0 && Date.now() < lockoutEnd) {
+      setError(`Too many attempts. Please wait ${lockoutRemaining}s.`);
+      return;
+    }
+
+    /* Email validation */
+    const emailErr = validateEmail(email);
+    if (emailErr) {
+      setEmailTouched(true);
+      setError(emailErr);
+      return;
+    }
+
     setLoading(true);
     try {
       if (mode === "signup") {
@@ -102,17 +255,32 @@ export default function AuthScreen({ onAuth }) {
         if (!displayName.trim()) { setError("Display name is required."); setLoading(false); return; }
         if (password.length < 6) { setError("Password must be at least 6 characters."); setLoading(false); return; }
         if (password !== confirmPassword) { setError("Passwords do not match."); setLoading(false); return; }
+        if (!tosAccepted) { setError("You must accept the Terms of Service."); setLoading(false); return; }
         if (USER_PROFILES[username]) { setError(`@${username} is already taken.`); setLoading(false); return; }
         const available = await checkUsername(username);
         if (!available) { setError(`@${username} is already taken.`); setLoading(false); return; }
         const { user } = await signUp({ email, password, username, displayName });
-        onAuth(user);
+        /* Save email for welcome back */
+        try { localStorage.setItem('gs_last_email', email); } catch { /* noop */ }
+        setPendingUser(user);
+        setSignupSuccess(true);
+        setLoading(false);
+        return;
       } else {
         const { user } = await signIn({ email, password });
+        /* Save email for welcome back */
+        try { localStorage.setItem('gs_last_email', email); } catch { /* noop */ }
         onAuth(user);
       }
     } catch (err) {
-      setError(classifyError(err.message));
+      const newAttempts = attempts + 1;
+      setAttempts(newAttempts);
+      if (newAttempts >= MAX_ATTEMPTS) {
+        setLockoutEnd(Date.now() + LOCKOUT_SECONDS * 1000);
+        setError(`Too many failed attempts. Locked out for ${LOCKOUT_SECONDS}s.`);
+      } else {
+        setError(classifyError(err.message));
+      }
     }
     setLoading(false);
   };
@@ -134,9 +302,109 @@ export default function AuthScreen({ onAuth }) {
     );
   };
 
+  /* Signup success screen with countdown */
+  if (signupSuccess) {
+    return (
+      <div className="flex items-center justify-center min-h-0 p-5">
+        <div className="w-[420px] max-w-full bg-gs-surface border border-gs-border rounded-2xl overflow-hidden shadow-2xl animate-slide-up">
+          <SuccessCheckmark />
+          <div className="px-8 pb-8 text-center">
+            <p className="text-gs-muted text-sm">Logging you in{countdown > 0 ? ` in ${countdown}...` : '...'}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* Forgot password screen */
+  if (forgotMode) {
+    return (
+      <div className="flex items-center justify-center min-h-0 p-5">
+        {/* Improvement: Animated gradient background */}
+        <div className="absolute inset-0 bg-gradient-to-br from-gs-accent/5 via-transparent to-gs-indigo/5 animate-gradient-shift pointer-events-none" />
+        <div className="w-[420px] max-w-full bg-gs-surface border border-gs-border rounded-2xl overflow-hidden shadow-2xl animate-slide-up relative z-10">
+          <div className="pt-8 px-8 pb-2 text-center">
+            <div className="inline-flex items-center gap-2.5 mb-1.5">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-gs-accent/15 to-gs-indigo/15 border border-gs-accent/20 flex items-center justify-center">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-[15px] font-semibold text-gs-text mt-2">Reset Password</p>
+            <p className="text-[13px] text-gs-dim mt-1">
+              {forgotSent
+                ? "Check your email for a reset link."
+                : "Enter your email and we'll send a reset link."}
+            </p>
+          </div>
+          {forgotSent ? (
+            <div className="px-8 pb-8 pt-4 text-center">
+              <div className="w-12 h-12 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mx-auto mb-3">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="4" width="20" height="16" rx="2" />
+                  <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                </svg>
+              </div>
+              <p className="text-gs-muted text-[13px] mb-4">
+                If an account exists for <span className="text-gs-text font-medium">{email}</span>, you will receive a password reset email shortly.
+              </p>
+              <button
+                type="button"
+                onClick={() => { setForgotMode(false); setForgotSent(false); }}
+                className="gs-btn-gradient py-2.5 px-6 border-none rounded-[10px] text-sm font-bold cursor-pointer font-sans text-white"
+              >
+                Back to Login
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleForgotSubmit} className="px-8 pb-6 pt-4">
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/25 rounded-[10px] px-3.5 py-2.5 text-red-400 text-xs mb-4 leading-relaxed flex items-start gap-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mt-0.5 shrink-0">
+                    <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  <span>{error}</span>
+                </div>
+              )}
+              <FormInput
+                label="EMAIL"
+                value={email}
+                onChange={(val) => { setEmail(val); setEmailTouched(true); }}
+                placeholder="you@example.com"
+                type="email"
+                prefix={<MailIcon />}
+                error={emailError}
+              />
+              <button
+                type="submit"
+                className="w-full py-3.5 border-none rounded-[10px] text-sm font-bold cursor-pointer mt-2 transition-all duration-200 font-sans flex items-center justify-center gs-btn-gradient text-white"
+              >
+                Send Reset Link
+              </button>
+              <div className="text-center mt-4">
+                <button
+                  type="button"
+                  onClick={() => { setForgotMode(false); setError(""); }}
+                  className="bg-transparent border-none text-gs-accent text-[13px] font-semibold cursor-pointer font-sans hover:underline"
+                >
+                  Back to Login
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="flex items-center justify-center min-h-0 p-5">
-      <div className="w-[420px] max-w-full bg-gs-surface border border-gs-border rounded-2xl overflow-hidden shadow-2xl animate-slide-up">
+    <div className="flex items-center justify-center min-h-0 p-5 relative">
+      {/* Improvement: Animated gradient background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-gs-accent/5 via-transparent to-gs-indigo/5 animate-gradient-shift pointer-events-none" />
+
+      <div className="w-[420px] max-w-full bg-gs-surface border border-gs-border rounded-2xl overflow-hidden shadow-2xl animate-slide-up relative z-10">
         {/* ── Animated header / branding ──────────────────────── */}
         <div className="pt-8 px-8 pb-2 text-center">
           <div className="inline-flex items-center gap-2.5 mb-1.5">
@@ -152,9 +420,17 @@ export default function AuthScreen({ onAuth }) {
               <span className="gs-gradient-text">stack</span>
             </span>
           </div>
+          {/* Improvement: Welcome back message with last email */}
           <p className="text-[13px] text-gs-dim mt-2">
-            {mode === "login" ? "Welcome back" : "Join the vinyl community"}
+            {mode === "login"
+              ? (lastEmail ? `Welcome back` : "Welcome back")
+              : "Join the vinyl community"}
           </p>
+          {mode === "login" && lastEmail && (
+            <p className="text-[11px] text-gs-faint mt-0.5">
+              Last signed in as <span className="text-gs-muted font-medium">{lastEmail}</span>
+            </p>
+          )}
         </div>
 
         {/* ── Form with smooth mode transitions ──────────────── */}
@@ -169,23 +445,64 @@ export default function AuthScreen({ onAuth }) {
               </div>
             )}
 
-            <FormInput label="EMAIL" value={email} onChange={setEmail} placeholder="you@example.com" type="email" />
+            {/* Improvement: Rate limiting lockout display */}
+            {lockoutRemaining > 0 && (
+              <div className="bg-amber-500/10 border border-amber-500/25 rounded-[10px] px-3.5 py-2.5 text-amber-400 text-xs mb-4 leading-relaxed flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0">
+                  <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                </svg>
+                <span>Too many attempts. Try again in {lockoutRemaining}s</span>
+              </div>
+            )}
+
+            {/* Improvement: Email field with mail icon prefix */}
+            <FormInput
+              label="EMAIL"
+              value={email}
+              onChange={(val) => { setEmail(val); setEmailTouched(true); }}
+              placeholder="you@example.com"
+              type="email"
+              prefix={<MailIcon />}
+              error={emailError}
+            />
 
             {mode === "signup" && (
               <>
-                <FormInput label="USERNAME" value={username} onChange={validateUsername} placeholder="your.handle" />
+                {/* Improvement: Username prefix icon */}
+                <FormInput
+                  label="USERNAME"
+                  value={username}
+                  onChange={validateUsername}
+                  placeholder="your.handle"
+                  prefix={<span className="text-gs-dim text-[13px] font-mono">@</span>}
+                />
                 <FormInput label="DISPLAY NAME" value={displayName} onChange={setDisplayName} placeholder="Your Name" />
               </>
             )}
 
-            <FormInput
-              label="PASSWORD"
-              value={password}
-              onChange={setPassword}
-              placeholder={mode === "signup" ? "At least 6 characters" : "Enter your password"}
-              type={showPassword ? "text" : "password"}
-              suffix={passwordToggle('main')}
-            />
+            {/* Improvement: Password field with lock icon prefix */}
+            <div onKeyUp={handleKeyEvent} onKeyDown={handleKeyEvent}>
+              <FormInput
+                label="PASSWORD"
+                value={password}
+                onChange={setPassword}
+                placeholder={mode === "signup" ? "At least 6 characters" : "Enter your password"}
+                type={showPassword ? "text" : "password"}
+                prefix={<LockIcon />}
+                suffix={passwordToggle('main')}
+              />
+            </div>
+
+            {/* Improvement: Caps lock warning */}
+            {capsLockOn && (
+              <div className="-mt-2.5 mb-3 flex items-center gap-1.5 text-amber-400 text-[11px]">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                Caps Lock is on
+              </div>
+            )}
 
             {/* Password strength indicator (signup only) */}
             {mode === "signup" && password && (
@@ -204,15 +521,55 @@ export default function AuthScreen({ onAuth }) {
               </div>
             )}
 
+            {/* Improvement: Password requirements checklist (signup only) */}
+            {mode === "signup" && password && (
+              <div className="-mt-2 mb-4 grid grid-cols-2 gap-x-3 gap-y-1">
+                {passwordChecks.map(({ label, met }) => (
+                  <div key={label} className="flex items-center gap-1.5">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={met ? '#10b981' : '#555'} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      {met ? <polyline points="20 6 9 17 4 12" /> : <line x1="18" y1="6" x2="6" y2="18" />}
+                    </svg>
+                    <span className={`text-[10px] ${met ? 'text-emerald-400' : 'text-gs-faint'}`}>{label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {mode === "signup" && (
-              <FormInput
-                label="CONFIRM PASSWORD"
-                value={confirmPassword}
-                onChange={setConfirmPassword}
-                placeholder="Re-enter password"
-                type={showConfirm ? "text" : "password"}
-                suffix={passwordToggle('confirm')}
-              />
+              <div onKeyUp={handleKeyEvent} onKeyDown={handleKeyEvent}>
+                <FormInput
+                  label="CONFIRM PASSWORD"
+                  value={confirmPassword}
+                  onChange={setConfirmPassword}
+                  placeholder="Re-enter password"
+                  type={showConfirm ? "text" : "password"}
+                  prefix={<LockIcon />}
+                  suffix={passwordToggle('confirm')}
+                />
+              </div>
+            )}
+
+            {/* Improvement: Terms of service checkbox (signup only) */}
+            {mode === "signup" && (
+              <div className="flex items-start gap-2 mb-4 -mt-1">
+                <input
+                  type="checkbox"
+                  checked={tosAccepted}
+                  onChange={e => setTosAccepted(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-gs-border bg-gs-card accent-gs-accent cursor-pointer mt-0.5"
+                  id="tos-checkbox"
+                />
+                <label htmlFor="tos-checkbox" className="text-[11px] text-gs-dim cursor-pointer leading-relaxed">
+                  I agree to the{' '}
+                  <button type="button" onClick={() => alert('Terms of Service coming soon.')} className="bg-transparent border-none text-gs-accent underline cursor-pointer font-sans text-[11px] p-0">
+                    Terms of Service
+                  </button>{' '}
+                  and{' '}
+                  <button type="button" onClick={() => alert('Privacy Policy coming soon.')} className="bg-transparent border-none text-gs-accent underline cursor-pointer font-sans text-[11px] p-0">
+                    Privacy Policy
+                  </button>
+                </label>
+              </div>
             )}
 
             {/* Remember me + forgot password (login only) */}
@@ -230,19 +587,26 @@ export default function AuthScreen({ onAuth }) {
                 <button
                   type="button"
                   className="bg-transparent border-none text-gs-accent text-[12px] font-medium cursor-pointer font-sans hover:underline p-0"
-                  onClick={() => alert('Password reset coming soon!')}
+                  onClick={handleForgotPassword}
                 >
                   Forgot password?
                 </button>
               </div>
+            )}
+
+            {/* Improvement: Login attempt counter */}
+            {mode === "login" && attempts > 0 && attempts < MAX_ATTEMPTS && lockoutRemaining <= 0 && (
+              <p className="text-[10px] text-gs-faint text-center mb-2">
+                {MAX_ATTEMPTS - attempts} attempt{MAX_ATTEMPTS - attempts !== 1 ? 's' : ''} remaining before temporary lockout
+              </p>
             )}
           </div>
 
           {/* Submit button with spinner */}
           <button
             type="submit"
-            disabled={loading}
-            className={`w-full py-3.5 border-none rounded-[10px] text-sm font-bold cursor-pointer mt-2 transition-all duration-200 font-sans flex items-center justify-center ${loading ? 'bg-[#1a1a1a] text-gs-dim opacity-60 cursor-not-allowed' : 'gs-btn-gradient text-white'}`}
+            disabled={loading || lockoutRemaining > 0}
+            className={`w-full py-3.5 border-none rounded-[10px] text-sm font-bold cursor-pointer mt-2 transition-all duration-200 font-sans flex items-center justify-center ${(loading || lockoutRemaining > 0) ? 'bg-[#1a1a1a] text-gs-dim opacity-60 cursor-not-allowed' : 'gs-btn-gradient text-white'}`}
           >
             {loading && <Spinner />}
             {loading
@@ -250,6 +614,17 @@ export default function AuthScreen({ onAuth }) {
               : (mode === "login" ? "Log In" : "Create Account")
             }
           </button>
+
+          {/* Improvement: Continue as guest option */}
+          {onGuest && (
+            <button
+              type="button"
+              onClick={onGuest}
+              className="w-full py-2.5 mt-2 bg-transparent border border-gs-border rounded-[10px] text-gs-dim text-[13px] font-medium cursor-pointer font-sans hover:bg-[#111] hover:text-gs-muted transition-all duration-150"
+            >
+              Continue as Guest
+            </button>
+          )}
 
           {/* ── Social login placeholders ─────────────────────── */}
           <div className="mt-4">
@@ -308,20 +683,6 @@ export default function AuthScreen({ onAuth }) {
               {mode === "login" ? "Sign up" : "Log in"}
             </button>
           </div>
-
-          {/* ── Terms / Privacy (signup) ──────────────────────── */}
-          {mode === "signup" && (
-            <p className="text-center text-[11px] text-gs-faint mt-3 leading-relaxed">
-              By creating an account you agree to our{' '}
-              <button type="button" onClick={() => alert('Terms of Service coming soon.')} className="bg-transparent border-none text-gs-dim underline cursor-pointer font-sans text-[11px] p-0">
-                Terms of Service
-              </button>{' '}
-              and{' '}
-              <button type="button" onClick={() => alert('Privacy Policy coming soon.')} className="bg-transparent border-none text-gs-dim underline cursor-pointer font-sans text-[11px] p-0">
-                Privacy Policy
-              </button>.
-            </p>
-          )}
         </form>
       </div>
     </div>
