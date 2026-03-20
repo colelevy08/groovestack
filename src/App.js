@@ -39,6 +39,7 @@ import ScrollToTop from './components/ui/ScrollToTop';
 import Confetti from './components/ui/Confetti';
 import OnboardingTour from './components/ui/OnboardingTour';
 import SwipeHandler from './components/ui/SwipeHandler';
+import KeyboardShortcutsHelp from './components/ui/KeyboardShortcutsHelp';
 
 // Lazy-loaded screens (Performance #14)
 const SocialFeedScreen = lazy(() => import('./components/screens/SocialFeedScreen'));
@@ -127,6 +128,7 @@ export default function App() {
   const [viewingArtist, setViewingArtist] = useState(null);
   const [verifyingRecord, setVerifyingRecord] = useState(null);
   const [showAuth, setShowAuth] = useState(false);
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [toast, setToast] = useState({ visible: false, msg: "" });
 
   // ── Data sync indicator state ──────────────────────────────────────────────
@@ -314,10 +316,20 @@ export default function App() {
   }, [nav]);
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  // Check if any modal is open (used to suppress non-Escape shortcuts)
+  const anyModalOpen = showAdd || !!commentRecord || !!buyRecord || !!detailRecord ||
+    showEditProfile || !!viewingUser || showDMs || showNotifs || !!offerTarget ||
+    showCreatePost || !!viewingArtist || !!verifyingRecord || showAuth || showShortcutsHelp;
+  const isGuestForShortcuts = !session; // Derived early so keyboard effect can reference it
+
   useEffect(() => {
+    const NAV_KEYS = ['Social', 'Marketplace', 'Collection', 'Activity', 'Vinyl Buddy', 'Profile'];
     const handler = (e) => {
-      // Escape — close any open modal
+      // Escape — close any open modal or dismiss toast
       if (e.key === 'Escape') {
+        // Dismiss visible toast on Escape
+        if (toast.visible) { setToast(t => ({ ...t, visible: false })); }
+        if (showShortcutsHelp) { setShowShortcutsHelp(false); return; }
         if (showGlobalSearch) { setShowGlobalSearch(false); setGlobalSearch(""); return; }
         if (showChangelog) { setShowChangelog(false); return; }
         if (showAuth) { setShowAuth(false); return; }
@@ -333,16 +345,66 @@ export default function App() {
         if (showCreatePost) { setShowCreatePost(false); return; }
         if (viewingArtist) { setViewingArtist(null); return; }
         if (verifyingRecord) { setVerifyingRecord(null); return; }
+        return;
       }
-      // Cmd+K / Ctrl+K — open global search
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setShowGlobalSearch(s => !s);
+
+      // When a modal is open, only Escape should work — disable all other shortcuts
+      if (anyModalOpen) return;
+
+      // Don't trigger shortcuts when typing in inputs
+      const tag = document.activeElement?.tagName;
+      const isInput = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || document.activeElement?.isContentEditable;
+
+      // Cmd/Ctrl shortcuts (work even in inputs, since they use modifier)
+      if (e.metaKey || e.ctrlKey) {
+        switch (e.key) {
+          case 'k':
+            e.preventDefault();
+            setShowGlobalSearch(s => !s);
+            return;
+          case 'n':
+            e.preventDefault();
+            if (!isGuestForShortcuts) setShowAdd(true);
+            else setShowAuth(true);
+            return;
+          case 'p':
+            e.preventDefault();
+            if (!isGuestForShortcuts) setShowCreatePost(true);
+            else setShowAuth(true);
+            return;
+          case '/':
+            e.preventDefault();
+            setShowShortcutsHelp(s => !s);
+            return;
+          case ',':
+            e.preventDefault();
+            setNav('Settings');
+            return;
+          case 'f':
+            e.preventDefault();
+            // Focus the sidebar search input
+            const searchInput = document.querySelector('.gs-sidebar-desktop input[type="text"]');
+            if (searchInput) searchInput.focus();
+            return;
+          default:
+            break;
+        }
+      }
+
+      // Number keys 1-6 for tab navigation (skip when typing in inputs)
+      if (!isInput && e.key >= '1' && e.key <= '6') {
+        const idx = parseInt(e.key, 10) - 1;
+        const target = NAV_KEYS[idx];
+        if (target) {
+          if (isGuestForShortcuts && target !== 'Marketplace') { setShowAuth(true); return; }
+          setViewingUserProfile(null);
+          setNav(target);
+        }
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [showGlobalSearch, showChangelog, showAuth, showAdd, commentRecord, buyRecord, detailRecord, showEditProfile, viewingUser, showDMs, showNotifs, offerTarget, showCreatePost, viewingArtist, verifyingRecord]);
+  }, [showGlobalSearch, showChangelog, showAuth, showAdd, commentRecord, buyRecord, detailRecord, showEditProfile, viewingUser, showDMs, showNotifs, offerTarget, showCreatePost, viewingArtist, verifyingRecord, showShortcutsHelp, anyModalOpen, isGuestForShortcuts, toast.visible]);
 
   // ── Poll Vinyl Buddy server for new listening sessions ───────────────────
   useEffect(() => {
@@ -869,6 +931,8 @@ export default function App() {
         open={!!verifyingRecord} onClose={() => setVerifyingRecord(null)}
         record={verifyingRecord} onVerified={onRecordVerified}
       />
+      {/* Keyboard shortcuts help overlay */}
+      <KeyboardShortcutsHelp open={showShortcutsHelp} onClose={() => setShowShortcutsHelp(false)} />
       {/* Auth modal — shown when guest tries a restricted action */}
       {showAuth && (
         <div

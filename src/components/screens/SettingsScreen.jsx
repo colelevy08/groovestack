@@ -320,9 +320,9 @@ export default function SettingsScreen({ currentUser, profile, deviceCode, vinyl
           </div>
           <div className="border-t border-[#111] pt-2.5 mt-2.5">
             <div className="flex gap-3">
-              <a href="#" className="text-[11px] text-gs-accent hover:underline">Terms of Service</a>
-              <a href="#" className="text-[11px] text-gs-accent hover:underline">Privacy Policy</a>
-              <a href="#" className="text-[11px] text-gs-accent hover:underline">Open Source</a>
+              <button className="text-[11px] text-gs-accent hover:underline bg-transparent border-none cursor-pointer p-0">Terms of Service</button>
+              <button className="text-[11px] text-gs-accent hover:underline bg-transparent border-none cursor-pointer p-0">Privacy Policy</button>
+              <button className="text-[11px] text-gs-accent hover:underline bg-transparent border-none cursor-pointer p-0">Open Source</button>
             </div>
           </div>
           <div className="text-[11px] text-gs-faint mt-1">

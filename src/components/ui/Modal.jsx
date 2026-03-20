@@ -1,7 +1,8 @@
 // Generic centered overlay modal — used by all modal components.
 // Clicking the backdrop triggers onClose. Header is sticky for scrolling content.
 // Supports entrance/exit animations, keyboard trap, backdrop blur, size variants,
-// and focus management (returns focus to trigger element on close).
+// focus management (returns focus to trigger element on close),
+// swipe-down-to-close on mobile, and modal stacking with incremented z-index.
 import { useState, useEffect, useRef, useCallback } from 'react';
 
 const SIZE_MAP = {
@@ -11,31 +12,46 @@ const SIZE_MAP = {
   xl: "800px",
 };
 
+// Global counter for stacking modals — each new modal gets a higher z-index
+let modalStackCount = 0;
+
 export default function Modal({ open, onClose, title, children, width = "480px", size }) {
   const [visible, setVisible] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [stackIndex, setStackIndex] = useState(0);
   const modalRef = useRef(null);
   const triggerRef = useRef(null); // Stores the element that had focus before modal opened (#5)
+
+  // Swipe-to-close state (mobile)
+  const touchStartY = useRef(null);
+  const touchCurrentY = useRef(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
 
   // Resolve width: named size takes priority over raw width
   const resolvedWidth = size ? (SIZE_MAP[size] || SIZE_MAP.md) : width;
 
-  // Open animation + capture trigger element for focus return
+  // Open animation + capture trigger element for focus return + stacking
   useEffect(() => {
     if (open) {
       // Store the currently focused element so we can return focus on close
       triggerRef.current = document.activeElement;
       setClosing(false);
+      modalStackCount++;
+      setStackIndex(modalStackCount);
       // Small delay so the DOM is mounted before animation class applies
       requestAnimationFrame(() => setVisible(true));
     } else {
       setVisible(false);
     }
+    return () => {
+      if (open) modalStackCount = Math.max(0, modalStackCount - 1);
+    };
   }, [open]);
 
   // Close with exit animation + return focus to trigger (#5)
   const handleClose = useCallback(() => {
     setClosing(true);
+    setSwipeOffset(0);
     setTimeout(() => {
       setClosing(false);
       setVisible(false);
@@ -97,13 +113,43 @@ export default function Modal({ open, onClose, title, children, width = "480px",
     }
   }, [open, visible]);
 
+  // Swipe-to-close handlers (mobile)
+  const onTouchStart = useCallback((e) => {
+    touchStartY.current = e.touches[0].clientY;
+    touchCurrentY.current = null;
+  }, []);
+
+  const onTouchMove = useCallback((e) => {
+    if (touchStartY.current === null) return;
+    touchCurrentY.current = e.touches[0].clientY;
+    const delta = touchCurrentY.current - touchStartY.current;
+    // Only allow downward swipe
+    if (delta > 0) {
+      setSwipeOffset(delta);
+    }
+  }, []);
+
+  const onTouchEnd = useCallback(() => {
+    if (swipeOffset > 120) {
+      handleClose();
+    } else {
+      setSwipeOffset(0);
+    }
+    touchStartY.current = null;
+    touchCurrentY.current = null;
+  }, [swipeOffset, handleClose]);
+
   if (!open && !closing) return null;
+
+  // Stacked z-index: base 1000 + 10 per stack level
+  const zIndex = 1000 + (stackIndex * 10);
 
   return (
     <div
-      className={`fixed inset-0 bg-black/85 flex items-center justify-center z-[1000] backdrop-blur-md ${
+      className={`fixed inset-0 bg-black/85 flex items-center justify-center backdrop-blur-md ${
         closing ? 'animate-overlay-out' : 'animate-overlay-in'
       }`}
+      style={{ zIndex }}
       onClick={e => e.target === e.currentTarget && handleClose()}
     >
       <div
@@ -113,8 +159,20 @@ export default function Modal({ open, onClose, title, children, width = "480px",
         aria-labelledby={title ? 'modal-title' : undefined}
         aria-label={title || undefined}
         className={`gs-modal-box ${closing ? 'animate-modal-out' : 'animate-modal-in'}`}
-        style={{ width: resolvedWidth }}
+        style={{
+          width: resolvedWidth,
+          transform: swipeOffset > 0 ? `translateY(${swipeOffset}px)` : undefined,
+          opacity: swipeOffset > 0 ? Math.max(0.4, 1 - swipeOffset / 300) : undefined,
+          transition: swipeOffset > 0 ? 'none' : undefined,
+        }}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
       >
+        {/* Swipe indicator for mobile */}
+        <div className="flex justify-center pt-2 pb-0 md:hidden">
+          <div className="w-8 h-1 rounded-full bg-gs-border-hover" />
+        </div>
         {/* Sticky header with proper heading hierarchy (#3) */}
         <div className="flex justify-between items-center px-5 py-4 border-b border-gs-border sticky top-0 bg-gs-surface z-[1]">
           <h2 id="modal-title" className="text-[15px] font-bold tracking-tight text-gs-text m-0">{title}</h2>

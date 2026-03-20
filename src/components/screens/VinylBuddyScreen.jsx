@@ -21,6 +21,12 @@ function ensureKeyframes() {
     @keyframes vb-fade-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
     @keyframes vb-skeleton { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
     @keyframes vb-now-pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+    @keyframes vb-eq-bar1 { 0%,100% { height:20%; } 25% { height:80%; } 50% { height:40%; } 75% { height:90%; } }
+    @keyframes vb-eq-bar2 { 0%,100% { height:60%; } 25% { height:30%; } 50% { height:85%; } 75% { height:45%; } }
+    @keyframes vb-eq-bar3 { 0%,100% { height:40%; } 25% { height:90%; } 50% { height:20%; } 75% { height:70%; } }
+    @keyframes vb-eq-bar4 { 0%,100% { height:75%; } 25% { height:50%; } 50% { height:95%; } 75% { height:30%; } }
+    @keyframes vb-eq-bar5 { 0%,100% { height:50%; } 25% { height:70%; } 50% { height:30%; } 75% { height:85%; } }
+    @keyframes vb-wave { 0% { transform:translateX(0); } 100% { transform:translateX(-50%); } }
     .vb-fade-in { animation: vb-fade-in 0.3s ease-out both; }
     .vb-skeleton {
       background: linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%);
@@ -187,6 +193,344 @@ function ProgressBar({ value, max, color, label }) {
       <div className="w-full h-2 bg-[#111] rounded-full overflow-hidden">
         <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${color}, ${color}88)` }} />
       </div>
+    </div>
+  );
+}
+
+// ── Equalizer visualization ──────────────────────────────────────────────
+function EqualizerVis({ active = false, barCount = 5, height = 24, color = "#0ea5e9" }) {
+  const anims = ["vb-eq-bar1", "vb-eq-bar2", "vb-eq-bar3", "vb-eq-bar4", "vb-eq-bar5"];
+  return (
+    <div className="flex items-end gap-[2px]" style={{ height }}>
+      {Array.from({ length: barCount }, (_, i) => (
+        <div
+          key={i}
+          className="w-[3px] rounded-t-sm"
+          style={{
+            height: active ? undefined : "20%",
+            background: active ? color : "#333",
+            animation: active ? `${anims[i % anims.length]} ${0.8 + i * 0.15}s ease-in-out infinite` : "none",
+            transition: "background 0.3s",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ── Sound wave visualization placeholder ─────────────────────────────────
+function SoundWaveVis({ active = false }) {
+  const bars = 32;
+  return (
+    <div className="relative w-full h-10 overflow-hidden rounded-lg bg-[#111] border border-[#1a1a1a]">
+      <div
+        className="absolute inset-0 flex items-center gap-[1px] px-2"
+        style={{ animation: active ? "vb-wave 3s linear infinite" : "none", width: "200%" }}
+      >
+        {Array.from({ length: bars * 2 }, (_, i) => {
+          const h = active ? 15 + Math.sin(i * 0.5) * 12 + Math.random() * 8 : 4;
+          return (
+            <div
+              key={i}
+              className="flex-1 rounded-sm transition-all duration-300"
+              style={{
+                height: `${h}px`,
+                background: active
+                  ? `linear-gradient(to top, #0ea5e9, #8b5cf6)`
+                  : "#222",
+                opacity: active ? 0.7 + Math.random() * 0.3 : 0.3,
+              }}
+            />
+          );
+        })}
+      </div>
+      {!active && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-[9px] text-gs-faint font-mono">Waiting for audio...</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Achievement badges ──────────────────────────────────────────────────
+const ACHIEVEMENT_DEFS = [
+  { id: "first_listen", label: "First Spin", desc: "Identified your first track", icon: "\uD83C\uDFB5", threshold: (s) => s.totalListens >= 1 },
+  { id: "10_artists", label: "Diverse Ear", desc: "Listened to 10 different artists", icon: "\uD83C\uDFA4", threshold: (s) => s.uniqueArtists >= 10 },
+  { id: "50_listens", label: "Vinyl Veteran", desc: "50 tracks identified", icon: "\uD83C\uDFB6", threshold: (s) => s.totalListens >= 50 },
+  { id: "100_listens", label: "Century Club", desc: "100 tracks identified", icon: "\uD83D\uDCAF", threshold: (s) => s.totalListens >= 100 },
+  { id: "5_albums", label: "Album Explorer", desc: "Explored 5 unique albums", icon: "\uD83D\uDCBF", threshold: (s) => s.uniqueAlbums >= 5 },
+  { id: "night_owl", label: "Night Owl", desc: "Listened after midnight", icon: "\uD83E\uDD89", threshold: (s) => s.hasLateNight },
+  { id: "early_bird", label: "Early Bird", desc: "Listened before 7 AM", icon: "\uD83D\uDC26", threshold: (s) => s.hasEarlyMorning },
+  { id: "marathon", label: "Marathon", desc: "Listened for over 2 hours total", icon: "\uD83C\uDFC3", threshold: (s) => s.totalMinutes >= 120 },
+];
+
+function AchievementBadges({ myListens }) {
+  const stats = useMemo(() => {
+    const uniqueArtists = new Set(myListens.map(s => s.track.artist)).size;
+    const uniqueAlbums = new Set(myListens.map(s => `${s.track.artist}::${s.track.album}`)).size;
+    const totalMinutes = Math.round(myListens.reduce((sum, s) => sum + (s.listenedSeconds || 0), 0) / 60);
+    const hasLateNight = myListens.some(s => { const h = new Date(s.timestampMs).getHours(); return h >= 0 && h < 5; });
+    const hasEarlyMorning = myListens.some(s => { const h = new Date(s.timestampMs).getHours(); return h >= 5 && h < 7; });
+    return { totalListens: myListens.length, uniqueArtists, uniqueAlbums, totalMinutes, hasLateNight, hasEarlyMorning };
+  }, [myListens]);
+
+  const earned = ACHIEVEMENT_DEFS.filter(a => a.threshold(stats));
+  const locked = ACHIEVEMENT_DEFS.filter(a => !a.threshold(stats));
+
+  if (myListens.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Achievement Badges</div>
+      <div className="grid grid-cols-4 sm:grid-cols-4 gap-2">
+        {earned.map(a => (
+          <Tooltip key={a.id} text={a.desc}>
+            <div className="flex flex-col items-center gap-1 py-2 px-1 rounded-lg bg-[#0ea5e908] border border-[#0ea5e922] cursor-default transition-all duration-200 hover:border-[#0ea5e944]">
+              <span className="text-xl">{a.icon}</span>
+              <span className="text-[9px] text-gs-accent font-bold text-center leading-tight">{a.label}</span>
+            </div>
+          </Tooltip>
+        ))}
+        {locked.map(a => (
+          <Tooltip key={a.id} text={a.desc}>
+            <div className="flex flex-col items-center gap-1 py-2 px-1 rounded-lg bg-[#111] border border-[#1a1a1a] cursor-default opacity-40">
+              <span className="text-xl grayscale">{a.icon}</span>
+              <span className="text-[9px] text-gs-faint font-bold text-center leading-tight">{a.label}</span>
+            </div>
+          </Tooltip>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Listening streaks ───────────────────────────────────────────────────
+function ListeningStreaks({ myListens }) {
+  const { currentStreak, longestStreak } = useMemo(() => {
+    if (myListens.length === 0) return { currentStreak: 0, longestStreak: 0 };
+
+    const days = new Set();
+    for (const s of myListens) {
+      const d = new Date(s.timestampMs);
+      days.add(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
+    }
+
+    const sortedDays = [...days].sort().reverse();
+    let current = 0;
+    let longest = 0;
+    let streak = 0;
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+    const yesterdayDate = new Date(today);
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterdayKey = `${yesterdayDate.getFullYear()}-${yesterdayDate.getMonth()}-${yesterdayDate.getDate()}`;
+
+    // Current streak — must include today or yesterday
+    if (sortedDays[0] === todayKey || sortedDays[0] === yesterdayKey) {
+      let checkDate = new Date(sortedDays[0] === todayKey ? today : yesterdayDate);
+      for (let i = 0; i < 365; i++) {
+        const key = `${checkDate.getFullYear()}-${checkDate.getMonth()}-${checkDate.getDate()}`;
+        if (days.has(key)) {
+          current++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else break;
+      }
+    }
+
+    // Longest streak
+    const allDaysSorted = [...days].sort();
+    streak = 1;
+    longest = 1;
+    for (let i = 1; i < allDaysSorted.length; i++) {
+      const [y1, m1, d1] = allDaysSorted[i - 1].split("-").map(Number);
+      const [y2, m2, d2] = allDaysSorted[i].split("-").map(Number);
+      const date1 = new Date(y1, m1, d1);
+      const date2 = new Date(y2, m2, d2);
+      const diff = Math.round((date2 - date1) / 86400000);
+      if (diff === 1) {
+        streak++;
+        longest = Math.max(longest, streak);
+      } else {
+        streak = 1;
+      }
+    }
+
+    return { currentStreak: current, longestStreak: Math.max(longest, current) };
+  }, [myListens]);
+
+  if (myListens.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Listening Streaks</div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-[#111] rounded-lg py-3 px-3 text-center">
+          <div className="text-2xl font-extrabold text-[#f59e0b]">{currentStreak}</div>
+          <div className="text-[10px] text-gs-dim font-mono mt-0.5">Current Streak</div>
+          <div className="text-[9px] text-gs-faint mt-0.5">{currentStreak === 1 ? "day" : "days"}</div>
+        </div>
+        <div className="bg-[#111] rounded-lg py-3 px-3 text-center">
+          <div className="text-2xl font-extrabold text-[#8b5cf6]">{longestStreak}</div>
+          <div className="text-[10px] text-gs-dim font-mono mt-0.5">Longest Streak</div>
+          <div className="text-[9px] text-gs-faint mt-0.5">{longestStreak === 1 ? "day" : "days"}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Night Owl / Early Bird indicator ────────────────────────────────────
+function ListeningPatternIndicator({ myListens }) {
+  const pattern = useMemo(() => {
+    if (myListens.length < 3) return null;
+    let nightCount = 0;
+    let morningCount = 0;
+    for (const s of myListens) {
+      const h = new Date(s.timestampMs).getHours();
+      if (h >= 21 || h < 5) nightCount++;
+      if (h >= 5 && h < 10) morningCount++;
+    }
+    if (nightCount > morningCount && nightCount >= 3) return { type: "night", label: "Night Owl", icon: "\uD83E\uDD89", color: "#8b5cf6", desc: "Most of your listening happens after dark" };
+    if (morningCount > nightCount && morningCount >= 3) return { type: "morning", label: "Early Bird", icon: "\uD83D\uDC26", color: "#f59e0b", desc: "You start your mornings with vinyl" };
+    return null;
+  }, [myListens]);
+
+  if (!pattern) return null;
+
+  return (
+    <div className="flex items-center gap-2 py-2 px-3 rounded-lg mb-4" style={{ background: `${pattern.color}08`, border: `1px solid ${pattern.color}22` }}>
+      <span className="text-lg">{pattern.icon}</span>
+      <div>
+        <span className="text-xs font-bold" style={{ color: pattern.color }}>{pattern.label}</span>
+        <div className="text-[10px] text-gs-dim">{pattern.desc}</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Album art mosaic ────────────────────────────────────────────────────
+function AlbumArtMosaic({ myListens }) {
+  const uniqueAlbums = useMemo(() => {
+    const seen = new Set();
+    const albums = [];
+    for (const s of myListens) {
+      const key = `${s.track.artist}::${s.track.album}`;
+      if (!seen.has(key) && s.track.album) {
+        seen.add(key);
+        albums.push({ album: s.track.album, artist: s.track.artist });
+      }
+      if (albums.length >= 9) break;
+    }
+    return albums;
+  }, [myListens]);
+
+  if (uniqueAlbums.length < 4) return null;
+
+  const gridSize = uniqueAlbums.length >= 9 ? 3 : 2;
+  const items = uniqueAlbums.slice(0, gridSize * gridSize);
+
+  return (
+    <div className="mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-2.5 uppercase tracking-[0.06em]">Recent Albums</div>
+      <div className="rounded-[14px] overflow-hidden border border-gs-border" style={{ display: "grid", gridTemplateColumns: `repeat(${gridSize}, 1fr)`, gap: "2px" }}>
+        {items.map((item, i) => (
+          <div key={i} className="aspect-square">
+            <AlbumArt album={item.album} artist={item.artist} accent="#0ea5e9" size="100%" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Share Now Playing button ─────────────────────────────────────────────
+function ShareNowPlaying({ track }) {
+  const [shared, setShared] = useState(false);
+
+  const handleShare = useCallback(() => {
+    const text = `Now spinning: ${track.title} by ${track.artist}${track.album ? ` from "${track.album}"` : ""}${track.year ? ` (${track.year})` : ""} \uD83C\uDFB6\n\nTracked by Vinyl Buddy on groovestack.co`;
+    navigator.clipboard.writeText(text).catch(() => {});
+    setShared(true);
+    setTimeout(() => setShared(false), 2000);
+  }, [track]);
+
+  return (
+    <div className="relative">
+      <button onClick={handleShare} className="flex items-center gap-1.5 text-[10px] text-gs-dim bg-transparent border border-[#222] rounded-lg px-2.5 py-1.5 cursor-pointer hover:border-gs-accent hover:text-gs-accent transition-all duration-200">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>
+        </svg>
+        Share
+      </button>
+      {shared && (
+        <div className="absolute -top-7 left-1/2 -translate-x-1/2 text-[9px] text-gs-accent bg-[#111] border border-gs-border rounded px-2 py-1 whitespace-nowrap" style={{ animation: "vb-fade-in 0.15s ease-out" }}>
+          Copied!
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Setup Guide ─────────────────────────────────────────────────────────
+function SetupGuide() {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] mb-3 overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between py-3.5 px-4 bg-transparent border-none cursor-pointer text-left"
+      >
+        <div className="flex items-center gap-2.5">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+          </svg>
+          <span className="text-[13px] font-bold text-gs-text">Vinyl Buddy Setup Guide</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s ease" }}>
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 vb-fade-in">
+          <div className="text-xs text-gs-muted mb-3">Hardware wiring diagram for ESP32 + I2S INMP441 microphone</div>
+
+          {/* Wiring diagram placeholder */}
+          <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl p-4 mb-4 font-mono text-[10px] text-gs-muted leading-relaxed">
+            <div className="text-[11px] text-gs-accent font-bold mb-2">ESP32-DevKitC V4 Pinout</div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+              <div className="flex justify-between"><span className="text-[#22c55e]">3V3</span><span>---&gt; INMP441 VDD</span></div>
+              <div className="flex justify-between"><span className="text-[#f87171]">GND</span><span>---&gt; INMP441 GND</span></div>
+              <div className="flex justify-between"><span className="text-[#0ea5e9]">GPIO 25</span><span>---&gt; INMP441 WS</span></div>
+              <div className="flex justify-between"><span className="text-[#8b5cf6]">GPIO 33</span><span>---&gt; INMP441 SCK</span></div>
+              <div className="flex justify-between"><span className="text-[#f59e0b]">GPIO 32</span><span>---&gt; INMP441 SD</span></div>
+              <div className="flex justify-between"><span className="text-[#22c55e]">GND</span><span>---&gt; INMP441 L/R</span></div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-[#1a1a1a] text-gs-faint">
+              Note: Connect L/R to GND for left channel mono output. Power via USB-C.
+            </div>
+          </div>
+
+          {/* Component list */}
+          <div className="text-[11px] text-gs-muted mb-2 font-semibold">Required Components</div>
+          <div className="flex flex-col gap-1.5 mb-3">
+            {[
+              "ESP32-DevKitC V4 (or compatible)",
+              "INMP441 I2S MEMS Microphone",
+              "0.96\" SSD1306 OLED Display (optional)",
+              "USB-C cable for power",
+              "Jumper wires (6x)",
+              "Breadboard (for prototyping)",
+            ].map((item, i) => (
+              <div key={i} className="flex items-center gap-2 text-[11px] text-gs-dim">
+                <div className="w-1.5 h-1.5 rounded-full bg-gs-accent shrink-0" />
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -746,6 +1090,97 @@ function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate, is
 }
 
 // ============================================================================
+// NOW PLAYING CARD — with equalizer, collection match, actions
+// ============================================================================
+function NowPlayingCard({ nowPlaying, isRecent, myListens }) {
+  // Simulate collection match — check if the track artist+album is "in collection"
+  // In a real implementation, this would check the user's records collection via API
+  const collectionMatch = useMemo(() => {
+    const demoCollection = [
+      "Led Zeppelin::Led Zeppelin IV",
+      "Pink Floyd::Wish You Were Here",
+      "Queen::A Night at the Opera",
+      "The Beatles::Sgt. Pepper's",
+    ];
+    const key = `${nowPlaying.track.artist}::${nowPlaying.track.album}`;
+    return demoCollection.includes(key);
+  }, [nowPlaying]);
+
+  // Simulate marketplace availability
+  const marketplaceAvailable = useMemo(() => {
+    // Placeholder: albums with year before 1980 are "available" in marketplace
+    return nowPlaying.track.year && nowPlaying.track.year < 1980;
+  }, [nowPlaying]);
+
+  return (
+    <div className="bg-gradient-to-br from-[#0ea5e908] to-[#6366f108] border border-[#0ea5e933] rounded-[14px] overflow-hidden mb-4">
+      <div className="h-0.5 bg-gradient-to-r from-gs-accent via-[#8b5cf6] to-transparent" />
+      <div className="p-4 flex gap-4 items-center">
+        <div className="relative shrink-0">
+          <AlbumArt album={nowPlaying.track.album} artist={nowPlaying.track.artist} accent="#0ea5e9" size={64} />
+          {isRecent && (
+            <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#22c55e] border-2 border-[#0a0a0a]" style={{ animation: "vb-now-pulse 2s ease-in-out infinite" }} />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] text-gs-accent font-bold font-mono uppercase tracking-wider">
+              {isRecent ? "Now Playing" : "Last Played"}
+            </span>
+            {isRecent && (
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#22c55e]" style={{ animation: "vb-pulse 1.5s ease-in-out infinite" }} />
+                <span className="text-[9px] text-[#22c55e] font-mono">LIVE</span>
+              </span>
+            )}
+            {/* Equalizer visualization */}
+            <EqualizerVis active={isRecent} barCount={5} height={16} color="#0ea5e9" />
+          </div>
+          <div className="text-[15px] font-bold text-gs-text whitespace-nowrap overflow-hidden text-ellipsis">{nowPlaying.track.title}</div>
+          <div className="text-xs text-gs-muted">{nowPlaying.track.artist}</div>
+          <div className="text-[10px] text-gs-dim">
+            {nowPlaying.track.album}{nowPlaying.track.year ? ` \u00B7 ${nowPlaying.track.year}` : ""}
+          </div>
+          {/* Collection match indicator */}
+          {collectionMatch && (
+            <div className="flex items-center gap-1 mt-1">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              <span className="text-[9px] text-[#22c55e] font-bold">In Your Collection</span>
+            </div>
+          )}
+        </div>
+        <div className="shrink-0 flex flex-col items-end gap-1.5">
+          <span className="text-[10px] text-gs-faint font-mono">{relTime(nowPlaying.timestampMs)}</span>
+          {nowPlaying.score > 0 && (
+            <div className={`text-[10px] font-semibold font-mono ${nowPlaying.score >= 90 ? "text-[#22c55e]" : "text-[#f59e0b]"}`}>
+              {nowPlaying.score}% match
+            </div>
+          )}
+          <ShareNowPlaying track={nowPlaying.track} />
+        </div>
+      </div>
+      {/* Action buttons row */}
+      {(!collectionMatch || marketplaceAvailable) && (
+        <div className="px-4 pb-3 flex items-center gap-2 flex-wrap">
+          {!collectionMatch && (
+            <button className="flex items-center gap-1.5 text-[10px] text-gs-accent bg-[#0ea5e908] border border-[#0ea5e922] rounded-lg px-3 py-1.5 cursor-pointer hover:bg-[#0ea5e915] transition-all duration-200">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add to Collection
+            </button>
+          )}
+          {marketplaceAvailable && (
+            <button className="flex items-center gap-1.5 text-[10px] text-[#f59e0b] bg-[#f59e0b08] border border-[#f59e0b22] rounded-lg px-3 py-1.5 cursor-pointer hover:bg-[#f59e0b15] transition-all duration-200">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/></svg>
+              Buy This Record
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // OVERVIEW TAB
 // ============================================================================
 function OverviewTab({ myListens, nowPlaying, isRecent, topArtist, topTrack, topTrackSession, weeklyData, loading }) {
@@ -772,42 +1207,19 @@ function OverviewTab({ myListens, nowPlaying, isRecent, topArtist, topTrack, top
     <>
       {/* Now Playing card */}
       {nowPlaying && (
-        <div className="bg-gradient-to-br from-[#0ea5e908] to-[#6366f108] border border-[#0ea5e933] rounded-[14px] overflow-hidden mb-4">
-          <div className="h-0.5 bg-gradient-to-r from-gs-accent via-[#8b5cf6] to-transparent" />
-          <div className="p-4 flex gap-4 items-center">
-            <div className="relative shrink-0">
-              <AlbumArt album={nowPlaying.track.album} artist={nowPlaying.track.artist} accent="#0ea5e9" size={64} />
-              {isRecent && (
-                <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#22c55e] border-2 border-[#0a0a0a]" style={{ animation: "vb-now-pulse 2s ease-in-out infinite" }} />
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-[10px] text-gs-accent font-bold font-mono uppercase tracking-wider">
-                  {isRecent ? "Now Playing" : "Last Played"}
-                </span>
-                {isRecent && (
-                  <span className="flex items-center gap-1">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#22c55e]" style={{ animation: "vb-pulse 1.5s ease-in-out infinite" }} />
-                    <span className="text-[9px] text-[#22c55e] font-mono">LIVE</span>
-                  </span>
-                )}
-              </div>
-              <div className="text-[15px] font-bold text-gs-text whitespace-nowrap overflow-hidden text-ellipsis">{nowPlaying.track.title}</div>
-              <div className="text-xs text-gs-muted">{nowPlaying.track.artist}</div>
-              <div className="text-[10px] text-gs-dim">{nowPlaying.track.album}{nowPlaying.track.year ? ` \u00B7 ${nowPlaying.track.year}` : ""}</div>
-            </div>
-            <div className="shrink-0 text-right">
-              <span className="text-[10px] text-gs-faint font-mono">{relTime(nowPlaying.timestampMs)}</span>
-              {nowPlaying.score > 0 && (
-                <div className={`text-[10px] mt-1 font-semibold font-mono ${nowPlaying.score >= 90 ? "text-[#22c55e]" : "text-[#f59e0b]"}`}>
-                  {nowPlaying.score}% match
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <NowPlayingCard nowPlaying={nowPlaying} isRecent={isRecent} myListens={myListens} />
       )}
+
+      {/* Sound wave visualization */}
+      <div className="mb-4">
+        <SoundWaveVis active={isRecent} />
+      </div>
+
+      {/* Listening pattern indicator */}
+      <ListeningPatternIndicator myListens={myListens} />
+
+      {/* Album art mosaic */}
+      <AlbumArtMosaic myListens={myListens} />
 
       {/* Weekly Stats bar chart */}
       <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
@@ -874,6 +1286,12 @@ function OverviewTab({ myListens, nowPlaying, isRecent, topArtist, topTrack, top
           ))}
         </div>
       </div>
+
+      {/* Listening Streaks */}
+      <ListeningStreaks myListens={myListens} />
+
+      {/* Achievement Badges */}
+      <AchievementBadges myListens={myListens} />
 
       {/* Recommendations based on listening history */}
       <RecommendationsSection myListens={myListens} />
@@ -1317,6 +1735,33 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate, isDemo }) {
   const [status, setStatus] = useState(isDemo ? "online" : "checking");
   const [showConfirm, setShowConfirm] = useState(false);
 
+  // Firmware state
+  const [firmwareVersion] = useState(isDemo ? "2.0.3" : "unknown");
+  const [firmwareLatest] = useState("2.1.0");
+  const firmwareUpdateAvailable = firmwareVersion !== firmwareLatest && firmwareVersion !== "unknown";
+
+  // Calibration state
+  const [gain, setGain] = useState(50);
+  const [threshold, setThreshold] = useState(30);
+  const [sampleRate, setSampleRate] = useState(16000);
+  const [calibSaved, setCalibSaved] = useState(false);
+
+  const handleSaveCalibration = useCallback(async () => {
+    try {
+      await fetch("http://localhost:3001/api/vinyl-buddy/calibrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ device_id: deviceCode, gain, threshold, sample_rate: sampleRate }),
+      });
+      setCalibSaved(true);
+      setTimeout(() => setCalibSaved(false), 2000);
+    } catch {
+      // Silently fail for demo
+      setCalibSaved(true);
+      setTimeout(() => setCalibSaved(false), 2000);
+    }
+  }, [deviceCode, gain, threshold, sampleRate]);
+
   // Poll server for device status
   useEffect(() => {
     if (isDemo) return;
@@ -1479,6 +1924,122 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate, isDemo }) {
           </div>
         </div>
       </div>
+
+      {/* Firmware version display */}
+      <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+        <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Firmware</div>
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[13px] font-semibold text-gs-text font-mono">v{firmwareVersion}</div>
+            <div className="text-[10px] text-gs-dim mt-0.5">Latest: v{firmwareLatest}</div>
+          </div>
+          {firmwareUpdateAvailable ? (
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-[#f59e0b]" style={{ animation: "vb-pulse 2s ease-in-out infinite" }} />
+              <div>
+                <div className="text-[11px] text-[#f59e0b] font-bold">Update Available</div>
+                <div className="text-[9px] text-gs-dim">Improved audio capture quality</div>
+              </div>
+              <Tooltip text="OTA updates coming soon">
+                <button className="text-[10px] text-gs-accent bg-[#0ea5e908] border border-[#0ea5e922] rounded-lg px-3 py-1.5 cursor-pointer hover:bg-[#0ea5e915] transition-all duration-200">
+                  Update
+                </button>
+              </Tooltip>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              <span className="text-[11px] text-[#22c55e] font-semibold">Up to date</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Calibration section */}
+      <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+        <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Calibration</div>
+        <div className="flex flex-col gap-4">
+          {/* Gain slider */}
+          <div>
+            <div className="flex justify-between mb-1.5">
+              <span className="text-[11px] text-gs-muted">Microphone Gain</span>
+              <span className="text-[11px] font-semibold text-gs-accent font-mono">{gain}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={gain}
+              onChange={e => setGain(Number(e.target.value))}
+              className="w-full h-1.5 rounded-full appearance-none bg-[#222] outline-none cursor-pointer"
+              style={{ accentColor: "#0ea5e9" }}
+            />
+            <div className="flex justify-between mt-0.5">
+              <span className="text-[9px] text-gs-faint">Quiet</span>
+              <span className="text-[9px] text-gs-faint">Loud</span>
+            </div>
+          </div>
+          {/* Threshold slider */}
+          <div>
+            <div className="flex justify-between mb-1.5">
+              <span className="text-[11px] text-gs-muted">Detection Threshold</span>
+              <span className="text-[11px] font-semibold text-[#8b5cf6] font-mono">{threshold}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={threshold}
+              onChange={e => setThreshold(Number(e.target.value))}
+              className="w-full h-1.5 rounded-full appearance-none bg-[#222] outline-none cursor-pointer"
+              style={{ accentColor: "#8b5cf6" }}
+            />
+            <div className="flex justify-between mt-0.5">
+              <span className="text-[9px] text-gs-faint">Sensitive</span>
+              <span className="text-[9px] text-gs-faint">Strict</span>
+            </div>
+          </div>
+          {/* Sample Rate select */}
+          <div>
+            <div className="flex justify-between mb-1.5">
+              <span className="text-[11px] text-gs-muted">Sample Rate</span>
+              <span className="text-[11px] font-semibold text-[#22c55e] font-mono">{(sampleRate / 1000).toFixed(0)}kHz</span>
+            </div>
+            <div className="flex gap-1.5">
+              {[8000, 16000, 22050, 44100].map(rate => (
+                <button
+                  key={rate}
+                  onClick={() => setSampleRate(rate)}
+                  className={`flex-1 text-[10px] py-1.5 rounded-lg font-mono cursor-pointer transition-all duration-200 border ${
+                    sampleRate === rate
+                      ? "bg-[#22c55e11] border-[#22c55e33] text-[#22c55e] font-bold"
+                      : "bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]"
+                  }`}
+                >
+                  {(rate / 1000).toFixed(rate === 22050 ? 1 : 0)}k
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Save button */}
+          <div className="relative">
+            <button
+              onClick={handleSaveCalibration}
+              className="gs-btn-gradient py-2 px-5 text-xs text-white"
+            >
+              Save Calibration
+            </button>
+            {calibSaved && (
+              <span className="ml-3 text-[10px] text-[#22c55e] font-semibold" style={{ animation: "vb-fade-in 0.15s ease-out" }}>
+                Saved!
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Setup Guide */}
+      <SetupGuide />
 
       {/* Server connection hint */}
       {status === "offline" && (

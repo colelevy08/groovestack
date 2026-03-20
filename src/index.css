@@ -192,6 +192,52 @@
   /* Keyboard shortcut hint */
   .gs-kbd {
     @apply inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-mono bg-[#1a1a1a] border border-gs-border rounded text-gs-dim;
+    min-width: 18px;
+    line-height: 1.4;
+  }
+  /* Accessible tooltip */
+  .gs-tooltip {
+    @apply relative;
+  }
+  .gs-tooltip::after {
+    content: attr(data-tooltip);
+    @apply absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-1 text-[10px] font-medium bg-[#222] text-gs-muted border border-gs-border rounded-md whitespace-nowrap opacity-0 pointer-events-none z-50;
+    transition: opacity 0.15s ease;
+  }
+  .gs-tooltip:hover::after,
+  .gs-tooltip:focus-visible::after {
+    opacity: 1;
+  }
+  /* Consistent focus ring utility */
+  .gs-focus-ring:focus-visible {
+    @apply outline-2 outline-offset-2 outline-gs-accent;
+    outline-style: solid;
+    box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.15);
+  }
+  /* Screen reader only utility */
+  .gs-screen-reader-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+  /* Page transition */
+  .gs-transition-page {
+    animation: pageIn 0.3s ease-out;
+  }
+  /* Toast progress bar */
+  .gs-toast-progress {
+    @apply absolute bottom-0 left-0 h-[2px] rounded-b-[10px];
+    animation: toastProgress linear forwards;
+  }
+  @keyframes toastProgress {
+    from { width: 100%; }
+    to { width: 0%; }
   }
 }
 

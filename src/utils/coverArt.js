@@ -6,6 +6,10 @@ const memoryCache = new Map();
 const inFlight = new Map();
 const LS_PREFIX = "gs_cover_";
 
+// Cache statistics
+let cacheHits = 0;
+let cacheMisses = 0;
+
 // One-time cleanup: remove cached nulls from localStorage so failed lookups retry
 try {
   Object.keys(localStorage).forEach(k => {
@@ -69,15 +73,19 @@ export async function getCoverUrl(album, artist) {
 
   // 1. Check memory cache
   if (memoryCache.has(key)) {
+    cacheHits++;
     return memoryCache.get(key);
   }
 
   // 2. Check localStorage
   const cached = lsGet(key);
   if (cached !== undefined) {
+    cacheHits++;
     memoryCache.set(key, cached);
     return cached;
   }
+
+  cacheMisses++;
 
   // 3. Deduplicate in-flight requests
   if (inFlight.has(key)) {
@@ -116,4 +124,80 @@ export async function getCoverUrl(album, artist) {
 
   inFlight.set(key, promise);
   return promise;
+}
+
+/**
+ * Fetch cover art URLs for multiple records with rate limiting.
+ * Processes requests in batches to avoid overwhelming the iTunes API.
+ *
+ * @param {Object[]} records - Array of record objects with `album`/`title` and `artist` fields.
+ * @param {number} [concurrency=3] - Maximum concurrent requests.
+ * @returns {Promise<Map<string, string|null>>} Map of "artist|album" → URL (or null).
+ */
+export async function getCoverUrls(records, concurrency = 3) {
+  if (!records || records.length === 0) return new Map();
+
+  const results = new Map();
+  const queue = [...records];
+
+  async function processNext() {
+    while (queue.length > 0) {
+      const record = queue.shift();
+      const album = record.album || record.title || "";
+      const artist = record.artist || "";
+      const key = cacheKey(album, artist);
+      const url = await getCoverUrl(album, artist);
+      results.set(key, url);
+      // Small delay between requests to respect rate limits
+      if (queue.length > 0) {
+        await new Promise(r => setTimeout(r, 200));
+      }
+    }
+  }
+
+  // Launch `concurrency` workers
+  const workers = Array.from({ length: Math.min(concurrency, records.length) }, () => processNext());
+  await Promise.all(workers);
+
+  return results;
+}
+
+/**
+ * Get cache hit/miss statistics for cover art lookups.
+ *
+ * @returns {{ hits: number, misses: number, hitRate: number, memoryCacheSize: number }}
+ */
+export function getCacheStats() {
+  const total = cacheHits + cacheMisses;
+  return {
+    hits: cacheHits,
+    misses: cacheMisses,
+    hitRate: total > 0 ? cacheHits / total : 0,
+    memoryCacheSize: memoryCache.size,
+  };
+}
+
+/**
+ * Preload cover art for an array of records.
+ * Fetches covers in the background with rate limiting — useful for
+ * prefetching art for records that are visible or about to be visible.
+ *
+ * @param {Object[]} records - Array of record objects with `album`/`title` and `artist` fields.
+ * @returns {Promise<void>}
+ */
+export async function preloadCovers(records) {
+  if (!records || records.length === 0) return;
+
+  // Filter to only records not already cached
+  const uncached = records.filter(r => {
+    const album = r.album || r.title || "";
+    const artist = r.artist || "";
+    const key = cacheKey(album, artist);
+    return !memoryCache.has(key) && lsGet(key) === undefined;
+  });
+
+  if (uncached.length === 0) return;
+
+  // Use getCoverUrls with conservative concurrency for background loading
+  await getCoverUrls(uncached, 2);
 }

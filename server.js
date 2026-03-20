@@ -93,9 +93,12 @@ const AUDD_API_TOKEN = process.env.AUDD_API_TOKEN || '';
 const MAX_VB_SESSIONS = 1000;
 const vinylSessions = [];
 const devicesById = new Map();
+const calibrationByDevice = new Map();
+const pairedDevices = new Map(); // deviceId -> { username, pairedAt }
 let lastIdentifyDebug = null;
 const DEFAULT_TRACK_LENGTH_SEC = 240;
 const CAPTURE_COUNT_MIN_GAP_MS = 120000;
+const VB_FIRMWARE_CURRENT = '2.1.0';
 
 function _parsePositiveInt(value, fallback) {
   const n = Number.parseInt(value, 10);
@@ -627,6 +630,205 @@ app.get('/api/vinyl-buddy/devices/:username', async (req, res) => {
   return res.json({ devices });
 });
 
+// ── Vinyl Buddy: store device calibration settings ─────────────────────────
+app.post('/api/vinyl-buddy/calibrate', (req, res) => {
+  try {
+    const body = req.body || {};
+    const deviceId = String(body.device_id || body.deviceId || '').trim();
+    if (!deviceId) return res.status(400).json({ error: 'device_id is required.' });
+
+    const gain = Number(body.gain);
+    const threshold = Number(body.threshold);
+    const sampleRate = Number(body.sample_rate || body.sampleRate);
+
+    const settings = {
+      deviceId,
+      gain: Number.isFinite(gain) && gain >= 0 && gain <= 100 ? gain : 50,
+      threshold: Number.isFinite(threshold) && threshold >= 0 && threshold <= 100 ? threshold : 30,
+      sampleRate: [8000, 16000, 22050, 44100].includes(sampleRate) ? sampleRate : 16000,
+      updatedAt: new Date().toISOString(),
+    };
+
+    calibrationByDevice.set(deviceId, settings);
+    return res.json({ success: true, calibration: settings });
+  } catch (err) {
+    console.error('[vinyl-buddy] calibrate error:', err.message);
+    return res.status(500).json({ error: 'Failed to store calibration.' });
+  }
+});
+
+// ── Vinyl Buddy: get calibration settings for a device ─────────────────────
+app.get('/api/vinyl-buddy/calibration/:deviceId', (req, res) => {
+  const deviceId = String(req.params.deviceId || '').trim();
+  const settings = calibrationByDevice.get(deviceId) || {
+    deviceId,
+    gain: 50,
+    threshold: 30,
+    sampleRate: 16000,
+    updatedAt: null,
+  };
+  return res.json({ calibration: settings });
+});
+
+// ── Vinyl Buddy: check firmware update availability ────────────────────────
+app.post('/api/vinyl-buddy/firmware-check', (req, res) => {
+  try {
+    const body = req.body || {};
+    const deviceId = String(body.device_id || body.deviceId || '').trim();
+    const currentVersion = String(body.version || body.firmware_version || '').trim();
+
+    if (!deviceId) return res.status(400).json({ error: 'device_id is required.' });
+
+    const updateAvailable = currentVersion && currentVersion !== VB_FIRMWARE_CURRENT;
+
+    return res.json({
+      success: true,
+      deviceId,
+      currentVersion: currentVersion || 'unknown',
+      latestVersion: VB_FIRMWARE_CURRENT,
+      updateAvailable,
+      releaseNotes: updateAvailable
+        ? 'Improved audio capture quality, reduced power consumption, and better WiFi reconnection handling.'
+        : null,
+    });
+  } catch (err) {
+    console.error('[vinyl-buddy] firmware-check error:', err.message);
+    return res.status(500).json({ error: 'Firmware check failed.' });
+  }
+});
+
+// ── Vinyl Buddy: detailed listening analytics ──────────────────────────────
+app.get('/api/vinyl-buddy/stats/:username', async (req, res) => {
+  const username = String(req.params.username || '').trim();
+  if (!username) return res.status(400).json({ error: 'username is required.' });
+
+  const sessions = vinylSessions.filter(s => s.username === username);
+
+  // Top artists
+  const artistCounts = {};
+  for (const s of sessions) {
+    const a = s.track?.artist || 'Unknown';
+    artistCounts[a] = (artistCounts[a] || 0) + 1;
+  }
+  const topArtists = Object.entries(artistCounts)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 10)
+    .map(([artist, count]) => ({ artist, count }));
+
+  // Genre mapping (same as frontend)
+  const genreMap = {
+    "Led Zeppelin": "Rock", "Pink Floyd": "Prog Rock", "Queen": "Rock",
+    "The Doors": "Rock", "The Beatles": "Rock", "The Who": "Rock",
+    "Eagles": "Rock", "Nirvana": "Grunge", "The Rolling Stones": "Rock",
+    "John Coltrane": "Jazz", "Miles Davis": "Jazz", "Charles Mingus": "Jazz",
+    "Fleetwood Mac": "Rock", "Daft Punk": "Electronic",
+  };
+  const genreCounts = {};
+  for (const s of sessions) {
+    const genre = genreMap[s.track?.artist] || 'Other';
+    genreCounts[genre] = (genreCounts[genre] || 0) + 1;
+  }
+  const topGenres = Object.entries(genreCounts)
+    .sort(([, a], [, b]) => b - a)
+    .map(([genre, count]) => ({ genre, count }));
+
+  // Peak listening hours
+  const hourCounts = new Array(24).fill(0);
+  for (const s of sessions) {
+    const hour = new Date(s.timestampMs).getHours();
+    hourCounts[hour]++;
+  }
+  const peakHours = hourCounts
+    .map((count, hour) => ({ hour, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  // Total listening time
+  const totalSeconds = sessions.reduce((sum, s) => sum + (Number(s.listenedSeconds) || 0), 0);
+
+  return res.json({
+    username,
+    totalListens: sessions.length,
+    totalSeconds,
+    totalMinutes: Math.round(totalSeconds / 60),
+    uniqueArtists: Object.keys(artistCounts).length,
+    uniqueAlbums: new Set(sessions.map(s => `${s.track?.artist}::${s.track?.album}`)).size,
+    topArtists,
+    topGenres,
+    peakHours,
+  });
+});
+
+// ── Vinyl Buddy: pair device with user account ─────────────────────────────
+app.post('/api/vinyl-buddy/pair', (req, res) => {
+  try {
+    const body = req.body || {};
+    const deviceId = String(body.device_id || body.deviceId || '').trim();
+    const username = String(body.username || '').trim();
+
+    if (!deviceId || !username) {
+      return res.status(400).json({ error: 'device_id and username are required.' });
+    }
+
+    // Validate device code format: 12 hex chars
+    if (!/^[A-Fa-f0-9]{12}$/.test(deviceId)) {
+      return res.status(400).json({ error: 'Invalid device code format. Must be 12 hex characters.' });
+    }
+
+    // Check if device is already paired to a different user
+    const existing = pairedDevices.get(deviceId);
+    if (existing && existing.username !== username) {
+      return res.status(409).json({ error: 'Device is already paired to another account.' });
+    }
+
+    pairedDevices.set(deviceId, {
+      username,
+      pairedAt: new Date().toISOString(),
+    });
+
+    return res.json({ success: true, deviceId, username, pairedAt: pairedDevices.get(deviceId).pairedAt });
+  } catch (err) {
+    console.error('[vinyl-buddy] pair error:', err.message);
+    return res.status(500).json({ error: 'Failed to pair device.' });
+  }
+});
+
+// ── Vinyl Buddy: unpair device ─────────────────────────────────────────────
+app.delete('/api/vinyl-buddy/unpair/:deviceId', (req, res) => {
+  const deviceId = String(req.params.deviceId || '').trim();
+  if (!deviceId) return res.status(400).json({ error: 'deviceId is required.' });
+
+  const existing = pairedDevices.get(deviceId);
+  if (!existing) {
+    return res.status(404).json({ error: 'Device not found or already unpaired.' });
+  }
+
+  pairedDevices.delete(deviceId);
+  calibrationByDevice.delete(deviceId);
+
+  return res.json({ success: true, deviceId, message: 'Device unpaired successfully.' });
+});
+
+// ── Vinyl Buddy: last 5 identified tracks (lightweight widget) ─────────────
+app.get('/api/vinyl-buddy/recent/:username', (req, res) => {
+  const username = String(req.params.username || '').trim();
+  if (!username) return res.status(400).json({ error: 'username is required.' });
+
+  const recent = vinylSessions
+    .filter(s => s.username === username)
+    .sort((a, b) => b.timestampMs - a.timestampMs)
+    .slice(0, 5)
+    .map(s => ({
+      id: s.id,
+      track: s.track,
+      score: s.score,
+      timestampMs: s.timestampMs,
+      deviceId: s.deviceId,
+    }));
+
+  return res.json({ recent });
+});
+
 // Health check
 // ── Postgres connection (Railway injects DATABASE_URL) ────────────────────────
 const pool = process.env.DATABASE_URL
@@ -838,6 +1040,34 @@ if (pool) {
       END $$;
     `))
     .then(() => console.log('   Likes, saves, bookmarks & order status: ready'))
+    .then(() => pool.query(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT DEFAULT '',
+        related_id INTEGER,
+        related_type TEXT DEFAULT '',
+        read BOOLEAN DEFAULT false,
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+
+      CREATE TABLE IF NOT EXISTS wishlist (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        artist TEXT NOT NULL,
+        album TEXT DEFAULT '',
+        genre TEXT DEFAULT '',
+        max_price TEXT DEFAULT '',
+        condition_min TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        created_at TIMESTAMPTZ DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS idx_wishlist_user ON wishlist(user_id);
+    `))
+    .then(() => console.log('   Notifications & wishlist tables: ready'))
     .catch(err => console.error('   DB init error:', err.message));
 }
 
@@ -1878,6 +2108,459 @@ app.get('/api/orders', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('List orders error:', err.message);
     res.status(500).json({ error: 'Server error', code: 'INTERNAL_ERROR' });
+  }
+});
+
+// ── Analytics & Reporting API ─────────────────────────────────────────────────
+
+// GET /api/analytics/top-sellers — top 10 sellers by transaction count
+app.get('/api/analytics/top-sellers', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(`
+      SELECT seller AS username, COUNT(*) AS transaction_count,
+             SUM(CAST(COALESCE(NULLIF(price,''), '0') AS NUMERIC)) AS total_revenue
+      FROM purchases
+      GROUP BY seller
+      ORDER BY transaction_count DESC
+      LIMIT 10
+    `);
+    res.json({ sellers: result.rows.map(r => ({ username: r.username, transactionCount: parseInt(r.transaction_count), totalRevenue: parseFloat(r.total_revenue || 0) })) });
+  } catch (err) {
+    console.error('Top sellers error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/analytics/top-records — most liked/saved records
+app.get('/api/analytics/top-records', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+    const result = await pool.query(`
+      SELECT r.id, r.album, r.artist, r.user_id, r.accent, r.condition,
+             COALESCE(lk.like_count, 0) AS like_count,
+             COALESCE(sv.save_count, 0) AS save_count,
+             COALESCE(lk.like_count, 0) + COALESCE(sv.save_count, 0) AS popularity
+      FROM records r
+      LEFT JOIN (SELECT record_id, COUNT(*) AS like_count FROM record_likes GROUP BY record_id) lk ON lk.record_id = r.id
+      LEFT JOIN (SELECT record_id, COUNT(*) AS save_count FROM record_saves GROUP BY record_id) sv ON sv.record_id = r.id
+      ORDER BY popularity DESC, r.created_at DESC
+      LIMIT $1
+    `, [limit]);
+    res.json({ records: result.rows.map(r => ({ id: r.id, album: r.album, artist: r.artist, userId: r.user_id, accent: r.accent, condition: r.condition, likeCount: parseInt(r.like_count), saveCount: parseInt(r.save_count), popularity: parseInt(r.popularity) })) });
+  } catch (err) {
+    console.error('Top records error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/analytics/genre-distribution — record count by genre (using tags)
+app.get('/api/analytics/genre-distribution', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(`
+      SELECT tag AS genre, COUNT(*) AS count
+      FROM records, unnest(tags) AS tag
+      WHERE tag != ''
+      GROUP BY tag
+      ORDER BY count DESC
+      LIMIT 30
+    `);
+    res.json({ genres: result.rows.map(r => ({ genre: r.genre, count: parseInt(r.count) })) });
+  } catch (err) {
+    console.error('Genre distribution error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/analytics/price-trends — average price by condition grade
+app.get('/api/analytics/price-trends', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(`
+      SELECT condition AS grade,
+             COUNT(*) AS count,
+             ROUND(AVG(CAST(COALESCE(NULLIF(price,''), '0') AS NUMERIC)), 2) AS avg_price,
+             ROUND(MIN(CAST(COALESCE(NULLIF(price,''), '0') AS NUMERIC)), 2) AS min_price,
+             ROUND(MAX(CAST(COALESCE(NULLIF(price,''), '0') AS NUMERIC)), 2) AS max_price
+      FROM records
+      WHERE for_sale = true AND price IS NOT NULL AND price != '' AND price != '0'
+      GROUP BY condition
+      ORDER BY avg_price DESC
+    `);
+    res.json({ trends: result.rows.map(r => ({ grade: r.grade, count: parseInt(r.count), avgPrice: parseFloat(r.avg_price), minPrice: parseFloat(r.min_price), maxPrice: parseFloat(r.max_price) })) });
+  } catch (err) {
+    console.error('Price trends error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/analytics/activity — daily activity counts for last 30 days
+app.get('/api/analytics/activity', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const days = Math.min(parseInt(req.query.days) || 30, 90);
+    const result = await pool.query(`
+      SELECT day, SUM(records_added) AS records_added, SUM(posts_created) AS posts_created,
+             SUM(purchases_made) AS purchases_made, SUM(signups) AS signups
+      FROM (
+        SELECT DATE(created_at) AS day, COUNT(*) AS records_added, 0 AS posts_created, 0 AS purchases_made, 0 AS signups
+        FROM records WHERE created_at >= now() - ($1 || ' days')::INTERVAL GROUP BY DATE(created_at)
+        UNION ALL
+        SELECT DATE(created_at) AS day, 0, COUNT(*), 0, 0
+        FROM posts WHERE created_at >= now() - ($1 || ' days')::INTERVAL GROUP BY DATE(created_at)
+        UNION ALL
+        SELECT DATE(created_at) AS day, 0, 0, COUNT(*), 0
+        FROM purchases WHERE created_at >= now() - ($1 || ' days')::INTERVAL GROUP BY DATE(created_at)
+        UNION ALL
+        SELECT DATE(created_at) AS day, 0, 0, 0, COUNT(*)
+        FROM profiles WHERE created_at >= now() - ($1 || ' days')::INTERVAL GROUP BY DATE(created_at)
+      ) combined
+      GROUP BY day
+      ORDER BY day DESC
+    `, [days.toString()]);
+    res.json({ activity: result.rows.map(r => ({ date: r.day, recordsAdded: parseInt(r.records_added), postsCreated: parseInt(r.posts_created), purchasesMade: parseInt(r.purchases_made), signups: parseInt(r.signups) })) });
+  } catch (err) {
+    console.error('Activity error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── User Features ────────────────────────────────────────────────────────────
+
+// PUT /api/auth/change-password — change password (requires old password)
+app.put('/api/auth/change-password', authMiddleware, authRateLimit, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) return res.status(400).json({ error: 'Old and new passwords are required', code: 'MISSING_FIELDS' });
+  if (typeof oldPassword !== 'string' || typeof newPassword !== 'string') return res.status(400).json({ error: 'Passwords must be strings', code: 'INVALID_TYPES' });
+  if (newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters', code: 'WEAK_PASSWORD' });
+  try {
+    const result = await pool.query('SELECT password_hash FROM profiles WHERE id = $1', [req.user.id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Profile not found' });
+    const valid = await bcrypt.compare(oldPassword, result.rows[0].password_hash);
+    if (!valid) return res.status(401).json({ error: 'Current password is incorrect', code: 'WRONG_PASSWORD' });
+    const hash = await bcrypt.hash(newPassword, 12);
+    await pool.query('UPDATE profiles SET password_hash = $1 WHERE id = $2', [hash, req.user.id]);
+    res.json({ ok: true, message: 'Password changed successfully' });
+  } catch (err) {
+    console.error('Change password error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/auth/verify-email — placeholder for email verification
+app.post('/api/auth/verify-email', authMiddleware, async (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: 'Verification token is required', code: 'MISSING_TOKEN' });
+  res.json({ ok: false, message: 'Email verification is not yet implemented. Your account is active without verification.' });
+});
+
+// GET /api/users/:username/profile — public profile endpoint
+app.get('/api/users/:username/profile', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      'SELECT id, username, display_name, bio, location, fav_genre, avatar_url, header_url, accent, created_at FROM profiles WHERE username = $1',
+      [req.params.username.toLowerCase()]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const u = result.rows[0];
+    res.json({ id: u.id, username: u.username, displayName: u.display_name, bio: u.bio, location: u.location, favGenre: u.fav_genre, avatarUrl: u.avatar_url, headerUrl: u.header_url, accent: u.accent, joinedAt: u.created_at });
+  } catch (err) {
+    console.error('Public profile error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/users/:username/records — user's public records
+app.get('/api/users/:username/records', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+    const result = await pool.query(
+      'SELECT * FROM records WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3',
+      [req.params.username.toLowerCase(), limit, offset]
+    );
+    res.json({ records: result.rows, total: result.rowCount });
+  } catch (err) {
+    console.error('User records error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/users/:username/stats — user stats (records, followers, posts)
+app.get('/api/users/:username/stats', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const username = req.params.username.toLowerCase();
+    const [records, posts, followers, following] = await Promise.all([
+      pool.query('SELECT COUNT(*) AS count FROM records WHERE user_id = $1', [username]),
+      pool.query('SELECT COUNT(*) AS count FROM posts WHERE user_id = $1', [username]),
+      pool.query('SELECT COUNT(*) AS count FROM follows WHERE following = $1', [username]),
+      pool.query('SELECT COUNT(*) AS count FROM follows WHERE follower = $1', [username]),
+    ]);
+    res.json({
+      username,
+      recordCount: parseInt(records.rows[0].count),
+      postCount: parseInt(posts.rows[0].count),
+      followerCount: parseInt(followers.rows[0].count),
+      followingCount: parseInt(following.rows[0].count),
+    });
+  } catch (err) {
+    console.error('User stats error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Notifications API ────────────────────────────────────────────────────────
+
+// POST /api/notifications — create notification
+app.post('/api/notifications', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { userId, type, title, body, relatedId, relatedType } = req.body;
+  if (!userId || !type || !title) return res.status(400).json({ error: 'userId, type, and title are required', code: 'MISSING_FIELDS' });
+  try {
+    const result = await pool.query(
+      `INSERT INTO notifications (user_id, type, title, body, related_id, related_type)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [userId, type, title, body || '', relatedId || null, relatedType || '']
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Create notification error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/notifications — list user's notifications with pagination
+app.get('/api/notifications', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 30, 100);
+    const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+    const unreadOnly = req.query.unread === 'true';
+    const where = unreadOnly ? 'AND read = false' : '';
+    const result = await pool.query(
+      `SELECT * FROM notifications WHERE user_id = $1 ${where} ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      [req.user.username, limit, offset]
+    );
+    const countResult = await pool.query(
+      'SELECT COUNT(*) AS total, SUM(CASE WHEN read = false THEN 1 ELSE 0 END) AS unread FROM notifications WHERE user_id = $1',
+      [req.user.username]
+    );
+    res.json({
+      notifications: result.rows.map(n => ({ id: n.id, type: n.type, title: n.title, body: n.body, relatedId: n.related_id, relatedType: n.related_type, read: n.read, createdAt: n.created_at })),
+      total: parseInt(countResult.rows[0].total || 0),
+      unread: parseInt(countResult.rows[0].unread || 0),
+    });
+  } catch (err) {
+    console.error('List notifications error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/notifications/:id/read — mark notification as read
+app.put('/api/notifications/:id/read', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      'UPDATE notifications SET read = true WHERE id = $1 AND user_id = $2 RETURNING id',
+      [req.params.id, req.user.username]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Notification not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Mark read error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/notifications/read-all — mark all as read
+app.put('/api/notifications/read-all', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      'UPDATE notifications SET read = true WHERE user_id = $1 AND read = false',
+      [req.user.username]
+    );
+    res.json({ ok: true, marked: result.rowCount });
+  } catch (err) {
+    console.error('Mark all read error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Wishlist API ─────────────────────────────────────────────────────────────
+
+// POST /api/wishlist — add to wishlist
+app.post('/api/wishlist', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const { artist, album, genre, maxPrice, conditionMin, notes } = req.body;
+  if (!artist) return res.status(400).json({ error: 'Artist is required', code: 'MISSING_FIELDS' });
+  try {
+    const result = await pool.query(
+      `INSERT INTO wishlist (user_id, artist, album, genre, max_price, condition_min, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [req.user.username, artist, album || '', genre || '', maxPrice || '', conditionMin || '', notes || '']
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Add wishlist error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// DELETE /api/wishlist/:id — remove from wishlist
+app.delete('/api/wishlist/:id', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      'DELETE FROM wishlist WHERE id = $1 AND user_id = $2 RETURNING id',
+      [req.params.id, req.user.username]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Wishlist item not found' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Remove wishlist error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/wishlist — list user's wishlist
+app.get('/api/wishlist', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      'SELECT * FROM wishlist WHERE user_id = $1 ORDER BY created_at DESC',
+      [req.user.username]
+    );
+    res.json({ items: result.rows.map(w => ({ id: w.id, artist: w.artist, album: w.album, genre: w.genre, maxPrice: w.max_price, conditionMin: w.condition_min, notes: w.notes, createdAt: w.created_at })) });
+  } catch (err) {
+    console.error('List wishlist error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/wishlist/matches — find marketplace records matching wishlist items
+app.get('/api/wishlist/matches', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const wishlist = await pool.query('SELECT * FROM wishlist WHERE user_id = $1', [req.user.username]);
+    if (wishlist.rows.length === 0) return res.json({ matches: [] });
+
+    const matches = [];
+    for (const wish of wishlist.rows) {
+      const conditions = ['for_sale = true', 'user_id != $1'];
+      const params = [req.user.username];
+      let idx = 2;
+
+      conditions.push(`LOWER(artist) LIKE $${idx++}`);
+      params.push(`%${wish.artist.toLowerCase()}%`);
+
+      if (wish.album) {
+        conditions.push(`LOWER(album) LIKE $${idx++}`);
+        params.push(`%${wish.album.toLowerCase()}%`);
+      }
+      if (wish.max_price && wish.max_price !== '') {
+        conditions.push(`CAST(COALESCE(NULLIF(price,''), '0') AS NUMERIC) <= $${idx++}`);
+        params.push(parseFloat(wish.max_price));
+      }
+
+      const result = await pool.query(
+        `SELECT * FROM records WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC LIMIT 10`,
+        params
+      );
+
+      if (result.rows.length > 0) {
+        matches.push({
+          wishlistItem: { id: wish.id, artist: wish.artist, album: wish.album },
+          records: result.rows,
+        });
+      }
+    }
+    res.json({ matches });
+  } catch (err) {
+    console.error('Wishlist matches error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Unified Search API ───────────────────────────────────────────────────────
+
+// GET /api/search — unified search across records, users, and posts with relevance scoring
+app.get('/api/search', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'Search query (q) is required', code: 'MISSING_QUERY' });
+  const types = (req.query.type || 'all').split(',');
+  const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+
+  try {
+    const results = { records: [], users: [], posts: [] };
+    const searchPattern = `%${q.toLowerCase()}%`;
+
+    if (types.includes('all') || types.includes('records')) {
+      const recordsResult = await pool.query(`
+        SELECT id, album, artist, user_id, year, format, condition, for_sale, price, accent, verified,
+          CASE
+            WHEN LOWER(album) = $1 THEN 100
+            WHEN LOWER(artist) = $1 THEN 95
+            WHEN LOWER(album) LIKE $2 THEN 70
+            WHEN LOWER(artist) LIKE $2 THEN 65
+            ELSE 50
+          END AS relevance
+        FROM records
+        WHERE LOWER(album) LIKE $2 OR LOWER(artist) LIKE $2
+        ORDER BY relevance DESC, created_at DESC
+        LIMIT $3
+      `, [q.toLowerCase(), searchPattern, limit]);
+      results.records = recordsResult.rows.map(r => ({ ...r, _type: 'record', relevance: parseInt(r.relevance) }));
+    }
+
+    if (types.includes('all') || types.includes('users')) {
+      const usersResult = await pool.query(`
+        SELECT id, username, display_name, bio, avatar_url, accent,
+          CASE
+            WHEN LOWER(username) = $1 THEN 100
+            WHEN LOWER(display_name) = $1 THEN 95
+            WHEN LOWER(username) LIKE $2 THEN 70
+            WHEN LOWER(display_name) LIKE $2 THEN 65
+            ELSE 50
+          END AS relevance
+        FROM profiles
+        WHERE LOWER(username) LIKE $2 OR LOWER(display_name) LIKE $2
+        ORDER BY relevance DESC
+        LIMIT $3
+      `, [q.toLowerCase(), searchPattern, limit]);
+      results.users = usersResult.rows.map(u => ({ id: u.id, username: u.username, displayName: u.display_name, bio: u.bio, avatarUrl: u.avatar_url, accent: u.accent, _type: 'user', relevance: parseInt(u.relevance) }));
+    }
+
+    if (types.includes('all') || types.includes('posts')) {
+      const postsResult = await pool.query(`
+        SELECT id, user_id, caption, media_url, media_type, likes, created_at,
+          CASE
+            WHEN LOWER(caption) LIKE $1 THEN 70
+            ELSE 50
+          END AS relevance
+        FROM posts
+        WHERE LOWER(caption) LIKE $1
+        ORDER BY relevance DESC, created_at DESC
+        LIMIT $2
+      `, [searchPattern, limit]);
+      results.posts = postsResult.rows.map(p => ({ ...p, _type: 'post', relevance: parseInt(p.relevance) }));
+    }
+
+    res.json({
+      query: q,
+      results,
+      counts: { records: results.records.length, users: results.users.length, posts: results.posts.length },
+    });
+  } catch (err) {
+    console.error('Search error:', err.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

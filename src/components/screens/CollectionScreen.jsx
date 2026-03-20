@@ -2,7 +2,7 @@
 // Filters the shared records array by r.user === currentUser.
 // The "Add Record" button (header and empty state) both open AddRecordModal via onAddRecord.
 // Features: statistics header, sort/filter/search, select mode, grouping, CSV export, "For Sale" badges.
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import Paginated from '../Paginated';
 import Empty from '../ui/Empty';
 import { CONDITIONS, FORMATS } from '../../constants';
