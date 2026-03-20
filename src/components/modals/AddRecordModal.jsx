@@ -12,6 +12,7 @@ import Toggle from '../ui/Toggle';
 import Stars from '../ui/Stars';
 import { GENRES, GENRE_MAP, CONDITIONS, FORMATS, ACCENT_COLORS } from '../../constants';
 import { verifyVinyl } from '../../utils/verifyVinyl';
+import { getDiscogsPrice } from '../../utils/discogs';
 
 // State machine for the camera/verification flow:
 // idle → capturing → captured → verifying → verified
@@ -271,6 +272,8 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
   const [err, setErr] = useState('');
   const [verified, setVerified] = useState(false);
   const [showVerify, setShowVerify] = useState(false);
+  const [priceSuggestion, setPriceSuggestion] = useState(null);
+  const [loadingPrice, setLoadingPrice] = useState(false);
 
   // Resets all fields back to defaults — called on cancel and after a successful add
   const reset = () => {
@@ -278,6 +281,22 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
     setLabel(''); setCondition('VG+'); setRating(4); setReview('');
     setForSale(false); setPrice(''); setTags([]); setErr('');
     setVerified(false); setShowVerify(false);
+    setPriceSuggestion(null); setLoadingPrice(false);
+  };
+
+  // Fetch Discogs market price suggestion
+  const fetchPriceSuggestion = async () => {
+    if (!album.trim() && !artist.trim()) return;
+    setLoadingPrice(true);
+    setPriceSuggestion(null);
+    try {
+      const data = await getDiscogsPrice(album.trim(), artist.trim());
+      setPriceSuggestion(data);
+    } catch {
+      setPriceSuggestion(null);
+    } finally {
+      setLoadingPrice(false);
+    }
   };
 
   // Toggles a genre tag on/off in the selected tags array
@@ -346,8 +365,61 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser }) {
         </div>
       </div>
       <div className="mb-5 p-3.5 bg-[#111] rounded-[10px] border border-[#1a1a1a]">
-        <Toggle on={forSale} onToggle={() => setForSale(!forSale)} label="List for sale" />
-        {forSale && <div className="mt-3"><FormInput label="ASKING PRICE (USD)" value={price} onChange={setPrice} placeholder="0.00" type="number" /></div>}
+        <Toggle on={forSale} onToggle={() => { setForSale(!forSale); setPriceSuggestion(null); }} label="List for sale" />
+        {forSale && (
+          <div className="mt-3">
+            <FormInput label="ASKING PRICE (USD)" value={price} onChange={setPrice} placeholder="0.00" type="number" />
+            <button
+              onClick={fetchPriceSuggestion}
+              disabled={loadingPrice || (!album.trim() && !artist.trim())}
+              className="mt-2 w-full p-[9px] bg-[#1a1a1a] border border-gs-border-hover rounded-lg text-[12px] font-semibold cursor-pointer hover:border-gs-accent/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 text-[#aaa]"
+            >
+              {loadingPrice ? (
+                <>
+                  <span className="inline-block w-3 h-3 border-2 border-gs-accent/40 border-t-gs-accent rounded-full animate-spin" />
+                  Looking up prices...
+                </>
+              ) : (
+                <>💰 Get Market Price</>
+              )}
+            </button>
+            {priceSuggestion && priceSuggestion.found && (
+              <div className="mt-2.5 p-3 bg-[#0a0a0a] rounded-lg border border-gs-border">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="text-[10px] font-bold text-gs-accent font-mono tracking-wide">DISCOGS MARKET DATA</span>
+                  <span className="text-[10px] text-gs-dim">({priceSuggestion.numListings} listing{priceSuggestion.numListings !== 1 ? 's' : ''})</span>
+                </div>
+                <div className="flex gap-3 text-[11px] mb-2.5">
+                  {priceSuggestion.lowestFound != null && (
+                    <div>
+                      <span className="text-gs-dim">Low </span>
+                      <span className="text-green-400 font-semibold">${priceSuggestion.lowestFound.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {priceSuggestion.medianFound != null && (
+                    <div>
+                      <span className="text-gs-dim">Median </span>
+                      <span className="text-yellow-400 font-semibold">${priceSuggestion.medianFound.toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+                {priceSuggestion.suggestedPrice != null && (
+                  <button
+                    onClick={() => setPrice(String(priceSuggestion.suggestedPrice))}
+                    className="w-full p-[7px] bg-gs-accent/15 border border-gs-accent/30 rounded-lg text-gs-accent text-[12px] font-bold cursor-pointer hover:bg-gs-accent/25 transition-colors"
+                  >
+                    Use suggested: ${priceSuggestion.suggestedPrice.toFixed(2)}
+                  </button>
+                )}
+              </div>
+            )}
+            {priceSuggestion && !priceSuggestion.found && (
+              <div className="mt-2 text-[11px] text-gs-dim text-center py-1.5">
+                No Discogs listings found for this release.
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Optional Claude AI vinyl verification ── */}

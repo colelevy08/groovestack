@@ -4,6 +4,42 @@
 
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500;700&display=swap');
 
+/* ── Theme CSS Variables (dark theme) ───────────────────────── */
+:root {
+  --gs-bg: #080808;
+  --gs-card: #0f0f0f;
+  --gs-surface: #0d0d0d;
+  --gs-sidebar: #0a0a0a;
+  --gs-border: #1e1e1e;
+  --gs-border-subtle: #161616;
+  --gs-border-hover: #2a2a2a;
+  --gs-accent: #0ea5e9;
+  --gs-indigo: #6366f1;
+  --gs-text: #f5f5f5;
+  --gs-muted: #888888;
+  --gs-dim: #555555;
+  --gs-faint: #444444;
+  --gs-subtle: #333333;
+}
+
+/* ── Light theme (prepared, toggle-ready) ───────────────────── */
+[data-theme="light"] {
+  --gs-bg: #f8f8f8;
+  --gs-card: #ffffff;
+  --gs-surface: #ffffff;
+  --gs-sidebar: #f0f0f0;
+  --gs-border: #e0e0e0;
+  --gs-border-subtle: #eaeaea;
+  --gs-border-hover: #d0d0d0;
+  --gs-accent: #0284c7;
+  --gs-indigo: #4f46e5;
+  --gs-text: #111111;
+  --gs-muted: #555555;
+  --gs-dim: #888888;
+  --gs-faint: #aaaaaa;
+  --gs-subtle: #cccccc;
+}
+
 @layer base {
   *:focus-visible {
     @apply outline-2 outline-offset-2 outline-gs-accent;
@@ -33,7 +69,7 @@
     @apply bg-gradient-to-br from-gs-accent to-gs-indigo text-white font-bold border-none cursor-pointer transition-all duration-200 rounded-[10px];
   }
   .gs-btn-gradient:hover {
-    @apply opacity-90 shadow-xl shadow-gs-accent/20;
+    @apply opacity-90 shadow-xl;
   }
   .gs-btn-gradient:active {
     @apply scale-[0.98];
@@ -85,7 +121,47 @@
     @apply flex items-center gap-2.5 w-full py-2 px-3 rounded-[9px] border border-transparent text-[13px] font-medium cursor-pointer transition-all duration-150 text-left;
   }
   .gs-nav-item-active {
-    @apply bg-gs-accent/[0.07] border-gs-accent/[0.13] text-gs-accent font-semibold;
+    @apply text-gs-accent font-semibold;
+    background: rgba(14, 165, 233, 0.07);
+    border-color: rgba(14, 165, 233, 0.13);
+  }
+  /* Skeleton loading */
+  .gs-skeleton {
+    background: linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%);
+    background-size: 200% 100%;
+    animation: skeleton 1.5s ease-in-out infinite;
+    border-radius: 8px;
+  }
+  /* Page transition wrapper */
+  .gs-page-transition {
+    animation: pageIn 0.3s ease-out;
+  }
+  /* Back to top button */
+  .gs-back-to-top {
+    @apply fixed bottom-20 right-6 w-10 h-10 rounded-full bg-gs-accent text-white flex items-center justify-center cursor-pointer z-[90] shadow-lg transition-all duration-200 opacity-90;
+  }
+  .gs-back-to-top:hover {
+    @apply bg-gs-accent scale-110;
+  }
+  /* Featured badge */
+  .gs-badge-featured {
+    @apply text-[9px] font-bold tracking-wide px-2 py-0.5 rounded-[5px] bg-amber-500/15 text-amber-400 border border-amber-500/25;
+  }
+  /* New badge */
+  .gs-badge-new {
+    @apply text-[9px] font-bold tracking-wide px-1.5 py-0.5 rounded-[5px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/25;
+  }
+  /* Range slider */
+  .gs-range-slider {
+    @apply w-full h-1 rounded-full appearance-none bg-[#222] outline-none cursor-pointer;
+  }
+  .gs-range-slider::-webkit-slider-thumb {
+    @apply appearance-none w-3.5 h-3.5 rounded-full bg-gs-accent cursor-pointer;
+    margin-top: -3px;
+  }
+  /* Keyboard shortcut hint */
+  .gs-kbd {
+    @apply inline-flex items-center justify-center px-1.5 py-0.5 text-[9px] font-mono bg-[#1a1a1a] border border-gs-border rounded text-gs-dim;
   }
 }
 

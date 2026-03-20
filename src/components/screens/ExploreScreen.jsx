@@ -9,8 +9,72 @@ import AlbumArt from '../ui/AlbumArt';
 import Badge from '../ui/Badge';
 import Paginated from '../Paginated';
 import Empty from '../ui/Empty';
-import { GENRES, GENRE_MAP, USER_PROFILES } from '../../constants';
+import { GENRES, GENRE_MAP, CONDITIONS, USER_PROFILES } from '../../constants';
 import { getProfile, condColor } from '../../utils/helpers';
+
+const COND_RANK = { M: 8, NM: 7, "VG+": 6, VG: 5, "G+": 4, G: 3, F: 2, P: 1 };
+
+// #7 — Skeleton loading placeholders
+function SkeletonCard() {
+  return (
+    <div className="gs-card">
+      <div className="h-0.5 gs-skeleton" />
+      <div className="p-4">
+        <div className="flex gap-2 mb-3 items-center">
+          <div className="w-[30px] h-[30px] rounded-full gs-skeleton" />
+          <div className="flex-1">
+            <div className="h-3 w-24 gs-skeleton mb-1" />
+            <div className="h-2.5 w-16 gs-skeleton" />
+          </div>
+        </div>
+        <div className="flex gap-3 mb-3">
+          <div className="w-[68px] h-[68px] rounded-xl gs-skeleton shrink-0" />
+          <div className="flex-1">
+            <div className="h-4 w-3/4 gs-skeleton mb-2" />
+            <div className="h-3 w-1/2 gs-skeleton mb-2" />
+            <div className="h-2.5 w-2/3 gs-skeleton" />
+          </div>
+        </div>
+        <div className="flex gap-1.5 mb-2.5">
+          <div className="h-5 w-12 rounded-full gs-skeleton" />
+          <div className="h-5 w-16 rounded-full gs-skeleton" />
+          <div className="h-5 w-10 rounded-full gs-skeleton" />
+        </div>
+        <div className="border-t border-gs-border pt-2.5 flex justify-between">
+          <div className="flex gap-3">
+            <div className="h-4 w-10 gs-skeleton" />
+            <div className="h-4 w-10 gs-skeleton" />
+          </div>
+          <div className="h-4 w-4 gs-skeleton" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SkeletonList() {
+  return (
+    <div className="flex flex-col gap-2.5">
+      {[1,2,3,4].map(i => (
+        <div key={i} className="gs-card p-4 flex gap-3.5 items-center">
+          <div className="w-[52px] h-[52px] rounded-xl gs-skeleton shrink-0" />
+          <div className="flex-1">
+            <div className="h-4 w-40 gs-skeleton mb-2" />
+            <div className="h-3 w-28 gs-skeleton mb-2" />
+            <div className="h-2.5 w-32 gs-skeleton" />
+          </div>
+          <div className="text-right">
+            <div className="h-7 w-14 gs-skeleton mb-2" />
+            <div className="flex gap-1.5">
+              <div className="h-8 w-16 rounded-lg gs-skeleton" />
+              <div className="h-8 w-20 rounded-lg gs-skeleton" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart, onViewArtist, ...handlers }) {
   const [q, setQ] = useState("");
@@ -18,6 +82,11 @@ export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart,
   const [subgenre, setSubgenre] = useState(null);
   const [mode, setMode] = useState("browse"); // "browse" | "shop"
   const [sort, setSort] = useState("newest");
+  const [viewMode, setViewMode] = useState("grid"); // #1 — grid | list toggle
+  const [priceMin, setPriceMin] = useState(0); // #2 — price range filter
+  const [priceMax, setPriceMax] = useState(500);
+  const [condFilter, setCondFilter] = useState("All"); // #3 — condition filter
+  const [isLoading] = useState(false); // #7 — loading state (skeleton)
 
   // Only show genre pills for genres that exist in the current records data
   const activeGenres = ["All", ...GENRES.filter(g => records.some(r => r.tags?.includes(g)))];
@@ -37,12 +106,36 @@ export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart,
     );
   }), [records, q, genre, subgenre]);
 
-  // Shop mode: further filter to for-sale only, then sort
-  const shopRecords = useMemo(() => [...baseFiltered.filter(r => r.forSale)].sort((a, b) =>
-    sort === "price-asc" ? a.price - b.price :
-    sort === "price-desc" ? b.price - a.price :
-    b.id - a.id
-  ), [baseFiltered, sort]);
+  // #4 — Extended sort options: Newest, Price Low/High, Most Liked, Best Condition
+  // Shop mode: further filter to for-sale only + price range + condition, then sort
+  const shopRecords = useMemo(() => {
+    let filtered = baseFiltered.filter(r => r.forSale);
+    // #2 — Price range filter
+    filtered = filtered.filter(r => r.price >= priceMin && r.price <= priceMax);
+    // #3 — Condition filter
+    if (condFilter !== "All") {
+      filtered = filtered.filter(r => r.condition === condFilter);
+    }
+    return [...filtered].sort((a, b) =>
+      sort === "price-asc" ? a.price - b.price :
+      sort === "price-desc" ? b.price - a.price :
+      sort === "likes" ? (b.likes || 0) - (a.likes || 0) :
+      sort === "condition" ? (COND_RANK[b.condition] || 0) - (COND_RANK[a.condition] || 0) :
+      b.id - a.id
+    );
+  }, [baseFiltered, sort, priceMin, priceMax, condFilter]);
+
+  // Browse mode sort
+  const browseSorted = useMemo(() => {
+    if (sort === "newest" || mode !== "browse") return baseFiltered;
+    return [...baseFiltered].sort((a, b) =>
+      sort === "price-asc" ? (a.price || 0) - (b.price || 0) :
+      sort === "price-desc" ? (b.price || 0) - (a.price || 0) :
+      sort === "likes" ? (b.likes || 0) - (a.likes || 0) :
+      sort === "condition" ? (COND_RANK[b.condition] || 0) - (COND_RANK[a.condition] || 0) :
+      b.id - a.id
+    );
+  }, [baseFiltered, sort, mode]);
 
   const suggestedUsers = Object.keys(USER_PROFILES).filter(u => u !== "yourhandle").slice(0, 10);
 
@@ -52,27 +145,53 @@ export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart,
     setSubgenre(null);
   };
 
+  // Display records based on mode
+  const displayRecords = mode === "shop" ? shopRecords : browseSorted;
+  const totalRecords = mode === "shop" ? baseFiltered.filter(r => r.forSale).length : baseFiltered.length;
+
   return (
-    <div>
+    <div className="gs-page-transition">
       {/* Header with mode toggle */}
       <div className="flex justify-between items-start mb-3.5">
         <div>
           <h1 className="text-[22px] font-extrabold tracking-[-0.04em] text-gs-text mb-0.5">Marketplace</h1>
+          {/* #6 — Record count */}
           <p className="text-xs text-gs-dim">
-            {mode === "shop" ? `${shopRecords.length} records for sale` : `${baseFiltered.length} records`}
+            Showing {displayRecords.length} of {totalRecords} {mode === "shop" ? "for-sale records" : "records"}
           </p>
         </div>
-        <div className="flex gap-1 bg-gs-card border border-gs-border rounded-[10px] p-[3px]">
-          {[["browse", "Browse"], ["shop", "Shop"]].map(([val, label]) => (
-            <button key={val} onClick={() => setMode(val)}
-              className={`px-4 py-1.5 rounded-lg border-none text-xs font-semibold cursor-pointer transition-all duration-150 ${
-                mode === val
-                  ? "bg-gradient-to-br from-gs-accent to-gs-indigo text-white"
-                  : "bg-transparent text-gs-dim"
-              }`}>
-              {label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          {/* #1 — View mode toggle (grid/list) */}
+          {mode === "browse" && (
+            <div className="flex gap-0.5 bg-gs-card border border-gs-border rounded-lg p-[2px]">
+              <button
+                onClick={() => setViewMode("grid")}
+                className={`p-1.5 rounded-md border-none cursor-pointer transition-all duration-150 ${viewMode === "grid" ? "bg-gs-accent/15 text-gs-accent" : "bg-transparent text-gs-dim"}`}
+                title="Grid view"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+              </button>
+              <button
+                onClick={() => setViewMode("list")}
+                className={`p-1.5 rounded-md border-none cursor-pointer transition-all duration-150 ${viewMode === "list" ? "bg-gs-accent/15 text-gs-accent" : "bg-transparent text-gs-dim"}`}
+                title="List view"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              </button>
+            </div>
+          )}
+          <div className="flex gap-1 bg-gs-card border border-gs-border rounded-[10px] p-[3px]">
+            {[["browse", "Browse"], ["shop", "Shop"]].map(([val, label]) => (
+              <button key={val} onClick={() => setMode(val)}
+                className={`px-4 py-1.5 rounded-lg border-none text-xs font-semibold cursor-pointer transition-all duration-150 ${
+                  mode === val
+                    ? "bg-gradient-to-br from-gs-accent to-gs-indigo text-white"
+                    : "bg-transparent text-gs-dim"
+                }`}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -98,7 +217,7 @@ export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart,
         )}
       </div>
 
-      {/* Genre pills + sort (sort only in shop mode) */}
+      {/* Genre pills + sort */}
       <div className={`flex justify-between items-center gap-3 ${activeSubgenres.length > 0 ? "mb-2" : "mb-[18px]"}`}>
         <div className="flex gap-1.5 flex-wrap flex-1">
           {activeGenres.map(g => (
@@ -110,14 +229,15 @@ export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart,
             </button>
           ))}
         </div>
-        {mode === "shop" && (
-          <select value={sort} onChange={e => setSort(e.target.value)}
-            className="bg-gs-card border border-[#222] rounded-lg py-[7px] px-3 text-[#aaa] text-xs outline-none cursor-pointer shrink-0">
-            <option value="newest">Newest</option>
-            <option value="price-asc">Price: Low → High</option>
-            <option value="price-desc">Price: High → Low</option>
-          </select>
-        )}
+        {/* #4 — Extended sort options for both modes */}
+        <select value={sort} onChange={e => setSort(e.target.value)}
+          className="bg-gs-card border border-[#222] rounded-lg py-[7px] px-3 text-[#aaa] text-xs outline-none cursor-pointer shrink-0">
+          <option value="newest">Newest</option>
+          {mode === "shop" && <option value="price-asc">Price: Low &rarr; High</option>}
+          {mode === "shop" && <option value="price-desc">Price: High &rarr; Low</option>}
+          <option value="likes">Most Liked</option>
+          <option value="condition">Best Condition</option>
+        </select>
       </div>
 
       {/* Subgenre pills — shown when a parent genre is selected */}
@@ -146,6 +266,34 @@ export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart,
         </div>
       )}
 
+      {/* #2 — Price range filter + #3 — Condition filter (Shop mode) */}
+      {mode === "shop" && (
+        <div className="flex gap-4 items-end mb-4 flex-wrap">
+          <div className="flex-1 min-w-[200px]">
+            <div className="text-[10px] text-gs-dim font-mono mb-1.5 flex justify-between">
+              <span>PRICE RANGE</span>
+              <span className="text-gs-muted">${priceMin} — ${priceMax}</span>
+            </div>
+            <div className="flex gap-2 items-center">
+              <input type="range" min="0" max="500" step="5" value={priceMin}
+                onChange={e => setPriceMin(Math.min(Number(e.target.value), priceMax - 5))}
+                className="gs-range-slider flex-1" />
+              <input type="range" min="0" max="500" step="5" value={priceMax}
+                onChange={e => setPriceMax(Math.max(Number(e.target.value), priceMin + 5))}
+                className="gs-range-slider flex-1" />
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] text-gs-dim font-mono mb-1.5">CONDITION</div>
+            <select value={condFilter} onChange={e => setCondFilter(e.target.value)}
+              className="bg-gs-card border border-[#222] rounded-lg py-[7px] px-3 text-[#aaa] text-xs outline-none cursor-pointer">
+              <option value="All">All Conditions</option>
+              {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
+
       {/* Collector suggestions (only in browse mode, no search active) */}
       {mode === "browse" && !q && genre === "All" && (
         <div className="mb-6">
@@ -171,15 +319,55 @@ export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart,
       )}
 
       {/* Content */}
-      {mode === "browse" ? (
-        /* Browse mode — Card grid */
-        baseFiltered.length === 0
-          ? <Empty icon="🔍" text={q ? `No results for "${q}"` : "No records found."} />
-          : <Paginated records={baseFiltered} handlers={{ ...handlers, onViewUser, onBuy, onViewArtist }} />
+      {isLoading ? (
+        /* #7 — Skeleton loading */
+        mode === "browse" ? (
+          <div className="gs-card-grid grid grid-cols-2 gap-3.5">
+            {[1,2,3,4,5,6].map(i => <SkeletonCard key={i} />)}
+          </div>
+        ) : (
+          <SkeletonList />
+        )
+      ) : mode === "browse" ? (
+        /* Browse mode — Card grid or list */
+        displayRecords.length === 0
+          ? <Empty icon="&#128269;" text={q ? `No results for "${q}"` : "No records found."} />
+          : viewMode === "grid" ? (
+            <Paginated records={displayRecords} handlers={{ ...handlers, onViewUser, onBuy, onViewArtist }} />
+          ) : (
+            /* #1 — Compact list view */
+            <div className="flex flex-col gap-2">
+              {displayRecords.slice(0, 50).map(r => (
+                <div key={r.id} onClick={() => handlers.onDetail?.(r)}
+                  className="gs-card p-3 px-3.5 flex gap-3 items-center cursor-pointer"
+                  onMouseEnter={e => e.currentTarget.style.borderColor = r.accent + "55"}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = ""}>
+                  <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={40} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-bold text-gs-text truncate flex items-center gap-1.5">
+                      {r.album}
+                      {r.verified && (
+                        <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-blue-500 shrink-0">
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                        </span>
+                      )}
+                      {r.rating >= 4.5 && <span className="gs-badge-featured ml-0.5">FEATURED</span>}
+                    </div>
+                    <div className="text-[11px] text-[#666]">{r.artist} · {r.year} · {r.format}</div>
+                  </div>
+                  <div className="flex gap-1.5 items-center shrink-0">
+                    <Badge label={r.condition} color={condColor(r.condition)} />
+                    {r.forSale && <Badge label={`$${r.price}`} color="#f59e0b" />}
+                    <span className="text-gs-dim text-[10px]">{r.likes || 0} likes</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
       ) : (
         /* Shop mode — Marketplace list */
         shopRecords.length === 0 ? (
-          <Empty icon="🏷️" text={q ? `No for-sale results for "${q}"` : "No records for sale right now."} />
+          <Empty icon="&#127991;&#65039;" text={q ? `No for-sale results for "${q}"` : "No records for sale right now."} />
         ) : (
           <div className="flex flex-col gap-2.5">
             {shopRecords.map(r => (
@@ -187,9 +375,22 @@ export default function ExploreScreen({ records, onViewUser, onBuy, onAddToCart,
                 className="gs-card p-4 flex gap-3.5 items-center cursor-pointer"
                 onMouseEnter={e => e.currentTarget.style.borderColor = r.accent + "55"}
                 onMouseLeave={e => e.currentTarget.style.borderColor = ""}>
-                <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={52} />
+                <div className="relative shrink-0">
+                  <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={52} />
+                  {/* #5 — Featured badge on album art */}
+                  {r.rating >= 4.5 && (
+                    <div className="absolute -top-1 -right-1 gs-badge-featured text-[8px] px-1">&#9733;</div>
+                  )}
+                </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-bold text-gs-text mb-0.5">{r.album}</div>
+                  <div className="text-sm font-bold text-gs-text mb-0.5 flex items-center gap-1.5">
+                    {r.album}
+                    {r.verified && (
+                      <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-blue-500 shrink-0">
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-[#777] mb-1.5 flex items-center gap-1.5">
                     <button onClick={e => { e.stopPropagation(); onViewArtist?.(r.artist); }}
                       className="bg-transparent border-none cursor-pointer text-[#ccc] text-xs p-0 font-medium">{r.artist}</button>

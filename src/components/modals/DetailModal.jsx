@@ -23,6 +23,7 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
           username,
           wishlistItem: items.find(w => w.album.toLowerCase() === record.album.toLowerCase() && w.artist.toLowerCase() === record.artist.toLowerCase()),
         }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     : [], [isOwn, record?.album, record?.artist]);
 
   if (!record) return null;

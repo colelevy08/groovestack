@@ -1,12 +1,36 @@
 // Vinyl Buddy feature screen — dedicated hub for the ESP32 vinyl identification device.
 // Pre-activation: landing page with feature showcase + device code activation.
 // Post-activation: dashboard with Overview, History, and Device tabs.
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import AlbumArt from '../ui/AlbumArt';
 import Badge from '../ui/Badge';
 import Empty from '../ui/Empty';
 
 const TABS = ["overview", "history", "device"];
+
+// ── CSS keyframes injected once ─────────────────────────────────────────────
+const STYLE_ID = "vb-keyframes";
+function ensureKeyframes() {
+  if (typeof document === "undefined" || document.getElementById(STYLE_ID)) return;
+  const style = document.createElement("style");
+  style.id = STYLE_ID;
+  style.textContent = `
+    @keyframes vb-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes vb-pulse { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+    @keyframes vb-pulse-dot { 0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); } 50% { box-shadow: 0 0 0 6px rgba(34,197,94,0); } }
+    @keyframes vb-fade-in { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes vb-skeleton { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+    @keyframes vb-now-pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+    .vb-fade-in { animation: vb-fade-in 0.3s ease-out both; }
+    .vb-skeleton {
+      background: linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%);
+      background-size: 200% 100%;
+      animation: vb-skeleton 1.5s ease-in-out infinite;
+      border-radius: 6px;
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 // ── Relative time helper ────────────────────────────────────────────────────
 function relTime(ts) {
@@ -22,11 +46,23 @@ function relTime(ts) {
 
 // ── Format uptime seconds to human-readable ──────────────────────────────
 function fmtUptime(s) {
-  if (!s) return "—";
+  if (!s) return "\u2014";
   const hrs = Math.floor(s / 3600);
   const mins = Math.floor((s % 3600) / 60);
   if (hrs > 0) return `${hrs}h ${mins}m`;
   return `${mins}m`;
+}
+
+// ── Date grouping helper ────────────────────────────────────────────────────
+function dateLabel(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diff = Math.round((today - day) / 86400000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric" });
 }
 
 function normalizeTrackKey(track) {
@@ -75,10 +111,92 @@ function foldCapturedSessions(sessions) {
   return folded;
 }
 
+// ── Demo data ───────────────────────────────────────────────────────────────
+function generateDemoData() {
+  const tracks = [
+    { title: "Stairway to Heaven", artist: "Led Zeppelin", album: "Led Zeppelin IV", year: 1971 },
+    { title: "Wish You Were Here", artist: "Pink Floyd", album: "Wish You Were Here", year: 1975 },
+    { title: "Bohemian Rhapsody", artist: "Queen", album: "A Night at the Opera", year: 1975 },
+    { title: "Hotel California", artist: "Eagles", album: "Hotel California", year: 1976 },
+    { title: "Comfortably Numb", artist: "Pink Floyd", album: "The Wall", year: 1979 },
+    { title: "Black Dog", artist: "Led Zeppelin", album: "Led Zeppelin IV", year: 1971 },
+    { title: "Somebody to Love", artist: "Queen", album: "A Day at the Races", year: 1976 },
+    { title: "Riders on the Storm", artist: "The Doors", album: "L.A. Woman", year: 1971 },
+    { title: "A Day in the Life", artist: "The Beatles", album: "Sgt. Pepper's", year: 1967 },
+    { title: "Baba O'Riley", artist: "The Who", album: "Who's Next", year: 1971 },
+    { title: "Ramble On", artist: "Led Zeppelin", album: "Led Zeppelin II", year: 1969 },
+    { title: "Don't Stop Me Now", artist: "Queen", album: "Jazz", year: 1978 },
+  ];
+  const now = Date.now();
+  return tracks.map((track, i) => ({
+    id: `demo-${i}`,
+    username: "__demo__",
+    track,
+    timestampMs: now - i * 3600000 * (1 + Math.random() * 5),
+    score: 70 + Math.floor(Math.random() * 30),
+    captureCount: 1 + Math.floor(Math.random() * 3),
+    listenedSeconds: 120 + Math.floor(Math.random() * 180),
+    deviceId: "DEMO00112233",
+  }));
+}
+
+// ── Tooltip component ───────────────────────────────────────────────────────
+function Tooltip({ text, children }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative inline-block" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      {children}
+      {show && (
+        <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 bg-[#222] border border-[#333] rounded-lg text-[10px] text-gs-muted whitespace-nowrap pointer-events-none" style={{ animation: "vb-fade-in 0.15s ease-out" }}>
+          {text}
+          <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-[#333]" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Loading skeleton ────────────────────────────────────────────────────────
+function Skeleton({ w = "100%", h = 16, rounded = 6 }) {
+  return <div className="vb-skeleton" style={{ width: w, height: h, borderRadius: rounded }} />;
+}
+
+function SkeletonCard() {
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-4 flex gap-3 items-center">
+      <Skeleton w={38} h={38} rounded={8} />
+      <div className="flex-1 flex flex-col gap-2">
+        <Skeleton w="60%" h={12} />
+        <Skeleton w="40%" h={10} />
+      </div>
+    </div>
+  );
+}
+
+// ── Progress bar ────────────────────────────────────────────────────────────
+function ProgressBar({ value, max, color, label }) {
+  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
+  return (
+    <div>
+      {label && (
+        <div className="flex justify-between mb-1.5">
+          <span className="text-[10px] text-gs-dim font-mono">{label}</span>
+          <span className="text-[10px] font-semibold font-mono" style={{ color }}>{Math.round(pct)}%</span>
+        </div>
+      )}
+      <div className="w-full h-2 bg-[#111] rounded-full overflow-hidden">
+        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${color}, ${color}88)` }} />
+      </div>
+    </div>
+  );
+}
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 export default function VinylBuddyScreen({ currentUser, listeningHistory, activated, deviceCode, onActivate, onDeactivate }) {
+  useEffect(() => { ensureKeyframes(); }, []);
+
   if (!activated) {
     return <LandingPage onActivate={onActivate} />;
   }
@@ -93,45 +211,188 @@ export default function VinylBuddyScreen({ currentUser, listeningHistory, activa
 }
 
 // ============================================================================
+// SPINNING VINYL HERO ANIMATION
+// ============================================================================
+function SpinningVinyl({ size = 120 }) {
+  const grooves = Array.from({ length: 18 }, (_, i) => {
+    const start = i * 20;
+    return `#${i % 2 === 0 ? "1a1a1a" : "222"} ${start}deg,#${i % 2 === 0 ? "1a1a1a" : "222"} ${start + 10}deg`;
+  }).join(",");
+
+  return (
+    <div style={{ width: size, height: size, animation: "vb-spin 4s linear infinite", borderRadius: "50%", background: `conic-gradient(from 0deg,${grooves})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 0 0 2px #333, 0 0 40px #0ea5e922", flexShrink: 0 }}>
+      <div style={{ width: size * 0.35, height: size * 0.35, borderRadius: "50%", background: "radial-gradient(circle, #0ea5e9cc, #6366f166)", boxShadow: "0 0 12px #0ea5e966" }} />
+    </div>
+  );
+}
+
+// ============================================================================
+// OTP-STYLE CODE INPUT
+// ============================================================================
+function CodeInput({ value, onChange, onSubmit, error }) {
+  const refs = useRef([]);
+  const chars = value.padEnd(12, "").split("").slice(0, 12);
+
+  const handleChange = (i, e) => {
+    const raw = e.target.value.replace(/[^A-Fa-f0-9]/g, "").toUpperCase();
+    if (!raw) return;
+    const ch = raw[raw.length - 1];
+    const next = [...chars];
+    next[i] = ch;
+    const newVal = next.join("").replace(/ /g, "");
+    onChange(newVal);
+    if (i < 11 && refs.current[i + 1]) {
+      refs.current[i + 1].focus();
+    }
+    if (newVal.length === 12 && i === 11) {
+      onSubmit?.(newVal);
+    }
+  };
+
+  const handleKeyDown = (i, e) => {
+    if (e.key === "Backspace") {
+      if (chars[i] && chars[i] !== " ") {
+        const next = [...chars];
+        next[i] = " ";
+        onChange(next.join("").trim());
+      } else if (i > 0) {
+        refs.current[i - 1]?.focus();
+        const next = [...chars];
+        next[i - 1] = " ";
+        onChange(next.join("").trim());
+      }
+      e.preventDefault();
+    } else if (e.key === "Enter") {
+      onSubmit?.(value);
+    }
+  };
+
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").replace(/[^A-Fa-f0-9]/g, "").toUpperCase().slice(0, 12);
+    onChange(pasted);
+    const focusIdx = Math.min(pasted.length, 11);
+    setTimeout(() => refs.current[focusIdx]?.focus(), 0);
+  };
+
+  const isValid = /^[A-Fa-f0-9]{12}$/.test(value);
+
+  return (
+    <div>
+      <div className="flex items-center gap-1.5">
+        <div className="flex gap-1 flex-wrap justify-center">
+          {Array.from({ length: 12 }, (_, i) => (
+            <div key={i} className="relative">
+              {i > 0 && i % 4 === 0 && <div className="absolute -left-1 top-1/2 -translate-y-1/2 text-gs-faint text-[10px] select-none">&middot;</div>}
+              <input
+                ref={el => refs.current[i] = el}
+                value={chars[i]?.trim() || ""}
+                onChange={e => handleChange(i, e)}
+                onKeyDown={e => handleKeyDown(i, e)}
+                onPaste={i === 0 ? handlePaste : undefined}
+                maxLength={2}
+                className={`w-8 h-10 text-center bg-[#111] rounded-lg text-gs-text text-sm font-mono font-bold uppercase outline-none border transition-all duration-150 focus:border-gs-accent focus:shadow-[0_0_0_2px_#0ea5e933] ${
+                  error ? "border-red-500/50" : chars[i]?.trim() ? "border-[#333]" : "border-[#222]"
+                } ${i > 0 && i % 4 === 0 ? "ml-2" : ""}`}
+              />
+            </div>
+          ))}
+        </div>
+        {isValid && (
+          <div className="w-6 h-6 rounded-full bg-[#22c55e22] border border-[#22c55e44] flex items-center justify-center shrink-0 ml-1" style={{ animation: "vb-fade-in 0.2s ease-out" }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+          </div>
+        )}
+      </div>
+      {error && <div className="text-[11px] text-red-500 mt-2 text-center">{error}</div>}
+    </div>
+  );
+}
+
+// ============================================================================
 // PRE-ACTIVATION LANDING PAGE
 // ============================================================================
 function LandingPage({ onActivate }) {
   const [showForm, setShowForm] = useState(false);
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
+  const [howItWorks, setHowItWorks] = useState(false);
+  const [demoMode, setDemoMode] = useState(false);
 
-  const handleActivate = () => {
-    const trimmed = code.trim();
+  const handleActivate = useCallback((val) => {
+    const trimmed = (val || code).trim();
     if (!/^[A-Fa-f0-9]{12}$/.test(trimmed)) {
-      setError("Enter a valid 12-character hex device code (e.g. AABB11223344)");
+      setError("Enter a valid 12-character hex device code");
       return;
     }
     setError("");
     onActivate(trimmed.toUpperCase());
-  };
+  }, [code, onActivate]);
+
+  if (demoMode) {
+    return (
+      <DemoDashboard onExit={() => setDemoMode(false)} />
+    );
+  }
 
   const features = [
-    { icon: "\uD83C\uDFB5", title: "Track Identification", desc: "Captures audio from your turntable and identifies tracks via acoustic fingerprinting" },
-    { icon: "\uD83D\uDCCA", title: "Listening Stats", desc: "Tracks your vinyl sessions — top artists, albums, and listening streaks" },
-    { icon: "\uD83D\uDD17", title: "Device Sync", desc: "Real-time connection to your ESP32 device with live status and heartbeat monitoring" },
+    {
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="5.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="15.5" r="2.5"/>
+          <path d="M8 17V5l12-2v12"/>
+        </svg>
+      ),
+      title: "Track Identification",
+      desc: "Acoustic fingerprinting identifies every track spinning on your turntable in real time",
+      color: "#0ea5e9"
+    },
+    {
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 20V10M12 20V4M6 20v-6"/>
+        </svg>
+      ),
+      title: "Listening Analytics",
+      desc: "Deep stats on your sessions: top artists, albums, listening streaks, and weekly trends",
+      color: "#8b5cf6"
+    },
+    {
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/>
+        </svg>
+      ),
+      title: "Live Device Sync",
+      desc: "Real-time connection to your ESP32 with heartbeat monitoring and health diagnostics",
+      color: "#22c55e"
+    },
+  ];
+
+  const howSteps = [
+    { num: "1", title: "Plug in your Vinyl Buddy", desc: "Connect the ESP32 to power via USB-C. The OLED screen will display a setup code." },
+    { num: "2", title: "Connect to WiFi", desc: "The device creates a hotspot. Connect and enter your WiFi credentials." },
+    { num: "3", title: "Enter your device code", desc: "Type the 12-character hex code shown on the OLED screen into the field below." },
+    { num: "4", title: "Start spinning records", desc: "Place the device near your turntable. It will automatically detect and identify tracks." },
   ];
 
   return (
-    <div>
+    <div className="vb-fade-in">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-[22px] font-extrabold tracking-[-0.04em] text-gs-text mb-0.5">Vinyl Buddy</h1>
         <p className="text-xs text-gs-dim">Your personal vinyl identification companion</p>
       </div>
 
-      {/* Hero card */}
+      {/* Hero card with spinning vinyl */}
       <div className="rounded-2xl p-7 mb-5 relative overflow-hidden bg-gradient-to-br from-[#0ea5e911] to-[#6366f111] border border-[#0ea5e922]">
         <div className="absolute -top-5 -right-5 w-[120px] h-[120px] rounded-full bg-[radial-gradient(circle,#0ea5e915,transparent_70%)]" />
-        <div className="flex items-center gap-4 mb-4">
-          <div className="w-14 h-14 rounded-[14px] flex items-center justify-center text-2xl shrink-0 bg-gradient-to-br from-gs-accent to-gs-indigo">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
-            </svg>
+        <div className="flex items-center gap-5 mb-4">
+          <div className="shrink-0 hidden sm:block">
+            <SpinningVinyl size={90} />
+          </div>
+          <div className="sm:hidden shrink-0">
+            <SpinningVinyl size={64} />
           </div>
           <div>
             <div className="text-xl font-extrabold text-gs-text tracking-[-0.03em]">Meet Vinyl Buddy</div>
@@ -141,10 +402,10 @@ function LandingPage({ onActivate }) {
           </div>
         </div>
 
-        {/* How it works */}
+        {/* How it works steps */}
         <div className="flex gap-2 mt-5">
-          {["Place near turntable", "Music auto-detected", "Track identified in seconds"].map((step, i) => (
-            <div key={i} className="flex-1 rounded-[10px] px-3 py-2.5 text-center bg-gs-sidebar/50">
+          {["Place near turntable", "Music auto-detected", "Track identified"].map((step, i) => (
+            <div key={i} className="flex-1 rounded-[10px] px-3 py-2.5 text-center bg-gs-sidebar/50 transition-colors duration-150 hover:bg-gs-sidebar/80">
               <div className="text-sm font-extrabold text-gs-accent mb-1">{i + 1}</div>
               <div className="text-[11px] text-[#777] leading-snug">{step}</div>
             </div>
@@ -152,15 +413,52 @@ function LandingPage({ onActivate }) {
         </div>
       </div>
 
-      {/* Feature pills */}
-      <div className="grid grid-cols-3 gap-2.5 mb-6">
+      {/* Feature cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-5">
         {features.map(f => (
-          <div key={f.title} className="bg-gs-card border border-gs-border rounded-[14px] py-[18px] px-3.5 text-center">
-            <div className="text-[28px] mb-2">{f.icon}</div>
+          <div key={f.title} className="bg-gs-card border border-gs-border rounded-[14px] py-[18px] px-4 transition-all duration-200 hover:border-[#333]">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ background: `${f.color}15`, border: `1px solid ${f.color}25` }}>
+              {f.icon}
+            </div>
             <div className="text-[13px] font-bold text-gs-text mb-1.5">{f.title}</div>
-            <div className="text-[11px] text-[#666] leading-normal">{f.desc}</div>
+            <div className="text-[11px] text-[#666] leading-relaxed">{f.desc}</div>
           </div>
         ))}
+      </div>
+
+      {/* How It Works expandable */}
+      <div className="bg-gs-card border border-gs-border rounded-[14px] mb-5 overflow-hidden">
+        <button
+          onClick={() => setHowItWorks(!howItWorks)}
+          className="w-full flex items-center justify-between py-3.5 px-4 bg-transparent border-none cursor-pointer text-left"
+        >
+          <div className="flex items-center gap-2.5">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <span className="text-[13px] font-bold text-gs-text">How It Works</span>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: howItWorks ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s ease" }}>
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+        {howItWorks && (
+          <div className="px-4 pb-4 vb-fade-in">
+            <div className="flex flex-col gap-3">
+              {howSteps.map((step, i) => (
+                <div key={i} className="flex gap-3 items-start">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-extrabold bg-gradient-to-br from-gs-accent to-gs-indigo text-white shrink-0 mt-0.5">
+                    {step.num}
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-gs-text">{step.title}</div>
+                    <div className="text-[11px] text-[#666] leading-relaxed mt-0.5">{step.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Activation section */}
@@ -168,37 +466,37 @@ function LandingPage({ onActivate }) {
         <div className="text-center py-5">
           <button
             onClick={() => setShowForm(true)}
-            className="gs-btn-gradient px-9 py-3.5 text-sm tracking-[-0.02em]"
+            className="gs-btn-gradient px-9 py-3.5 text-sm tracking-[-0.02em] hover:scale-105 transition-transform"
           >
             Activate Your Device
           </button>
-          <p className="text-[11px] text-gs-faint mt-2.5">Already have a Vinyl Buddy? Enter your device code to get started.</p>
+          <div className="flex items-center justify-center gap-3 mt-3">
+            <p className="text-[11px] text-gs-faint">Already have a Vinyl Buddy? Enter your device code.</p>
+          </div>
+          <button
+            onClick={() => setDemoMode(true)}
+            className="mt-3 bg-transparent border border-[#333] text-gs-dim text-[11px] cursor-pointer px-4 py-2 rounded-lg hover:border-gs-accent hover:text-gs-accent transition-all duration-200"
+          >
+            Try Demo Mode
+          </button>
         </div>
       ) : (
-        <div className="bg-gs-card border border-gs-border rounded-[14px] py-[22px] px-5">
+        <div className="bg-gs-card border border-gs-border rounded-[14px] py-[22px] px-5 vb-fade-in">
           <div className="text-sm font-bold text-gs-text mb-1">Activate Your Device</div>
           <p className="text-[11px] text-[#666] mb-4 leading-normal">
-            Enter the 12-character device code shown on your Vinyl Buddy's OLED screen during WiFi setup. It looks like: AABB11223344
+            Enter the 12-character hex code shown on your Vinyl Buddy's OLED screen during WiFi setup.
           </p>
-          <div className="flex gap-2 items-start">
-            <div className="flex-1">
-              <input
-                value={code}
-                onChange={e => { setCode(e.target.value); setError(""); }}
-                onKeyDown={e => e.key === "Enter" && handleActivate()}
-                placeholder="e.g. AABB11223344"
-                maxLength={12}
-                className={`w-full py-[11px] px-3.5 bg-[#111] rounded-[9px] text-gs-text text-sm font-mono tracking-[0.08em] outline-none uppercase border ${error ? "border-red-500" : "border-gs-border-hover"}`}
-              />
-              {error && <div className="text-[11px] text-red-500 mt-1.5">{error}</div>}
+          <div className="flex flex-col items-center gap-4">
+            <CodeInput value={code} onChange={(v) => { setCode(v); setError(""); }} onSubmit={handleActivate} error={error} />
+            <div className="flex gap-2.5 items-center">
+              <button onClick={() => handleActivate()} className="gs-btn-gradient py-[11px] px-[22px] rounded-[9px] text-[13px] whitespace-nowrap hover:scale-105 transition-transform">
+                Activate
+              </button>
+              <button onClick={() => { setShowForm(false); setCode(""); setError(""); }} className="bg-transparent border border-[#333] text-gs-dim text-[11px] cursor-pointer px-4 py-[11px] rounded-[9px] hover:border-[#555] transition-colors">
+                Cancel
+              </button>
             </div>
-            <button onClick={handleActivate} className="gs-btn-gradient py-[11px] px-[22px] rounded-[9px] text-[13px] whitespace-nowrap">
-              Activate
-            </button>
           </div>
-          <button onClick={() => { setShowForm(false); setCode(""); setError(""); }} className="mt-3 bg-transparent border-none text-gs-dim text-[11px] cursor-pointer p-0">
-            Cancel
-          </button>
         </div>
       )}
     </div>
@@ -206,10 +504,47 @@ function LandingPage({ onActivate }) {
 }
 
 // ============================================================================
+// DEMO DASHBOARD — shows sample data without a device
+// ============================================================================
+function DemoDashboard({ onExit }) {
+  const demoHistory = useMemo(() => generateDemoData(), []);
+  return (
+    <div className="vb-fade-in">
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-[22px] font-extrabold tracking-[-0.04em] text-gs-text">Vinyl Buddy</h1>
+          <Badge label="Demo" color="#f59e0b" />
+        </div>
+        <button onClick={onExit} className="text-[11px] text-gs-dim bg-transparent border border-[#333] px-3 py-1.5 rounded-lg cursor-pointer hover:border-gs-accent hover:text-gs-accent transition-all duration-200">
+          Exit Demo
+        </button>
+      </div>
+      <p className="text-xs text-gs-dim mb-5">Sample data &mdash; activate a real device to see your listening stats</p>
+      <Dashboard
+        currentUser="__demo__"
+        listeningHistory={demoHistory}
+        deviceCode="DEMO00112233"
+        onDeactivate={onExit}
+        isDemo
+      />
+    </div>
+  );
+}
+
+// ============================================================================
 // POST-ACTIVATION DASHBOARD
 // ============================================================================
-function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate }) {
+function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate, isDemo }) {
   const [tab, setTab] = useState("overview");
+  const [loading, setLoading] = useState(!isDemo);
+
+  // Simulate loading state for real data
+  useEffect(() => {
+    if (!isDemo) {
+      const t = setTimeout(() => setLoading(false), 600);
+      return () => clearTimeout(t);
+    }
+  }, [isDemo]);
 
   // Filter sessions for current user
   const myRawListens = (listeningHistory || [])
@@ -224,6 +559,43 @@ function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate }) 
     ? Math.round(myListens.reduce((sum, s) => sum + (s.score || 0), 0) / myListens.length)
     : 0;
 
+  // Weekly stats (last 7 days listen counts per day)
+  const weeklyData = useMemo(() => {
+    const now = new Date();
+    const days = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const dayEnd = dayStart + 86400000;
+      const count = myListens.filter(s => s.timestampMs >= dayStart && s.timestampMs < dayEnd).length;
+      days.push({
+        label: d.toLocaleDateString("en-US", { weekday: "short" }),
+        count,
+      });
+    }
+    return days;
+  }, [myListens]);
+
+  // Previous week stats for trend comparison
+  const prevWeekListens = useMemo(() => {
+    const now = Date.now();
+    const weekAgo = now - 7 * 86400000;
+    const twoWeeksAgo = now - 14 * 86400000;
+    return myListens.filter(s => s.timestampMs >= twoWeeksAgo && s.timestampMs < weekAgo);
+  }, [myListens]);
+
+  const thisWeekListens = useMemo(() => {
+    const now = Date.now();
+    const weekAgo = now - 7 * 86400000;
+    return myListens.filter(s => s.timestampMs >= weekAgo);
+  }, [myListens]);
+
+  const prevArtists = new Set(prevWeekListens.map(s => s.track.artist));
+  const prevAlbums = new Set(prevWeekListens.map(s => s.track.album));
+  const thisArtists = new Set(thisWeekListens.map(s => s.track.artist));
+  const thisAlbums = new Set(thisWeekListens.map(s => s.track.album));
+
   // Top artist
   const artistCounts = {};
   for (const s of myListens) {
@@ -234,37 +606,70 @@ function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate }) 
   // Top track
   const trackCounts = {};
   for (const s of myListens) {
-    const key = `${s.track.title} — ${s.track.artist}`;
+    const key = `${s.track.title} \u2014 ${s.track.artist}`;
     trackCounts[key] = (trackCounts[key] || 0) + 1;
   }
   const topTrack = Object.entries(trackCounts).sort(([, a], [, b]) => b - a)[0];
-  // Find the session for the top track so we can get album info for AlbumArt
-  const topTrackSession = topTrack ? myListens.find(s => `${s.track.title} — ${s.track.artist}` === topTrack[0]) : null;
+  const topTrackSession = topTrack ? myListens.find(s => `${s.track.title} \u2014 ${s.track.artist}` === topTrack[0]) : null;
+
+  // Most recent listen (now playing card)
+  const nowPlaying = myListens[0] || null;
+  const isRecent = nowPlaying && (Date.now() - nowPlaying.timestampMs < 600000); // within 10 min
+
+  function TrendIndicator({ current, previous }) {
+    if (previous === 0 && current === 0) return null;
+    const diff = current - previous;
+    if (diff === 0) return <span className="text-[9px] text-gs-faint font-mono">=</span>;
+    const up = diff > 0;
+    return (
+      <span className={`text-[9px] font-bold font-mono ${up ? "text-[#22c55e]" : "text-[#f87171]"}`}>
+        {up ? "\u2191" : "\u2193"}{Math.abs(diff)}
+      </span>
+    );
+  }
+
+  const statCards = [
+    { l: "Total Listens", v: myListens.length, c: "#0ea5e9", tip: "Total number of identified tracks across all sessions", trend: <TrendIndicator current={thisWeekListens.length} previous={prevWeekListens.length} /> },
+    { l: "Artists", v: artists.size, c: "#8b5cf6", tip: "Unique artists identified from your vinyl collection", trend: <TrendIndicator current={thisArtists.size} previous={prevArtists.size} /> },
+    { l: "Albums", v: albums.size, c: "#f59e0b", tip: "Unique albums detected across all listening sessions", trend: <TrendIndicator current={thisAlbums.size} previous={prevAlbums.size} /> },
+    { l: "Avg Score", v: `${avgScore}%`, c: "#22c55e", tip: "Average confidence score of track identifications" },
+  ];
 
   return (
     <div>
-      {/* Header */}
-      <div className="mb-5">
-        <div className="flex items-center gap-2.5 mb-0.5">
-          <h1 className="text-[22px] font-extrabold tracking-[-0.04em] text-gs-text">Vinyl Buddy</h1>
-          <Badge label="Active" color="#22c55e" />
+      {/* Header — only show if not in demo wrapper */}
+      {!isDemo && (
+        <div className="mb-5">
+          <div className="flex items-center gap-2.5 mb-0.5">
+            <h1 className="text-[22px] font-extrabold tracking-[-0.04em] text-gs-text">Vinyl Buddy</h1>
+            <Badge label="Active" color="#22c55e" />
+          </div>
+          <p className="text-xs text-gs-dim">Your listening dashboard</p>
         </div>
-        <p className="text-xs text-gs-dim">Your listening dashboard</p>
-      </div>
+      )}
 
       {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-2.5 mb-[22px]">
-        {[
-          { l: "Total Listens", v: myListens.length, c: "#0ea5e9" },
-          { l: "Artists", v: artists.size, c: "#8b5cf6" },
-          { l: "Albums", v: albums.size, c: "#f59e0b" },
-          { l: "Avg Score", v: `${avgScore}%`, c: "#22c55e" },
-        ].map(s => (
-          <div key={s.l} className="gs-stat bg-gs-card border border-gs-border rounded-xl">
-            <div className="text-[22px] font-extrabold tracking-[-0.02em]" style={{ color: s.c }}>{s.v}</div>
-            <div className="text-[10px] text-gs-dim font-mono mt-[3px]">{s.l}</div>
-          </div>
-        ))}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-[22px]">
+        {loading ? (
+          Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="bg-gs-card border border-gs-border rounded-xl p-3.5">
+              <Skeleton w={40} h={24} />
+              <div className="mt-2"><Skeleton w={60} h={10} /></div>
+            </div>
+          ))
+        ) : (
+          statCards.map(s => (
+            <Tooltip key={s.l} text={s.tip}>
+              <div className="gs-stat bg-gs-card border border-gs-border rounded-xl cursor-default transition-all duration-200 hover:border-[#333]">
+                <div className="flex items-center gap-1.5">
+                  <div className="text-[22px] font-extrabold tracking-[-0.02em]" style={{ color: s.c }}>{s.v}</div>
+                  {s.trend}
+                </div>
+                <div className="text-[10px] text-gs-dim font-mono mt-[3px]">{s.l}</div>
+              </div>
+            </Tooltip>
+          ))
+        )}
       </div>
 
       {/* Tabs */}
@@ -273,8 +678,8 @@ function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate }) 
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`py-[9px] px-4 bg-transparent border-none text-xs font-semibold cursor-pointer capitalize -mb-px border-b-2 ${
-              tab === t ? "border-gs-accent text-gs-accent" : "border-transparent text-gs-dim"
+            className={`py-[9px] px-4 bg-transparent border-none text-xs font-semibold cursor-pointer capitalize -mb-px border-b-2 transition-all duration-200 ${
+              tab === t ? "border-gs-accent text-gs-accent" : "border-transparent text-gs-dim hover:text-gs-muted"
             }`}
           >
             {t}
@@ -282,104 +687,306 @@ function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate }) 
         ))}
       </div>
 
-      {/* Overview tab */}
-      {tab === "overview" && (
-        <div>
-          {myListens.length === 0 ? (
-            <Empty icon="\uD83C\uDFB6" text="No listening data yet. Play a record near your Vinyl Buddy to get started!" />
-          ) : (
-            <>
-              {/* Top cards row */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-[18px]">
-                {/* Top Artist */}
-                <div className="bg-gs-card border border-gs-border rounded-[14px] overflow-hidden">
-                  <div className="h-0.5 bg-gradient-to-r from-[#8b5cf6] to-transparent" />
-                  <div className="p-4 px-3.5">
-                    <div className="text-[10px] text-gs-dim font-mono mb-2">TOP ARTIST</div>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-base shrink-0 bg-gradient-to-br from-[#8b5cf6] to-gs-indigo">
-                        {topArtist ? topArtist[0].charAt(0).toUpperCase() : "?"}
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold text-gs-text">{topArtist ? topArtist[0] : "—"}</div>
-                        <div className="text-[11px] text-[#8b5cf6]">{topArtist ? `${topArtist[1]} plays` : ""}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+      {/* Tab content with transitions */}
+      <div className="vb-fade-in" key={tab}>
+        {/* Overview tab */}
+        {tab === "overview" && (
+          <OverviewTab
+            myListens={myListens}
+            nowPlaying={nowPlaying}
+            isRecent={isRecent}
+            topArtist={topArtist}
+            topTrack={topTrack}
+            topTrackSession={topTrackSession}
+            weeklyData={weeklyData}
+            loading={loading}
+          />
+        )}
 
-                {/* Top Track */}
-                <div className="bg-gs-card border border-gs-border rounded-[14px] overflow-hidden">
-                  <div className="h-0.5 bg-gradient-to-r from-gs-accent to-transparent" />
-                  <div className="p-4 px-3.5">
-                    <div className="text-[10px] text-gs-dim font-mono mb-2">TOP TRACK</div>
-                    <div className="flex items-center gap-2.5">
-                      <AlbumArt album={topTrackSession?.track.album} artist={topTrackSession?.track.artist} accent="#0ea5e9" size={40} />
-                      <div className="min-w-0">
-                        <div className="text-[13px] font-bold text-gs-text whitespace-nowrap overflow-hidden text-ellipsis">
-                          {topTrack ? topTrack[0].split(" — ")[0] : "—"}
-                        </div>
-                        <div className="text-[11px] text-gs-accent">{topTrack ? `${topTrack[1]} plays` : ""}</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+        {/* History tab */}
+        {tab === "history" && (
+          <HistoryTab myListens={myListens} loading={loading} />
+        )}
 
-              {/* Recent Activity */}
-              <div className="mb-2">
-                <div className="text-[10px] text-gs-dim font-mono mb-2.5 uppercase tracking-[0.06em]">Recent Activity</div>
-                <div className="flex flex-col gap-1.5">
-                  {myListens.slice(0, 5).map(session => (
-                    <SessionRow key={session.id} session={session} />
-                  ))}
-                </div>
+        {/* Device tab */}
+        {tab === "device" && (
+          <DeviceCard currentUser={currentUser} deviceCode={deviceCode} onDeactivate={onDeactivate} isDemo={isDemo} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// OVERVIEW TAB
+// ============================================================================
+function OverviewTab({ myListens, nowPlaying, isRecent, topArtist, topTrack, topTrackSession, weeklyData, loading }) {
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-3">
+        <Skeleton w="100%" h={100} rounded={14} />
+        <div className="grid grid-cols-2 gap-2.5">
+          <Skeleton w="100%" h={90} rounded={14} />
+          <Skeleton w="100%" h={90} rounded={14} />
+        </div>
+        {Array.from({ length: 3 }, (_, i) => <SkeletonCard key={i} />)}
+      </div>
+    );
+  }
+
+  if (myListens.length === 0) {
+    return <Empty icon={"\uD83C\uDFB6"} text="No listening data yet. Play a record near your Vinyl Buddy to get started!" />;
+  }
+
+  const maxDay = Math.max(...weeklyData.map(d => d.count), 1);
+
+  return (
+    <>
+      {/* Now Playing card */}
+      {nowPlaying && (
+        <div className="bg-gradient-to-br from-[#0ea5e908] to-[#6366f108] border border-[#0ea5e933] rounded-[14px] overflow-hidden mb-4">
+          <div className="h-0.5 bg-gradient-to-r from-gs-accent via-[#8b5cf6] to-transparent" />
+          <div className="p-4 flex gap-4 items-center">
+            <div className="relative shrink-0">
+              <AlbumArt album={nowPlaying.track.album} artist={nowPlaying.track.artist} accent="#0ea5e9" size={64} />
+              {isRecent && (
+                <div className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-[#22c55e] border-2 border-[#0a0a0a]" style={{ animation: "vb-now-pulse 2s ease-in-out infinite" }} />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-[10px] text-gs-accent font-bold font-mono uppercase tracking-wider">
+                  {isRecent ? "Now Playing" : "Last Played"}
+                </span>
+                {isRecent && (
+                  <span className="flex items-center gap-1">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#22c55e]" style={{ animation: "vb-pulse 1.5s ease-in-out infinite" }} />
+                    <span className="text-[9px] text-[#22c55e] font-mono">LIVE</span>
+                  </span>
+                )}
               </div>
-            </>
-          )}
+              <div className="text-[15px] font-bold text-gs-text whitespace-nowrap overflow-hidden text-ellipsis">{nowPlaying.track.title}</div>
+              <div className="text-xs text-gs-muted">{nowPlaying.track.artist}</div>
+              <div className="text-[10px] text-gs-dim">{nowPlaying.track.album}{nowPlaying.track.year ? ` \u00B7 ${nowPlaying.track.year}` : ""}</div>
+            </div>
+            <div className="shrink-0 text-right">
+              <span className="text-[10px] text-gs-faint font-mono">{relTime(nowPlaying.timestampMs)}</span>
+              {nowPlaying.score > 0 && (
+                <div className={`text-[10px] mt-1 font-semibold font-mono ${nowPlaying.score >= 90 ? "text-[#22c55e]" : "text-[#f59e0b]"}`}>
+                  {nowPlaying.score}% match
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* History tab */}
-      {tab === "history" && (
-        myListens.length === 0 ? (
-          <Empty icon="\uD83C\uDFA7" text="No listening history yet. Connect a Vinyl Buddy to start tracking!" />
-        ) : (
-          <div className="flex flex-col gap-2">
-            {myListens.map(session => (
-              <div key={session.id} className="bg-gs-card border border-gs-border rounded-xl overflow-hidden transition-colors duration-150 hover:border-[#0ea5e933]">
+      {/* Weekly Stats bar chart */}
+      <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+        <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Listens This Week</div>
+        <div className="flex items-end gap-1.5 h-16">
+          {weeklyData.map((day, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1">
+              <div className="text-[9px] font-mono font-bold text-gs-muted" style={{ opacity: day.count > 0 ? 1 : 0 }}>{day.count}</div>
+              <div className="w-full rounded-t-[3px] transition-all duration-500" style={{
+                height: `${Math.max((day.count / maxDay) * 48, day.count > 0 ? 6 : 2)}px`,
+                background: day.count > 0
+                  ? `linear-gradient(to top, #0ea5e9, #6366f1)`
+                  : "#1a1a1a",
+              }} />
+              <div className="text-[9px] text-gs-faint font-mono">{day.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Top cards row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-[18px]">
+        {/* Top Artist */}
+        <div className="bg-gs-card border border-gs-border rounded-[14px] overflow-hidden transition-all duration-200 hover:border-[#333]">
+          <div className="h-0.5 bg-gradient-to-r from-[#8b5cf6] to-transparent" />
+          <div className="p-4 px-3.5">
+            <div className="text-[10px] text-gs-dim font-mono mb-2">TOP ARTIST</div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center text-base shrink-0 bg-gradient-to-br from-[#8b5cf6] to-gs-indigo">
+                {topArtist ? topArtist[0].charAt(0).toUpperCase() : "?"}
+              </div>
+              <div>
+                <div className="text-sm font-bold text-gs-text">{topArtist ? topArtist[0] : "\u2014"}</div>
+                <div className="text-[11px] text-[#8b5cf6]">{topArtist ? `${topArtist[1]} plays` : ""}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Top Track */}
+        <div className="bg-gs-card border border-gs-border rounded-[14px] overflow-hidden transition-all duration-200 hover:border-[#333]">
+          <div className="h-0.5 bg-gradient-to-r from-gs-accent to-transparent" />
+          <div className="p-4 px-3.5">
+            <div className="text-[10px] text-gs-dim font-mono mb-2">TOP TRACK</div>
+            <div className="flex items-center gap-2.5">
+              <AlbumArt album={topTrackSession?.track.album} artist={topTrackSession?.track.artist} accent="#0ea5e9" size={40} />
+              <div className="min-w-0">
+                <div className="text-[13px] font-bold text-gs-text whitespace-nowrap overflow-hidden text-ellipsis">
+                  {topTrack ? topTrack[0].split(" \u2014 ")[0] : "\u2014"}
+                </div>
+                <div className="text-[11px] text-gs-accent">{topTrack ? `${topTrack[1]} plays` : ""}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div className="mb-2">
+        <div className="text-[10px] text-gs-dim font-mono mb-2.5 uppercase tracking-[0.06em]">Recent Activity</div>
+        <div className="flex flex-col gap-1.5">
+          {myListens.slice(0, 5).map(session => (
+            <SessionRow key={session.id} session={session} />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ============================================================================
+// HISTORY TAB — with search, date grouping, and CSV export
+// ============================================================================
+function HistoryTab({ myListens, loading }) {
+  const [search, setSearch] = useState("");
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return myListens;
+    const q = search.toLowerCase();
+    return myListens.filter(s =>
+      s.track.title?.toLowerCase().includes(q) ||
+      s.track.artist?.toLowerCase().includes(q) ||
+      s.track.album?.toLowerCase().includes(q)
+    );
+  }, [myListens, search]);
+
+  // Group by date
+  const grouped = useMemo(() => {
+    const groups = [];
+    let currentLabel = null;
+    for (const s of filtered) {
+      const label = dateLabel(s.timestampMs);
+      if (label !== currentLabel) {
+        groups.push({ type: "header", label });
+        currentLabel = label;
+      }
+      groups.push({ type: "session", data: s });
+    }
+    return groups;
+  }, [filtered]);
+
+  const exportCSV = useCallback(() => {
+    const headers = ["Title", "Artist", "Album", "Year", "Score", "Date"];
+    const rows = myListens.map(s => [
+      `"${(s.track.title || "").replace(/"/g, '""')}"`,
+      `"${(s.track.artist || "").replace(/"/g, '""')}"`,
+      `"${(s.track.album || "").replace(/"/g, '""')}"`,
+      s.track.year || "",
+      s.score || "",
+      new Date(s.timestampMs).toISOString(),
+    ]);
+    const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `vinyl-buddy-history-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [myListens]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-2">
+        {Array.from({ length: 5 }, (_, i) => <SkeletonCard key={i} />)}
+      </div>
+    );
+  }
+
+  if (myListens.length === 0) {
+    return <Empty icon={"\uD83C\uDFA7"} text="No listening history yet. Connect a Vinyl Buddy to start tracking!" />;
+  }
+
+  return (
+    <div>
+      {/* Search and export bar */}
+      <div className="flex gap-2 mb-4 items-center">
+        <div className="flex-1 relative">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search tracks, artists, albums..."
+            className="w-full py-2.5 pl-9 pr-3 bg-[#111] rounded-lg text-xs text-gs-text outline-none border border-[#222] focus:border-gs-accent transition-colors placeholder:text-gs-faint"
+          />
+          {search && (
+            <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 bg-transparent border-none cursor-pointer text-gs-dim text-xs p-0.5 hover:text-gs-text">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          )}
+        </div>
+        <Tooltip text="Download listening history as CSV">
+          <button onClick={exportCSV} className="bg-[#111] border border-[#222] rounded-lg p-2.5 cursor-pointer hover:border-gs-accent transition-colors group">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:stroke-[#0ea5e9] transition-colors">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+            </svg>
+          </button>
+        </Tooltip>
+      </div>
+
+      {/* Result count */}
+      {search && (
+        <div className="text-[10px] text-gs-dim font-mono mb-2">
+          {filtered.length} result{filtered.length !== 1 ? "s" : ""} for &ldquo;{search}&rdquo;
+        </div>
+      )}
+
+      {filtered.length === 0 ? (
+        <Empty icon={"\uD83D\uDD0D"} text={`No tracks matching "${search}"`} />
+      ) : (
+        <div className="flex flex-col gap-1">
+          {grouped.map((item, i) =>
+            item.type === "header" ? (
+              <div key={`h-${item.label}`} className={`text-[10px] text-gs-dim font-mono uppercase tracking-[0.06em] ${i > 0 ? "mt-3" : ""} mb-1.5`}>
+                {item.label}
+              </div>
+            ) : (
+              <div key={item.data.id} className="bg-gs-card border border-gs-border rounded-xl overflow-hidden transition-colors duration-150 hover:border-[#0ea5e933]">
                 <div className="h-0.5 bg-gradient-to-r from-gs-accent via-[#8b5cf6] to-transparent" />
                 <div className="py-3 px-3.5 flex gap-3 items-center">
-                  <AlbumArt album={session.track.album} artist={session.track.artist} accent="#0ea5e9" size={38} />
+                  <AlbumArt album={item.data.track.album} artist={item.data.track.artist} accent="#0ea5e9" size={38} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-bold text-gs-text whitespace-nowrap overflow-hidden text-ellipsis">{session.track.title}</div>
-                    <div className="text-[11px] text-gs-muted">{session.track.artist}</div>
-                    <div className="text-[10px] text-gs-dim">{session.track.album}{session.track.year ? ` \u00B7 ${session.track.year}` : ""}</div>
+                    <div className="text-[13px] font-bold text-gs-text whitespace-nowrap overflow-hidden text-ellipsis">{item.data.track.title}</div>
+                    <div className="text-[11px] text-gs-muted">{item.data.track.artist}</div>
+                    <div className="text-[10px] text-gs-dim">{item.data.track.album}{item.data.track.year ? ` \u00B7 ${item.data.track.year}` : ""}</div>
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
-                    <span className="text-[10px] text-gs-faint font-mono">{relTime(session.timestampMs)}</span>
-                    {session.score > 0 && (
+                    <span className="text-[10px] text-gs-faint font-mono">{relTime(item.data.timestampMs)}</span>
+                    {item.data.score > 0 && (
                       <span
                         className={`text-[9px] px-1.5 py-0.5 rounded font-semibold font-mono border ${
-                          session.score >= 90
+                          item.data.score >= 90
                             ? "bg-[#22c55e11] border-[#22c55e22] text-[#22c55e]"
                             : "bg-[#f59e0b11] border-[#f59e0b22] text-[#f59e0b]"
                         }`}
                       >
-                        {session.score}% match
+                        {item.data.score}% match
                       </span>
                     )}
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        )
-      )}
-
-      {/* Device tab */}
-      {tab === "device" && (
-        <DeviceCard currentUser={currentUser} deviceCode={deviceCode} onDeactivate={onDeactivate} />
+            )
+          )}
+        </div>
       )}
     </div>
   );
@@ -390,7 +997,7 @@ function Dashboard({ currentUser, listeningHistory, deviceCode, onDeactivate }) 
 // ============================================================================
 function SessionRow({ session }) {
   return (
-    <div className="bg-gs-card border border-gs-border rounded-[10px] py-2.5 px-3 flex gap-2.5 items-center">
+    <div className="bg-gs-card border border-gs-border rounded-[10px] py-2.5 px-3 flex gap-2.5 items-center transition-colors duration-150 hover:border-[#333]">
       <AlbumArt album={session.track.album} artist={session.track.artist} accent="#0ea5e9" size={30} />
       <div className="flex-1 min-w-0">
         <div className="text-xs font-bold text-gs-text whitespace-nowrap overflow-hidden text-ellipsis">{session.track.title}</div>
@@ -404,13 +1011,21 @@ function SessionRow({ session }) {
 // ============================================================================
 // DEVICE CARD — device status with server polling
 // ============================================================================
-function DeviceCard({ currentUser, deviceCode, onDeactivate }) {
-  const [deviceInfo, setDeviceInfo] = useState(null);
-  const [status, setStatus] = useState("checking"); // "online" | "offline" | "checking"
+function DeviceCard({ currentUser, deviceCode, onDeactivate, isDemo }) {
+  const [deviceInfo, setDeviceInfo] = useState(isDemo ? {
+    totalHeartbeats: 1247,
+    uptime: 86400,
+    freeHeap: 142000,
+    firstSeen: new Date(Date.now() - 30 * 86400000).toISOString(),
+    lastSeen: new Date().toISOString(),
+    rssi: -45,
+  } : null);
+  const [status, setStatus] = useState(isDemo ? "online" : "checking");
   const [showConfirm, setShowConfirm] = useState(false);
 
   // Poll server for device status
   useEffect(() => {
+    if (isDemo) return;
     let cancelled = false;
 
     const poll = async () => {
@@ -420,11 +1035,9 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate }) {
         const data = await res.json();
         if (cancelled) return;
 
-        // Find matching device
         const device = (data.devices || []).find(d => d.deviceId === deviceCode);
         if (device) {
           setDeviceInfo(device);
-          // Online if last heartbeat within 60 seconds
           const age = Date.now() - new Date(device.lastSeen).getTime();
           setStatus(age < 60000 ? "online" : "offline");
         } else {
@@ -438,7 +1051,7 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate }) {
     poll();
     const interval = setInterval(poll, 15000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [currentUser, deviceCode]);
+  }, [currentUser, deviceCode, isDemo]);
 
   const statusColors = {
     online: { bg: "#22c55e11", border: "#22c55e33", text: "#22c55e", dot: "#22c55e", label: "Online" },
@@ -447,8 +1060,34 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate }) {
   };
   const sc = statusColors[status];
 
+  // Derived health values
+  const memoryTotal = 320 * 1024; // ESP32 typical
+  const freeHeap = deviceInfo?.freeHeap || 0;
+  const memoryUsedPct = freeHeap > 0 ? ((memoryTotal - freeHeap) / memoryTotal) * 100 : 0;
+  const uptimeHrs = deviceInfo?.uptime ? deviceInfo.uptime / 3600 : 0;
+  const signalStrength = deviceInfo?.rssi ? Math.min(100, Math.max(0, 100 + (deviceInfo.rssi + 30) * 1.5)) : isDemo ? 82 : 0;
+
   return (
     <div>
+      {/* Connection status banner */}
+      <div className="flex items-center gap-3 mb-4 p-3 rounded-xl" style={{ background: sc.bg, border: `1px solid ${sc.border}` }}>
+        <div className="relative">
+          <div className="w-3 h-3 rounded-full" style={{
+            background: sc.dot,
+            animation: status === "online" ? "vb-pulse-dot 2s ease-in-out infinite" : "none",
+            boxShadow: status === "online" ? `0 0 8px ${sc.dot}` : "none",
+          }} />
+        </div>
+        <div>
+          <div className="text-xs font-bold" style={{ color: sc.text }}>
+            {status === "online" ? "Device Connected" : status === "checking" ? "Checking Connection..." : "Device Offline"}
+          </div>
+          <div className="text-[10px] text-gs-dim">
+            {status === "online" ? "Vinyl Buddy is active and listening" : status === "checking" ? "Establishing connection..." : "No heartbeat received recently"}
+          </div>
+        </div>
+      </div>
+
       {/* Device info card */}
       <div className="bg-gs-card border border-gs-border rounded-[14px] overflow-hidden mb-3">
         <div className="h-0.5" style={{ background: `linear-gradient(90deg,${sc.text},transparent)` }} />
@@ -466,9 +1105,13 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate }) {
                 <div className="text-[11px] text-gs-dim font-mono">ESP32-DevKitC V4</div>
               </div>
             </div>
-            {/* Status pill — dynamic colors from statusColors must stay inline */}
+            {/* Status pill */}
             <div className="flex items-center gap-1.5 py-[5px] px-3 rounded-full" style={{ background: sc.bg, border: `1px solid ${sc.border}` }}>
-              <div className="w-1.5 h-1.5 rounded-full" style={{ background: sc.dot, boxShadow: status === "online" ? `0 0 6px ${sc.dot}` : "none" }} />
+              <div className="w-1.5 h-1.5 rounded-full" style={{
+                background: sc.dot,
+                boxShadow: status === "online" ? `0 0 6px ${sc.dot}` : "none",
+                animation: status === "online" ? "vb-pulse 2s ease-in-out infinite" : "none",
+              }} />
               <span className="text-[11px] font-semibold" style={{ color: sc.text }}>{sc.label}</span>
             </div>
           </div>
@@ -477,11 +1120,11 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate }) {
           <div className="grid grid-cols-2 gap-2">
             {[
               { label: "Device Code", value: deviceCode },
-              { label: "Heartbeats", value: deviceInfo?.totalHeartbeats ?? "—" },
+              { label: "Heartbeats", value: deviceInfo?.totalHeartbeats ?? "\u2014" },
               { label: "Uptime", value: fmtUptime(deviceInfo?.uptime) },
-              { label: "Free Memory", value: deviceInfo?.freeHeap ? `${Math.round(deviceInfo.freeHeap / 1024)}KB` : "—" },
-              { label: "First Seen", value: deviceInfo?.firstSeen ? new Date(deviceInfo.firstSeen).toLocaleDateString() : "—" },
-              { label: "Last Seen", value: deviceInfo?.lastSeen ? relTime(new Date(deviceInfo.lastSeen).getTime()) : "—" },
+              { label: "Free Memory", value: deviceInfo?.freeHeap ? `${Math.round(deviceInfo.freeHeap / 1024)}KB` : "\u2014" },
+              { label: "First Seen", value: deviceInfo?.firstSeen ? new Date(deviceInfo.firstSeen).toLocaleDateString() : "\u2014" },
+              { label: "Last Seen", value: deviceInfo?.lastSeen ? relTime(new Date(deviceInfo.lastSeen).getTime()) : "\u2014" },
             ].map(item => (
               <div key={item.label} className="bg-[#111] rounded-lg py-2.5 px-3">
                 <div className="text-[10px] text-gs-dim font-mono mb-1">{item.label}</div>
@@ -494,10 +1137,59 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate }) {
         </div>
       </div>
 
+      {/* Device Health section */}
+      <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+        <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Device Health</div>
+        <div className="flex flex-col gap-3">
+          <ProgressBar
+            value={memoryUsedPct}
+            max={100}
+            color={memoryUsedPct > 80 ? "#f87171" : memoryUsedPct > 60 ? "#f59e0b" : "#22c55e"}
+            label="Memory Usage"
+          />
+          <ProgressBar
+            value={Math.min(uptimeHrs, 168)}
+            max={168}
+            color="#0ea5e9"
+            label={`Uptime (${fmtUptime(deviceInfo?.uptime)})`}
+          />
+        </div>
+
+        {/* Signal and battery indicators */}
+        <div className="grid grid-cols-2 gap-2.5 mt-3">
+          <div className="bg-[#111] rounded-lg py-2.5 px-3">
+            <div className="text-[10px] text-gs-dim font-mono mb-1.5">WiFi Signal</div>
+            <div className="flex items-center gap-2">
+              <div className="flex items-end gap-0.5 h-4">
+                {[1, 2, 3, 4].map(bar => (
+                  <div key={bar} className="w-1 rounded-t-sm transition-all duration-300" style={{
+                    height: `${bar * 25}%`,
+                    background: signalStrength >= bar * 25 ? "#22c55e" : "#222",
+                  }} />
+                ))}
+              </div>
+              <span className="text-[11px] font-mono font-semibold" style={{ color: signalStrength > 60 ? "#22c55e" : signalStrength > 30 ? "#f59e0b" : "#f87171" }}>
+                {signalStrength > 0 ? `${Math.round(signalStrength)}%` : "\u2014"}
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-[#111] rounded-lg py-2.5 px-3">
+            <div className="text-[10px] text-gs-dim font-mono mb-1.5">Power</div>
+            <div className="flex items-center gap-2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+              </svg>
+              <span className="text-[11px] font-mono font-semibold text-[#22c55e]">USB Powered</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Server connection hint */}
       {status === "offline" && (
         <div className="rounded-[10px] py-3 px-3.5 mb-3 bg-[#f59e0b08] border border-[#f59e0b22]">
-          <div className="text-xs font-semibold text-[#f59e0b] mb-1">Device Offline</div>
+          <div className="text-xs font-semibold text-[#f59e0b] mb-1">Troubleshooting</div>
           <div className="text-[11px] text-gs-muted leading-normal">
             Make sure your Vinyl Buddy is powered on and connected to the same WiFi network. The server should be running on port 3001.
           </div>
@@ -511,16 +1203,16 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate }) {
           Remove this Vinyl Buddy from your account. Your listening history will be preserved, but you'll need to re-enter the device code to reconnect.
         </p>
         {!showConfirm ? (
-          <button onClick={() => setShowConfirm(true)} className="gs-btn-secondary py-[9px] px-[18px] rounded-lg text-red-500 text-xs">
+          <button onClick={() => setShowConfirm(true)} className="gs-btn-secondary py-[9px] px-[18px] rounded-lg text-red-500 text-xs min-h-[36px]">
             Reset Device
           </button>
         ) : (
-          <div className="flex gap-2 items-center">
+          <div className="flex gap-2 items-center flex-wrap">
             <span className="text-xs text-red-500 font-semibold">Are you sure?</span>
-            <button onClick={() => { setShowConfirm(false); onDeactivate(); }} className="py-2 px-4 bg-red-500 border-none rounded-lg text-white font-bold text-xs cursor-pointer">
+            <button onClick={() => { setShowConfirm(false); onDeactivate(); }} className="py-2 px-4 bg-red-500 border-none rounded-lg text-white font-bold text-xs cursor-pointer min-h-[36px]">
               Yes, Reset
             </button>
-            <button onClick={() => setShowConfirm(false)} className="gs-btn-secondary py-2 px-4 rounded-lg text-xs">
+            <button onClick={() => setShowConfirm(false)} className="gs-btn-secondary py-2 px-4 rounded-lg text-xs min-h-[36px]">
               Cancel
             </button>
           </div>

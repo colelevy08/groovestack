@@ -1,7 +1,7 @@
 // Social feed — user-created posts with tagged records, likes, comments, and bookmarks.
 // This replaces the old Feed as the main landing screen. Posts are the social layer on top of the record catalog.
 // Includes a compose prompt that opens CreatePostModal, filter tabs (All / Following), and post cards with interactions.
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useCallback } from 'react';
 import Avatar from '../ui/Avatar';
 import AlbumArt from '../ui/AlbumArt';
 import Empty from '../ui/Empty';
@@ -12,7 +12,10 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [showAllComments, setShowAllComments] = useState(false);
+  const [showShareCopied, setShowShareCopied] = useState(false);
+  const [doubleTapHeart, setDoubleTapHeart] = useState(false);
   const inputRef = useRef(null);
+  const lastTapRef = useRef(0);
 
   const p = getProfile(post.user);
   const accent = p.accent || post.accent || "#0ea5e9";
@@ -30,6 +33,25 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
     setCommentText("");
     setShowCommentInput(false);
   };
+
+  // #11 — Share button (copy link)
+  const handleShare = () => {
+    const url = `${window.location.origin}?post=${post.id}`;
+    navigator.clipboard.writeText(url).catch(() => {});
+    setShowShareCopied(true);
+    setTimeout(() => setShowShareCopied(false), 1500);
+  };
+
+  // #12 — Double-tap to like on post images/tagged record
+  const handleDoubleTap = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 350) {
+      if (!post.liked) onLikePost(post.id);
+      setDoubleTapHeart(true);
+      setTimeout(() => setDoubleTapHeart(false), 800);
+    }
+    lastTapRef.current = now;
+  }, [post.id, post.liked, onLikePost]);
 
   const visibleComments = showAllComments ? post.comments : post.comments.slice(-2);
 
@@ -58,11 +80,12 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
           <span className="text-[10px] text-[#3a3a3a] font-mono">{post.timeAgo}</span>
         </div>
 
-        {/* Tagged record visual */}
+        {/* Tagged record visual — #12 double-tap to like */}
         {post.taggedRecord && (
           <div
             onClick={() => matchedRecord && onDetail(matchedRecord)}
-            className="rounded-[14px] p-[18px] mb-3.5 flex items-center gap-4 transition-colors duration-200"
+            onDoubleClick={handleDoubleTap}
+            className="rounded-[14px] p-[18px] mb-3.5 flex items-center gap-4 transition-colors duration-200 relative select-none"
             style={{
               background: `linear-gradient(135deg, ${tagAccent}15, ${tagAccent}08)`,
               border: `1px solid ${tagAccent}22`,
@@ -71,6 +94,14 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
             onMouseEnter={e => matchedRecord && (e.currentTarget.style.borderColor = tagAccent + "55")}
             onMouseLeave={e => matchedRecord && (e.currentTarget.style.borderColor = tagAccent + "22")}
           >
+            {/* #12 — Double-tap heart animation */}
+            {doubleTapHeart && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="#ef4444" className="animate-double-tap-heart absolute top-1/2 left-1/2">
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                </svg>
+              </div>
+            )}
             <AlbumArt album={post.taggedRecord.album} artist={post.taggedRecord.artist} accent={tagAccent} size={64} />
             <div className="flex-1 min-w-0">
               <div className="text-base font-extrabold text-gs-text tracking-tight mb-0.5">
@@ -106,9 +137,20 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
           {post.caption}
         </p>
 
-        {/* Media URL image (if provided) */}
+        {/* Media URL image (if provided) — #12 double-tap to like */}
         {post.mediaUrl && (
-          <div className="rounded-xl overflow-hidden mb-3.5 bg-[#111] border border-[#1a1a1a]">
+          <div
+            className="rounded-xl overflow-hidden mb-3.5 bg-[#111] border border-[#1a1a1a] relative select-none"
+            onDoubleClick={handleDoubleTap}
+          >
+            {/* #12 — Double-tap heart animation on media */}
+            {doubleTapHeart && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="#ef4444" className="animate-double-tap-heart absolute top-1/2 left-1/2">
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                </svg>
+              </div>
+            )}
             {post.mediaType === "video" ? (
               <video src={post.mediaUrl} controls className="w-full block" />
             ) : (
@@ -117,13 +159,13 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
           </div>
         )}
 
-        {/* Action bar */}
+        {/* Action bar — #11 share button */}
         <div className="flex items-center justify-between border-t border-[#1a1a1a] pt-3">
           <div className="flex gap-4">
             {/* Like */}
             <button
               onClick={() => onLikePost(post.id)}
-              className={`flex items-center gap-[5px] bg-transparent border-none cursor-pointer text-xs font-semibold transition-colors duration-150 ${post.liked ? 'text-[#ef4444]' : 'text-gs-dim'}`}
+              className={`flex items-center gap-[5px] bg-transparent border-none cursor-pointer text-xs font-semibold transition-all duration-200 ${post.liked ? 'text-[#ef4444]' : 'text-gs-dim'} ${post.liked ? 'animate-heart-pop' : ''}`}
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill={post.liked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
                 <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
@@ -140,11 +182,26 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
               </svg>
               {post.comments.length}
             </button>
+            {/* #11 — Share button */}
+            <button
+              onClick={handleShare}
+              className="flex items-center gap-[5px] bg-transparent border-none cursor-pointer text-gs-dim text-xs font-semibold hover:text-gs-muted transition-colors relative"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>
+              </svg>
+              Share
+              {showShareCopied && (
+                <span className="absolute -top-7 left-1/2 -translate-x-1/2 text-[10px] text-gs-accent bg-gs-surface border border-gs-border rounded px-2 py-0.5 whitespace-nowrap animate-fade-in">
+                  Link copied!
+                </span>
+              )}
+            </button>
           </div>
           {/* Bookmark */}
           <button
             onClick={() => onBookmarkPost(post.id)}
-            className={`bg-transparent border-none cursor-pointer transition-colors duration-150 ${post.bookmarked ? 'text-[#f59e0b]' : 'text-gs-dim'}`}
+            className={`bg-transparent border-none cursor-pointer transition-all duration-200 ${post.bookmarked ? 'text-[#f59e0b]' : 'text-gs-dim'}`}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill={post.bookmarked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
@@ -152,7 +209,7 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
           </button>
         </div>
 
-        {/* Comments section */}
+        {/* #13 — Inline comment preview: show 2 most recent comments */}
         {post.comments.length > 0 && (
           <div className="mt-3 border-t border-[#111] pt-2.5">
             {post.comments.length > 2 && !showAllComments && (
@@ -166,15 +223,16 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
             {visibleComments.map(c => {
               const cp = getProfile(c.user);
               return (
-                <div key={c.id} className="mb-1.5 text-[13px] leading-normal">
+                <div key={c.id} className="mb-1.5 text-[13px] leading-normal flex items-baseline gap-1.5">
                   <span
                     onClick={() => onViewUser(c.user)}
-                    className="font-bold text-[#e0e0e0] cursor-pointer mr-1.5 text-xs"
+                    className="font-bold text-[#e0e0e0] cursor-pointer text-xs shrink-0"
                   >
                     {cp.displayName || c.user}
                   </span>
-                  <span className="text-gs-muted">{c.text}</span>
-                  <span className="text-gs-subtle text-[10px] ml-2 font-mono">{c.time}</span>
+                  <span className="text-gs-muted flex-1 min-w-0">{c.text}</span>
+                  {/* #34 — Comment timestamps */}
+                  <span className="text-gs-subtle text-[10px] font-mono shrink-0">{c.time}</span>
                 </div>
               );
             })}
@@ -230,12 +288,28 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
     return [...filtered].sort((a, b) => b.createdAt - a.createdAt);
   }, [posts, filter, following, currentUser, q]);
 
+  // #10 — Total likes across visible feed
+  const totalFeedLikes = useMemo(() => sorted.reduce((sum, p) => sum + (p.likes || 0), 0), [sorted]);
+
   return (
-    <div className="max-w-[720px]">
+    <div className="max-w-[720px] gs-page-transition">
       {/* Header */}
       <div className="mb-5">
         <h1 className="text-[22px] font-extrabold tracking-tighter text-gs-text mb-1">Social</h1>
-        <p className="text-xs text-gs-dim">See what the community is spinning</p>
+        <p className="text-xs text-gs-dim">
+          See what the community is spinning
+          {/* #10 — Feed engagement stats */}
+          {totalFeedLikes > 0 && (
+            <span className="ml-2 text-gs-accent">
+              · {totalFeedLikes} total likes across {sorted.length} posts
+            </span>
+          )}
+        </p>
+      </div>
+
+      {/* #9 — Pull-to-refresh hint on mobile */}
+      <div className="text-center text-[10px] text-gs-subtle mb-2 sm:hidden">
+        Pull down to refresh
       </div>
 
       {/* Compose prompt */}
@@ -271,7 +345,7 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
           <button
             key={f.id}
             onClick={() => setFilter(f.id)}
-            className={`px-5 py-2.5 bg-transparent border-none border-b-2 text-[13px] font-semibold cursor-pointer -mb-px ${
+            className={`px-5 py-2.5 bg-transparent border-none border-b-2 text-[13px] font-semibold cursor-pointer -mb-px transition-colors duration-150 ${
               filter === f.id
                 ? 'border-b-gs-accent text-gs-accent'
                 : 'border-b-transparent text-gs-dim'
@@ -284,7 +358,7 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
 
       {/* Posts */}
       {sorted.length === 0 ? (
-        <Empty icon={q ? "🔍" : "📝"} text={q ? `No posts matching "${q}"` : "No posts yet. Be the first to share what you're listening to!"} />
+        <Empty icon={q ? "&#128269;" : "&#128221;"} text={q ? `No posts matching "${q}"` : "No posts yet. Be the first to share what you're listening to!"} />
       ) : (
         <div className="flex flex-col gap-4">
           {sorted.map(post => (
@@ -304,6 +378,17 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
           ))}
         </div>
       )}
+
+      {/* #8 — Floating "New Post" action button (mobile) */}
+      <button
+        onClick={onCreatePost}
+        className="fixed bottom-24 right-5 w-14 h-14 rounded-full gs-btn-gradient flex items-center justify-center shadow-xl shadow-gs-accent/30 z-[80] sm:hidden"
+        aria-label="New Post"
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5">
+          <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+      </button>
     </div>
   );
 }
