@@ -15,12 +15,24 @@ export default function ArtistProfileModal({ artist, open, onClose, records, onD
   const [followingArtist, setFollowingArtist] = useState(false);
   // #38 — Active tab for discography vs marketplace
   const [activeTab, setActiveTab] = useState('marketplace');
+  // [Improvement 18] Artist news feed placeholder
+  const [showNews, setShowNews] = useState(false);
+  // [Improvement 19] Artist tour dates placeholder
+  const [showTourDates, setShowTourDates] = useState(false);
+  // [Improvement 20] Artist collaboration network
+  const [showCollabNetwork, setShowCollabNetwork] = useState(false);
+  // [Improvement 21] Artist genre evolution timeline
+  const [showGenreTimeline, setShowGenreTimeline] = useState(false);
 
   useEffect(() => {
     if (!artist || !open) return;
     setLoading(true);
     setInfo(null);
     setActiveTab('marketplace');
+    setShowNews(false);
+    setShowTourDates(false);
+    setShowCollabNetwork(false);
+    setShowGenreTimeline(false);
     getArtistInfo(artist).then(result => {
       setInfo(result);
       setLoading(false);
@@ -131,6 +143,163 @@ export default function ArtistProfileModal({ artist, open, onClose, records, onD
             {info.bio.length > 300 ? info.bio.slice(0, 300) + "..." : info.bio}
           </p>
         ) : null}
+
+        {/* [Improvement 18] Artist News Feed Placeholder */}
+        <div className="mb-5">
+          <button
+            onClick={() => setShowNews(n => !n)}
+            className="w-full py-2 bg-[#111] border border-[#1a1a1a] rounded-lg text-[11px] font-semibold cursor-pointer hover:border-gs-border-hover transition-colors flex items-center justify-center gap-1.5 text-gs-dim"
+          >
+            {showNews ? 'Hide News' : 'Latest News'}
+          </button>
+          {showNews && (
+            <div className="mt-2 space-y-2">
+              {[
+                { title: `New ${artist} album rumored for 2026`, date: '2 days ago', source: 'Music News' },
+                { title: `${artist} reissue campaign gains traction`, date: '1 week ago', source: 'Vinyl Collective' },
+                { title: `Rare ${artist} pressing sells for record price`, date: '2 weeks ago', source: 'Discogs Blog' },
+              ].map((item, i) => (
+                <div key={i} className="px-3 py-2 bg-[#111] border border-[#1a1a1a] rounded-lg">
+                  <div className="text-[12px] text-gs-text font-semibold">{item.title}</div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] text-gs-dim">{item.source}</span>
+                    <span className="text-[10px] text-gs-faint">{item.date}</span>
+                  </div>
+                </div>
+              ))}
+              <div className="text-[9px] text-gs-faint text-center">News feed is a preview feature. Content is illustrative.</div>
+            </div>
+          )}
+        </div>
+
+        {/* [Improvement 19] Artist Tour Dates Placeholder */}
+        <div className="mb-5">
+          <button
+            onClick={() => setShowTourDates(t => !t)}
+            className="w-full py-2 bg-[#111] border border-[#1a1a1a] rounded-lg text-[11px] font-semibold cursor-pointer hover:border-gs-border-hover transition-colors flex items-center justify-center gap-1.5 text-gs-dim"
+          >
+            {showTourDates ? 'Hide Tour Dates' : 'Upcoming Tour Dates'}
+          </button>
+          {showTourDates && (
+            <div className="mt-2 space-y-2">
+              {[
+                { city: 'New York, NY', venue: 'Brooklyn Steel', date: 'Apr 15, 2026' },
+                { city: 'Los Angeles, CA', venue: 'The Wiltern', date: 'Apr 22, 2026' },
+                { city: 'Chicago, IL', venue: 'Thalia Hall', date: 'May 1, 2026' },
+                { city: 'London, UK', venue: 'Roundhouse', date: 'May 18, 2026' },
+              ].map((show, i) => (
+                <div key={i} className="flex items-center justify-between px-3 py-2 bg-[#111] border border-[#1a1a1a] rounded-lg">
+                  <div>
+                    <div className="text-[12px] text-gs-text font-semibold">{show.venue}</div>
+                    <div className="text-[10px] text-gs-dim">{show.city}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[11px] text-gs-muted font-mono">{show.date}</div>
+                    <button className="text-[9px] text-gs-accent bg-transparent border-none cursor-pointer p-0 font-semibold mt-0.5">
+                      Tickets
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <div className="text-[9px] text-gs-faint text-center">Tour dates are placeholders. Ticketing integration coming soon.</div>
+            </div>
+          )}
+        </div>
+
+        {/* [Improvement 20] Artist Collaboration Network */}
+        <div className="mb-5">
+          <button
+            onClick={() => setShowCollabNetwork(c => !c)}
+            className="w-full py-2 bg-[#111] border border-[#1a1a1a] rounded-lg text-[11px] font-semibold cursor-pointer hover:border-gs-border-hover transition-colors flex items-center justify-center gap-1.5 text-gs-dim"
+          >
+            {showCollabNetwork ? 'Hide Network' : 'Collaboration Network'}
+          </button>
+          {showCollabNetwork && (
+            <div className="mt-2 p-3 bg-[#111] border border-[#1a1a1a] rounded-lg">
+              <div className="text-[10px] text-gs-dim font-mono mb-2 tracking-wider">COLLABORATORS</div>
+              <div className="flex flex-wrap gap-2">
+                {(() => {
+                  const seed = artist.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+                  const collabNames = ['Miles Davis', 'John Coltrane', 'Herbie Hancock', 'Wayne Shorter', 'Pharoah Sanders', 'Alice Coltrane', 'Sun Ra', 'Art Blakey'];
+                  const start = seed % collabNames.length;
+                  return Array.from({ length: 4 }, (_, i) => collabNames[(start + i) % collabNames.length])
+                    .filter(name => name.toLowerCase() !== artist.toLowerCase())
+                    .slice(0, 3);
+                })().map((name, i) => (
+                  <button
+                    key={name}
+                    onClick={() => { onClose(); onDetail && onDetail({ artist: name }); }}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-[#0a0a0a] border border-[#222] rounded-full cursor-pointer hover:border-gs-accent/40 transition-colors"
+                  >
+                    <Avatar username={name.replace(/\s/g, '').toLowerCase()} size={20} />
+                    <span className="text-[11px] text-gs-muted font-semibold">{name}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 relative h-[100px]">
+                <svg viewBox="0 0 200 100" className="w-full h-full">
+                  <circle cx="100" cy="50" r="8" fill="none" stroke="#0ea5e9" strokeWidth="1.5" />
+                  <text x="100" y="53" textAnchor="middle" fill="#0ea5e9" fontSize="6" fontWeight="bold">{artist.split(' ').map(w => w[0]).join('')}</text>
+                  {[
+                    { x: 40, y: 25 }, { x: 160, y: 25 }, { x: 40, y: 75 }, { x: 160, y: 75 },
+                  ].slice(0, 3).map((pos, i) => (
+                    <g key={i}>
+                      <line x1="100" y1="50" x2={pos.x} y2={pos.y} stroke="#333" strokeWidth="0.5" strokeDasharray="3,3" />
+                      <circle cx={pos.x} cy={pos.y} r="5" fill="none" stroke="#666" strokeWidth="1" />
+                    </g>
+                  ))}
+                </svg>
+              </div>
+              <div className="text-[9px] text-gs-faint text-center mt-1">Network visualization is illustrative.</div>
+            </div>
+          )}
+        </div>
+
+        {/* [Improvement 21] Artist Genre Evolution Timeline */}
+        <div className="mb-5">
+          <button
+            onClick={() => setShowGenreTimeline(g => !g)}
+            className="w-full py-2 bg-[#111] border border-[#1a1a1a] rounded-lg text-[11px] font-semibold cursor-pointer hover:border-gs-border-hover transition-colors flex items-center justify-center gap-1.5 text-gs-dim"
+          >
+            {showGenreTimeline ? 'Hide Timeline' : 'Genre Evolution'}
+          </button>
+          {showGenreTimeline && (
+            <div className="mt-2 p-3 bg-[#111] border border-[#1a1a1a] rounded-lg">
+              <div className="text-[10px] text-gs-dim font-mono mb-3 tracking-wider">GENRE EVOLUTION</div>
+              <div className="relative pl-4 border-l-2 border-[#222] space-y-3">
+                {(() => {
+                  const allTags = [...new Set(artistRecords.flatMap(r => r.tags || []))];
+                  const years = [...new Set(artistRecords.map(r => r.year).filter(Boolean))].sort();
+                  if (years.length === 0) return [{ year: 'Unknown', genres: allTags.slice(0, 2) }];
+                  const eras = [];
+                  const decadeMap = {};
+                  years.forEach(y => {
+                    const decade = `${Math.floor(y / 10) * 10}s`;
+                    if (!decadeMap[decade]) decadeMap[decade] = new Set();
+                    const recs = artistRecords.filter(r => r.year === y);
+                    recs.forEach(r => (r.tags || []).forEach(t => decadeMap[decade].add(t)));
+                  });
+                  Object.entries(decadeMap).forEach(([decade, genreSet]) => {
+                    eras.push({ year: decade, genres: [...genreSet].slice(0, 3) });
+                  });
+                  return eras.length > 0 ? eras : [{ year: 'Various', genres: allTags.slice(0, 3) }];
+                })().map((era, i) => (
+                  <div key={i} className="relative">
+                    <div className="absolute -left-[21px] w-3 h-3 rounded-full bg-[#222] border-2 border-gs-accent" />
+                    <div className="text-[11px] font-bold text-gs-muted">{era.year}</div>
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {era.genres.map(g => (
+                        <span key={g} className="text-[9px] px-2 py-0.5 rounded-full bg-[#1a1a1a] text-gs-dim border border-gs-border-hover">
+                          {g}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Top Collectors */}
         {topCollectors.length > 0 && (

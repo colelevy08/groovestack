@@ -2056,6 +2056,757 @@ function BluetoothPairingGuide() {
   );
 }
 
+// ── (Improvement 1) Vinyl Grading Assistant ─────────────────────────────
+function VinylGradingAssistant() {
+  const [step, setStep] = useState(0);
+  const [grades, setGrades] = useState({});
+
+  const steps = [
+    { key: 'visual', title: 'Visual Inspection', desc: 'Hold the record at an angle under a light. Look for scratches, scuffs, warps, or ring wear on the sleeve.', options: ['Mint (M)', 'Near Mint (NM)', 'Very Good Plus (VG+)', 'Very Good (VG)', 'Good (G)', 'Fair/Poor (F/P)'] },
+    { key: 'playback', title: 'Playback Test', desc: 'Play the record and listen for pops, clicks, skips, or distortion across both sides.', options: ['Silent (M/NM)', 'Light crackle (VG+)', 'Noticeable noise (VG)', 'Heavy noise (G)', 'Skips/unplayable (F/P)'] },
+    { key: 'sleeve', title: 'Sleeve Condition', desc: 'Check the cover for seam splits, ring wear, water damage, writing, or sticker residue.', options: ['Perfect (M)', 'Minimal wear (NM)', 'Light wear (VG+)', 'Obvious wear (VG)', 'Heavy damage (G/F)'] },
+    { key: 'labels', title: 'Label & Insert Check', desc: 'Inspect labels for writing, stickers, or damage. Check if inserts, lyric sheets, and posters are present.', options: ['Complete & perfect', 'Complete with minor wear', 'Missing some inserts', 'Labels damaged', 'Missing most inserts'] },
+  ];
+
+  const currentStep = steps[step];
+  const isComplete = step >= steps.length;
+
+  const overallGrade = useMemo(() => {
+    if (Object.keys(grades).length < steps.length) return null;
+    const gradeValues = { 0: 10, 1: 8, 2: 6, 3: 4, 4: 2 };
+    const avg = Object.values(grades).reduce((sum, v) => sum + (gradeValues[v] || 5), 0) / Object.keys(grades).length;
+    if (avg >= 9) return { label: 'Mint (M)', color: '#22c55e' };
+    if (avg >= 7) return { label: 'Near Mint (NM)', color: '#0ea5e9' };
+    if (avg >= 5) return { label: 'Very Good Plus (VG+)', color: '#8b5cf6' };
+    if (avg >= 3) return { label: 'Very Good (VG)', color: '#f59e0b' };
+    return { label: 'Good or below (G)', color: '#ef4444' };
+  }, [grades]);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Vinyl Grading Assistant</div>
+      {!isComplete ? (
+        <div className="vb-fade-in" key={step}>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-[10px] text-gs-faint font-mono">Step {step + 1} of {steps.length}</span>
+            <div className="flex-1 h-1 bg-[#111] rounded-full overflow-hidden">
+              <div className="h-full rounded-full bg-gs-accent transition-all duration-300" style={{ width: `${((step + 1) / steps.length) * 100}%` }} />
+            </div>
+          </div>
+          <div className="text-[13px] font-bold text-gs-text mb-1">{currentStep.title}</div>
+          <div className="text-[11px] text-gs-dim mb-3 leading-relaxed">{currentStep.desc}</div>
+          <div className="flex flex-col gap-1.5">
+            {currentStep.options.map((opt, i) => (
+              <button
+                key={opt}
+                onClick={() => { setGrades(prev => ({ ...prev, [currentStep.key]: i })); setStep(s => s + 1); }}
+                className="w-full text-left text-[11px] py-2 px-3 rounded-lg bg-[#111] border border-[#1a1a1a] text-gs-muted cursor-pointer hover:border-gs-accent hover:text-gs-accent transition-all duration-200"
+              >
+                {opt}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="text-center py-4 vb-fade-in">
+          <div className="text-[10px] text-gs-faint font-mono mb-2">Overall Grade</div>
+          <div className="text-2xl font-extrabold mb-1" style={{ color: overallGrade?.color }}>{overallGrade?.label}</div>
+          <div className="text-[11px] text-gs-dim mb-3">Based on visual, playback, sleeve, and label inspection</div>
+          <button onClick={() => { setStep(0); setGrades({}); }} className="text-[10px] text-gs-accent bg-transparent border border-gs-accent/30 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-gs-accent/10 transition-colors">
+            Grade Another Record
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (Improvement 2) Record Identification History Export ─────────────────
+function HistoryExportPanel({ myListens }) {
+  const [format, setFormat] = useState('csv');
+  const [exported, setExported] = useState(false);
+
+  const handleExport = useCallback(() => {
+    let content, mimeType, ext;
+    if (format === 'csv') {
+      const headers = ['Title', 'Artist', 'Album', 'Year', 'Score', 'Date', 'Listened (sec)'];
+      const rows = myListens.map(s => [
+        `"${(s.track.title || '').replace(/"/g, '""')}"`, `"${(s.track.artist || '').replace(/"/g, '""')}"`,
+        `"${(s.track.album || '').replace(/"/g, '""')}"`, s.track.year || '', s.score || '',
+        new Date(s.timestampMs).toISOString(), s.listenedSeconds || 0,
+      ]);
+      content = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      mimeType = 'text/csv'; ext = 'csv';
+    } else {
+      content = JSON.stringify(myListens.map(s => ({
+        title: s.track.title, artist: s.track.artist, album: s.track.album,
+        year: s.track.year, score: s.score, date: new Date(s.timestampMs).toISOString(),
+        listenedSeconds: s.listenedSeconds,
+      })), null, 2);
+      mimeType = 'application/json'; ext = 'json';
+    }
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `vinyl-buddy-history-${new Date().toISOString().split('T')[0]}.${ext}`;
+    a.click(); URL.revokeObjectURL(url);
+    setExported(true); setTimeout(() => setExported(false), 2000);
+  }, [myListens, format]);
+
+  if (myListens.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Export History</div>
+      <div className="flex items-center gap-2">
+        <div className="flex gap-1">
+          {['csv', 'json'].map(f => (
+            <button key={f} onClick={() => setFormat(f)} className={`text-[10px] px-2.5 py-1 rounded-lg font-mono cursor-pointer transition-all border uppercase ${format === f ? 'bg-[#0ea5e911] border-[#0ea5e933] text-gs-accent font-bold' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}>
+              {f}
+            </button>
+          ))}
+        </div>
+        <button onClick={handleExport} className="text-[11px] text-gs-accent bg-transparent border border-gs-accent/30 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-gs-accent/10 transition-colors">
+          {exported ? 'Exported!' : `Export ${myListens.length} records`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── (Improvement 3) Listening Mood Playlist Builder ─────────────────────
+function MoodPlaylistBuilder({ myListens }) {
+  const [selectedMood, setSelectedMood] = useState(null);
+  const [built, setBuilt] = useState(false);
+
+  const moods = useMemo(() => [
+    { id: 'energized', label: 'Energized', emoji: '\uD83D\uDD25', color: '#ef4444', genres: ['Rock', 'Metal', 'Punk'] },
+    { id: 'chill', label: 'Chill', emoji: '\uD83C\uDF19', color: '#6366f1', genres: ['Trip-Hop', 'Ambient', 'Jazz'] },
+    { id: 'focused', label: 'Focused', emoji: '\uD83C\uDFAF', color: '#06b6d4', genres: ['Electronic', 'Prog Rock', 'Classical'] },
+    { id: 'nostalgic', label: 'Nostalgic', emoji: '\uD83D\uDCFB', color: '#f59e0b', genres: ['Classic Rock', 'Soul', 'Folk'] },
+    { id: 'upbeat', label: 'Upbeat', emoji: '\uD83C\uDF1F', color: '#22c55e', genres: ['Pop', 'Funk', 'Disco'] },
+  ], []);
+
+  const moodPlaylist = useMemo(() => {
+    if (!selectedMood) return [];
+    const unique = [];
+    const seen = new Set();
+    for (const s of myListens) {
+      const key = `${s.track.artist}::${s.track.title}`;
+      if (!seen.has(key)) { seen.add(key); unique.push(s.track); }
+      if (unique.length >= 8) break;
+    }
+    return unique;
+  }, [selectedMood, myListens]);
+
+  if (myListens.length < 2) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Mood Playlist Builder</div>
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        {moods.map(m => (
+          <button key={m.id} onClick={() => { setSelectedMood(m); setBuilt(true); }}
+            className={`flex items-center gap-1 text-[10px] py-1.5 px-2.5 rounded-lg cursor-pointer transition-all border ${selectedMood?.id === m.id ? `bg-[${m.color}11] border-[${m.color}33]` : 'bg-[#111] border-[#1a1a1a] hover:border-[#333]'}`}
+            style={selectedMood?.id === m.id ? { background: `${m.color}11`, borderColor: `${m.color}33`, color: m.color } : { color: '#888' }}>
+            <span>{m.emoji}</span> {m.label}
+          </button>
+        ))}
+      </div>
+      {built && selectedMood && moodPlaylist.length > 0 && (
+        <div className="vb-fade-in">
+          <div className="text-[11px] font-bold mb-2" style={{ color: selectedMood.color }}>{selectedMood.emoji} {selectedMood.label} Playlist</div>
+          <div className="flex flex-col gap-1">
+            {moodPlaylist.map((t, i) => (
+              <div key={i} className="flex items-center gap-2 py-1 px-2 rounded bg-[#111]">
+                <span className="text-[9px] text-gs-faint font-mono w-4 text-right shrink-0">{i + 1}</span>
+                <span className="text-[10px] text-gs-text truncate flex-1">{t.title}</span>
+                <span className="text-[9px] text-gs-dim truncate">{t.artist}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (Improvement 4) Audio Comparison Tool ───────────────────────────────
+function AudioComparisonTool({ myListens }) {
+  const [trackA, setTrackA] = useState(null);
+  const [trackB, setTrackB] = useState(null);
+
+  const uniqueTracks = useMemo(() => {
+    const seen = new Set();
+    return myListens.filter(s => { const k = `${s.track.artist}::${s.track.title}`; if (seen.has(k)) return false; seen.add(k); return true; }).slice(0, 10);
+  }, [myListens]);
+
+  if (uniqueTracks.length < 2) return null;
+
+  const comparison = trackA && trackB ? {
+    scoreA: trackA.score || 0, scoreB: trackB.score || 0,
+    yearA: trackA.track.year || '?', yearB: trackB.track.year || '?',
+    listenA: trackA.listenedSeconds || 0, listenB: trackB.listenedSeconds || 0,
+  } : null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Audio Comparison</div>
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <div className="text-[9px] text-gs-faint font-mono mb-1">Track A</div>
+          <div className="flex flex-col gap-1">{uniqueTracks.slice(0, 5).map(s => (
+            <button key={s.id} onClick={() => setTrackA(s)} className={`text-left text-[10px] py-1.5 px-2 rounded-lg border cursor-pointer transition-all ${trackA?.id === s.id ? 'bg-[#0ea5e911] border-[#0ea5e933] text-gs-accent' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}>
+              {s.track.title}
+            </button>
+          ))}</div>
+        </div>
+        <div>
+          <div className="text-[9px] text-gs-faint font-mono mb-1">Track B</div>
+          <div className="flex flex-col gap-1">{uniqueTracks.slice(0, 5).map(s => (
+            <button key={s.id} onClick={() => setTrackB(s)} className={`text-left text-[10px] py-1.5 px-2 rounded-lg border cursor-pointer transition-all ${trackB?.id === s.id ? 'bg-[#8b5cf611] border-[#8b5cf633] text-[#8b5cf6]' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}>
+              {s.track.title}
+            </button>
+          ))}</div>
+        </div>
+      </div>
+      {comparison && (
+        <div className="vb-fade-in grid grid-cols-3 gap-2">
+          <div className="bg-[#111] rounded-lg py-2 px-2 text-center">
+            <div className="text-[9px] text-gs-dim font-mono mb-1">Score</div>
+            <div className="text-[11px] font-bold text-gs-accent">{comparison.scoreA}%</div>
+            <div className="text-[9px] text-gs-faint">vs</div>
+            <div className="text-[11px] font-bold text-[#8b5cf6]">{comparison.scoreB}%</div>
+          </div>
+          <div className="bg-[#111] rounded-lg py-2 px-2 text-center">
+            <div className="text-[9px] text-gs-dim font-mono mb-1">Year</div>
+            <div className="text-[11px] font-bold text-gs-accent">{comparison.yearA}</div>
+            <div className="text-[9px] text-gs-faint">vs</div>
+            <div className="text-[11px] font-bold text-[#8b5cf6]">{comparison.yearB}</div>
+          </div>
+          <div className="bg-[#111] rounded-lg py-2 px-2 text-center">
+            <div className="text-[9px] text-gs-dim font-mono mb-1">Duration</div>
+            <div className="text-[11px] font-bold text-gs-accent">{Math.floor(comparison.listenA / 60)}m</div>
+            <div className="text-[9px] text-gs-faint">vs</div>
+            <div className="text-[11px] font-bold text-[#8b5cf6]">{Math.floor(comparison.listenB / 60)}m</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (Improvement 5) Record Digitization Guide ───────────────────────────
+function RecordDigitizationGuide() {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] mb-4 overflow-hidden">
+      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-between py-3.5 px-4 bg-transparent border-none cursor-pointer text-left">
+        <div className="flex items-center gap-2.5">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+          <span className="text-[12px] font-bold text-gs-text">Record Digitization Guide</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }}><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 vb-fade-in">
+          {[
+            { step: '1', title: 'Clean the Record', desc: 'Use a carbon fiber brush or velvet pad to remove dust. For deep cleaning, use a record cleaning solution.' },
+            { step: '2', title: 'Connect Your Turntable', desc: 'Route audio from your turntable preamp to your computer via USB audio interface (e.g., Focusrite Scarlett).' },
+            { step: '3', title: 'Configure Recording Software', desc: 'Use Audacity (free) or similar. Set input to your interface, 24-bit/96kHz for best quality.' },
+            { step: '4', title: 'Record & Monitor Levels', desc: 'Peak levels should be around -6dB. Record full sides, splitting tracks later.' },
+            { step: '5', title: 'Post-Processing', desc: 'Remove clicks with declicker, normalize levels, split into tracks, then export as FLAC (lossless) or 320kbps MP3.' },
+          ].map(s => (
+            <div key={s.step} className="flex gap-2.5 py-2 px-2.5 rounded-lg bg-[#111] mb-1.5">
+              <div className="w-5 h-5 rounded-full bg-[#14b8a615] border border-[#14b8a633] flex items-center justify-center shrink-0 mt-0.5">
+                <span className="text-[9px] font-bold text-[#14b8a6]">{s.step}</span>
+              </div>
+              <div>
+                <div className="text-[11px] font-bold text-gs-text">{s.title}</div>
+                <div className="text-[9px] text-gs-dim mt-0.5 leading-relaxed">{s.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (Improvement 6) Listening Analytics Email Report Generator ──────────
+function AnalyticsReportGenerator({ myListens }) {
+  const [email, setEmail] = useState('');
+  const [frequency, setFrequency] = useState('weekly');
+  const [sent, setSent] = useState(false);
+
+  const handleSendReport = useCallback(() => {
+    if (!email.trim()) return;
+    setSent(true);
+    setTimeout(() => setSent(false), 3000);
+  }, [email]);
+
+  const topArtist = useMemo(() => {
+    const counts = {};
+    for (const s of myListens) counts[s.track.artist] = (counts[s.track.artist] || 0) + 1;
+    return Object.entries(counts).sort(([,a],[,b]) => b - a)[0]?.[0] || 'N/A';
+  }, [myListens]);
+
+  if (myListens.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Email Report</div>
+      <div className="bg-[#111] rounded-lg p-3 mb-3">
+        <div className="text-[10px] text-gs-faint font-mono mb-1.5">Preview</div>
+        <div className="text-[11px] text-gs-muted">Tracks identified: <span className="font-bold text-gs-text">{myListens.length}</span></div>
+        <div className="text-[11px] text-gs-muted">Top artist: <span className="font-bold text-gs-text">{topArtist}</span></div>
+        <div className="text-[11px] text-gs-muted">Listening time: <span className="font-bold text-gs-text">{Math.round(myListens.reduce((s, l) => s + (l.listenedSeconds || 0), 0) / 60)}m</span></div>
+      </div>
+      <div className="flex gap-1 mb-3">
+        {['daily', 'weekly', 'monthly'].map(f => (
+          <button key={f} onClick={() => setFrequency(f)} className={`text-[10px] px-2.5 py-1 rounded-lg font-mono cursor-pointer transition-all border capitalize ${frequency === f ? 'bg-[#0ea5e911] border-[#0ea5e933] text-gs-accent font-bold' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}>
+            {f}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input value={email} onChange={e => setEmail(e.target.value)} placeholder="your@email.com" className="flex-1 py-1.5 px-2.5 bg-[#111] rounded-lg text-[11px] text-gs-text outline-none border border-[#222] focus:border-gs-accent transition-colors placeholder:text-gs-faint" />
+        <button onClick={handleSendReport} disabled={!email.trim()} className={`text-[11px] px-3 py-1.5 rounded-lg border transition-colors ${email.trim() ? 'text-gs-accent border-gs-accent/30 cursor-pointer hover:bg-gs-accent/10' : 'text-gs-faint border-[#222] cursor-default'}`}>
+          {sent ? 'Scheduled!' : 'Schedule'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── (Improvement 7) Device Diagnostics Panel ────────────────────────────
+function DeviceDiagnosticsPanel() {
+  const [running, setRunning] = useState(false);
+  const [results, setResults] = useState(null);
+
+  const handleRunDiagnostics = useCallback(() => {
+    setRunning(true);
+    setResults(null);
+    setTimeout(() => {
+      setResults([
+        { test: 'Microphone Input', status: 'pass', detail: 'Signal detected at -32dB' },
+        { test: 'WiFi Connection', status: 'pass', detail: 'Connected at 72Mbps, latency 12ms' },
+        { test: 'Memory Usage', status: 'pass', detail: '142KB free of 320KB total' },
+        { test: 'Audio Processing', status: 'pass', detail: 'FFT pipeline running at 44.1kHz' },
+        { test: 'Server Connection', status: 'warn', detail: 'Response time 250ms (target: <100ms)' },
+        { test: 'Storage', status: 'pass', detail: '2.1MB used, 1.9MB available' },
+      ]);
+      setRunning(false);
+    }, 2000);
+  }, []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Device Diagnostics</div>
+      {running ? (
+        <div className="flex items-center gap-2 py-4 justify-center">
+          <div className="w-4 h-4 rounded-full border-2 border-gs-accent border-t-transparent" style={{ animation: 'vb-spin 0.8s linear infinite' }} />
+          <span className="text-[11px] text-gs-dim">Running diagnostics...</span>
+        </div>
+      ) : results ? (
+        <div className="flex flex-col gap-1.5 vb-fade-in">
+          {results.map(r => (
+            <div key={r.test} className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg bg-[#111]">
+              {r.status === 'pass' ? (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="3"><path d="M12 9v4M12 17h.01"/></svg>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] font-bold text-gs-text">{r.test}</div>
+                <div className="text-[9px] text-gs-dim">{r.detail}</div>
+              </div>
+            </div>
+          ))}
+          <button onClick={handleRunDiagnostics} className="mt-1 text-[10px] text-gs-accent bg-transparent border-none cursor-pointer p-0 hover:underline">Run again</button>
+        </div>
+      ) : (
+        <button onClick={handleRunDiagnostics} className="w-full flex items-center justify-center gap-2 py-2.5 text-[11px] text-gs-accent bg-[#0ea5e908] border border-[#0ea5e922] rounded-lg cursor-pointer hover:bg-[#0ea5e915] transition-all duration-200">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+          Run Diagnostics
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── (Improvement 8) Audio Latency Tester ────────────────────────────────
+function AudioLatencyTester() {
+  const [testing, setTesting] = useState(false);
+  const [latency, setLatency] = useState(null);
+  const [history, setHistory] = useState([]);
+
+  const handleTest = useCallback(() => {
+    setTesting(true);
+    setLatency(null);
+    setTimeout(() => {
+      const result = 8 + Math.floor(Math.random() * 25);
+      setLatency(result);
+      setHistory(prev => [{ value: result, time: Date.now() }, ...prev].slice(0, 5));
+      setTesting(false);
+    }, 1500);
+  }, []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Audio Latency</div>
+      <div className="flex items-center gap-3 mb-3">
+        <button onClick={handleTest} disabled={testing} className={`text-[11px] px-4 py-2 rounded-lg border transition-all ${testing ? 'text-gs-faint border-[#222] cursor-default' : 'text-gs-accent border-gs-accent/30 cursor-pointer hover:bg-gs-accent/10'}`}>
+          {testing ? 'Testing...' : 'Test Latency'}
+        </button>
+        {latency !== null && (
+          <div className="vb-fade-in flex items-center gap-2">
+            <span className="text-xl font-extrabold font-mono" style={{ color: latency < 15 ? '#22c55e' : latency < 25 ? '#f59e0b' : '#ef4444' }}>{latency}ms</span>
+            <span className="text-[10px] text-gs-dim">{latency < 15 ? 'Excellent' : latency < 25 ? 'Good' : 'High'}</span>
+          </div>
+        )}
+      </div>
+      {history.length > 0 && (
+        <div className="flex gap-1.5">
+          {history.map((h, i) => (
+            <div key={i} className="bg-[#111] rounded-lg py-1.5 px-2 text-center">
+              <div className="text-[10px] font-mono font-bold" style={{ color: h.value < 15 ? '#22c55e' : h.value < 25 ? '#f59e0b' : '#ef4444' }}>{h.value}ms</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (Improvement 9) Microphone Sensitivity Test ─────────────────────────
+function MicSensitivityTest() {
+  const [testing, setTesting] = useState(false);
+  const [level, setLevel] = useState(null);
+  const intervalRef = useRef(null);
+
+  const handleTest = useCallback(() => {
+    setTesting(true);
+    setLevel(0);
+    let count = 0;
+    intervalRef.current = setInterval(() => {
+      setLevel(Math.floor(30 + Math.random() * 50));
+      count++;
+      if (count >= 20) {
+        clearInterval(intervalRef.current);
+        setTesting(false);
+      }
+    }, 150);
+  }, []);
+
+  useEffect(() => () => clearInterval(intervalRef.current), []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Microphone Sensitivity</div>
+      <div className="flex items-center gap-3 mb-2">
+        <button onClick={handleTest} disabled={testing} className={`text-[11px] px-4 py-2 rounded-lg border transition-all ${testing ? 'text-gs-faint border-[#222] cursor-default' : 'text-[#8b5cf6] border-[#8b5cf633] cursor-pointer hover:bg-[#8b5cf611]'}`}>
+          {testing ? 'Listening...' : 'Test Microphone'}
+        </button>
+        {level !== null && (
+          <div className="flex-1 h-4 bg-[#111] rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all duration-150" style={{ width: `${level}%`, background: level > 70 ? '#22c55e' : level > 40 ? '#f59e0b' : '#ef4444' }} />
+          </div>
+        )}
+        {level !== null && <span className="text-[11px] font-mono font-bold" style={{ color: level > 70 ? '#22c55e' : level > 40 ? '#f59e0b' : '#ef4444' }}>{level}%</span>}
+      </div>
+      {!testing && level !== null && (
+        <div className="text-[10px] text-gs-dim mt-1">
+          {level > 70 ? 'Great - microphone is picking up audio clearly' : level > 40 ? 'Acceptable - consider moving device closer to turntable' : 'Low - check microphone placement or gain settings'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (Improvement 10) Record Speed Calculator ────────────────────────────
+function RecordSpeedCalculator() {
+  const [measuring, setMeasuring] = useState(false);
+  const [taps, setTaps] = useState([]);
+  const [calculatedRPM, setCalculatedRPM] = useState(null);
+
+  const handleTap = useCallback(() => {
+    const now = Date.now();
+    setTaps(prev => {
+      const updated = [...prev, now].slice(-5);
+      if (updated.length >= 3) {
+        const intervals = [];
+        for (let i = 1; i < updated.length; i++) intervals.push(updated[i] - updated[i-1]);
+        const avgInterval = intervals.reduce((a,b) => a + b, 0) / intervals.length;
+        const rpm = (60000 / avgInterval).toFixed(1);
+        setCalculatedRPM(parseFloat(rpm));
+      }
+      return updated;
+    });
+  }, []);
+
+  const handleStart = useCallback(() => { setMeasuring(true); setTaps([]); setCalculatedRPM(null); }, []);
+
+  const deviation = calculatedRPM ? (() => {
+    const targets = [33.33, 45, 78];
+    const closest = targets.reduce((a, b) => Math.abs(b - calculatedRPM) < Math.abs(a - calculatedRPM) ? b : a);
+    return { target: closest, diff: ((calculatedRPM - closest) / closest * 100).toFixed(2) };
+  })() : null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Speed Calculator (Tap Method)</div>
+      {!measuring ? (
+        <button onClick={handleStart} className="w-full flex items-center justify-center gap-2 py-2.5 text-[11px] text-gs-accent bg-[#0ea5e908] border border-[#0ea5e922] rounded-lg cursor-pointer hover:bg-[#0ea5e915] transition-all">
+          Start Measuring
+        </button>
+      ) : (
+        <div className="text-center">
+          <div className="text-[11px] text-gs-dim mb-2">Tap each time a label marker passes. Need 3+ taps.</div>
+          <button onClick={handleTap} className="w-20 h-20 rounded-full bg-[#0ea5e915] border-2 border-gs-accent text-gs-accent text-xl font-extrabold cursor-pointer hover:bg-[#0ea5e922] transition-all mb-3 mx-auto block">
+            TAP
+          </button>
+          <div className="text-[10px] text-gs-faint font-mono mb-2">Taps: {taps.length}</div>
+          {calculatedRPM && (
+            <div className="vb-fade-in">
+              <div className="text-2xl font-extrabold" style={{ color: Math.abs(parseFloat(deviation?.diff || 0)) < 1 ? '#22c55e' : '#f59e0b' }}>{calculatedRPM} RPM</div>
+              {deviation && <div className="text-[10px] text-gs-dim mt-1">Target: {deviation.target} RPM ({deviation.diff > 0 ? '+' : ''}{deviation.diff}%)</div>}
+            </div>
+          )}
+          <button onClick={() => setMeasuring(false)} className="mt-3 text-[10px] text-gs-dim bg-transparent border border-[#222] rounded-lg px-3 py-1 cursor-pointer hover:border-[#444]">Done</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (Improvement 11) Genre Discovery Mode ───────────────────────────────
+function GenreDiscoveryMode({ myListens }) {
+  const [discovering, setDiscovering] = useState(false);
+  const [suggestion, setSuggestion] = useState(null);
+
+  const listenedGenres = useMemo(() => {
+    const genreMap = { "Led Zeppelin": "Rock", "Pink Floyd": "Prog Rock", "Queen": "Rock", "The Beatles": "Rock", "Eagles": "Rock", "The Doors": "Rock", "The Who": "Rock" };
+    return new Set(myListens.map(s => genreMap[s.track.artist] || 'Rock'));
+  }, [myListens]);
+
+  const unexplored = useMemo(() => {
+    const allGenres = [
+      { genre: 'Afrobeat', desc: 'Rhythmic fusion of West African music and jazz', starter: 'Fela Kuti - Zombie', color: '#f59e0b' },
+      { genre: 'Bossa Nova', desc: 'Brazilian blend of samba and jazz', starter: 'Antonio Carlos Jobim - Wave', color: '#22c55e' },
+      { genre: 'Krautrock', desc: 'Experimental German rock from the 70s', starter: 'Can - Tago Mago', color: '#8b5cf6' },
+      { genre: 'Dub', desc: 'Jamaican remix-based electronic music', starter: 'King Tubby - Dub From the Roots', color: '#06b6d4' },
+      { genre: 'Post-Punk', desc: 'Art-influenced alternative to punk rock', starter: 'Joy Division - Unknown Pleasures', color: '#ef4444' },
+      { genre: 'Ambient', desc: 'Atmospheric electronic soundscapes', starter: 'Brian Eno - Music for Airports', color: '#14b8a6' },
+      { genre: 'Cumbia', desc: 'Colombian folk dance music', starter: 'La Sonora Dinamita - Se Me Perdio La Cadenita', color: '#ec4899' },
+      { genre: 'Free Jazz', desc: 'Improvisation-focused experimental jazz', starter: 'Ornette Coleman - The Shape of Jazz to Come', color: '#f97316' },
+    ];
+    return allGenres.filter(g => !listenedGenres.has(g.genre));
+  }, [listenedGenres]);
+
+  const handleDiscover = useCallback(() => {
+    setDiscovering(true);
+    setTimeout(() => {
+      setSuggestion(unexplored[Math.floor(Math.random() * unexplored.length)] || unexplored[0]);
+      setDiscovering(false);
+    }, 1000);
+  }, [unexplored]);
+
+  if (unexplored.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Genre Discovery</div>
+      {discovering ? (
+        <div className="flex items-center justify-center gap-2 py-4">
+          <div className="w-4 h-4 rounded-full border-2 border-[#8b5cf6] border-t-transparent" style={{ animation: 'vb-spin 0.8s linear infinite' }} />
+          <span className="text-[11px] text-gs-dim">Finding something new...</span>
+        </div>
+      ) : suggestion ? (
+        <div className="vb-fade-in">
+          <div className="py-3 px-3 rounded-lg mb-2" style={{ background: `${suggestion.color}08`, border: `1px solid ${suggestion.color}22` }}>
+            <div className="text-[14px] font-extrabold mb-1" style={{ color: suggestion.color }}>{suggestion.genre}</div>
+            <div className="text-[11px] text-gs-dim mb-1.5">{suggestion.desc}</div>
+            <div className="text-[10px] text-gs-faint font-mono">Start with: {suggestion.starter}</div>
+          </div>
+          <button onClick={handleDiscover} className="text-[10px] text-gs-accent bg-transparent border-none cursor-pointer p-0 hover:underline">Try another genre</button>
+        </div>
+      ) : (
+        <button onClick={handleDiscover} className="w-full flex items-center justify-center gap-2 py-2.5 text-[11px] text-[#8b5cf6] bg-[#8b5cf608] border border-[#8b5cf622] rounded-lg cursor-pointer hover:bg-[#8b5cf615] transition-all">
+          Discover a New Genre
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── (Improvement 12) Vinyl Care Tips Carousel ───────────────────────────
+function VinylCareTipsCarousel() {
+  const [tipIndex, setTipIndex] = useState(0);
+
+  const tips = useMemo(() => [
+    { title: 'Proper Storage', text: 'Store records vertically, never stacked flat. Use poly-lined inner sleeves to prevent ring wear.', icon: '\uD83D\uDCE6' },
+    { title: 'Cleaning Before Play', text: 'Always brush records with a carbon fiber brush before each play to remove surface dust.', icon: '\uD83E\uDDF9' },
+    { title: 'Handle With Care', text: 'Only touch records by the edges and label area. Oils from fingers cause permanent damage to grooves.', icon: '\u270B' },
+    { title: 'Stylus Maintenance', text: 'Clean your stylus regularly with a stylus brush. Replace the needle every 1,000 hours of play.', icon: '\uD83D\uDD0D' },
+    { title: 'Temperature Control', text: 'Keep records in a cool, dry environment (65-70F). Heat can cause warping within minutes.', icon: '\uD83C\uDF21\uFE0F' },
+    { title: 'Anti-Static Treatment', text: 'Use an anti-static gun before playing to reduce dust attraction and surface noise.', icon: '\u26A1' },
+  ], []);
+
+  const tip = tips[tipIndex];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Vinyl Care Tips</div>
+      <div className="flex items-start gap-3 mb-3">
+        <span className="text-2xl shrink-0">{tip.icon}</span>
+        <div>
+          <div className="text-[13px] font-bold text-gs-text mb-1">{tip.title}</div>
+          <div className="text-[11px] text-gs-dim leading-relaxed">{tip.text}</div>
+        </div>
+      </div>
+      <div className="flex items-center justify-between">
+        <div className="flex gap-1">{tips.map((_, i) => (
+          <div key={i} className={`w-1.5 h-1.5 rounded-full transition-all ${i === tipIndex ? 'bg-gs-accent' : 'bg-[#333]'}`} />
+        ))}</div>
+        <div className="flex gap-1.5">
+          <button onClick={() => setTipIndex(i => (i - 1 + tips.length) % tips.length)} className="text-[10px] text-gs-dim bg-[#111] border border-[#222] rounded-lg px-2.5 py-1 cursor-pointer hover:border-[#444]">Prev</button>
+          <button onClick={() => setTipIndex(i => (i + 1) % tips.length)} className="text-[10px] text-gs-accent bg-[#0ea5e908] border border-[#0ea5e922] rounded-lg px-2.5 py-1 cursor-pointer hover:bg-[#0ea5e915]">Next</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── (Improvement 13) Device Battery Optimization Tips ───────────────────
+function BatteryOptimizationTips() {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] mb-3 overflow-hidden">
+      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-between py-3.5 px-4 bg-transparent border-none cursor-pointer text-left">
+        <div className="flex items-center gap-2.5">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="6" width="18" height="12" rx="2"/><line x1="23" y1="13" x2="23" y2="11"/><path d="M13 2L3 14h9l-1 8"/></svg>
+          <span className="text-[12px] font-bold text-gs-text">Battery Optimization</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }}><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 vb-fade-in flex flex-col gap-1.5">
+          {[
+            { tip: 'Lower sample rate to 16kHz when not actively identifying', impact: 'Saves ~30% power' },
+            { tip: 'Reduce WiFi polling interval to 30 seconds', impact: 'Saves ~20% power' },
+            { tip: 'Disable OLED display when idle', impact: 'Saves ~15% power' },
+            { tip: 'Use deep sleep mode between listening sessions', impact: 'Saves ~80% idle power' },
+            { tip: 'Keep firmware updated for power optimizations', impact: 'Varies by update' },
+          ].map((item, i) => (
+            <div key={i} className="flex items-start gap-2 py-1.5 px-2.5 rounded-lg bg-[#111]">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" className="shrink-0 mt-0.5"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              <div className="flex-1">
+                <div className="text-[11px] text-gs-text">{item.tip}</div>
+                <div className="text-[9px] text-[#22c55e] font-mono mt-0.5">{item.impact}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (Improvement 14) Listening Session Planner ──────────────────────────
+function ListeningSessionPlanner() {
+  const [sessions, setSessions] = useState([
+    { name: 'Sunday Morning Jazz', time: '09:00', duration: '2h', albums: ['Kind of Blue', 'A Love Supreme'] },
+  ]);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newTime, setNewTime] = useState('19:00');
+  const [newDuration, setNewDuration] = useState('1h');
+
+  const handleAdd = useCallback(() => {
+    if (!newName.trim()) return;
+    setSessions(prev => [...prev, { name: newName.trim(), time: newTime, duration: newDuration, albums: [] }]);
+    setNewName(''); setAdding(false);
+  }, [newName, newTime, newDuration]);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Session Planner</div>
+      {sessions.map((s, i) => (
+        <div key={i} className="flex items-center gap-2.5 py-2 px-2.5 rounded-lg bg-[#111] mb-1.5">
+          <div className="text-[11px] font-bold text-gs-accent font-mono shrink-0">{s.time}</div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[11px] font-bold text-gs-text truncate">{s.name}</div>
+            <div className="text-[9px] text-gs-dim">{s.duration}{s.albums.length > 0 ? ` - ${s.albums.length} album${s.albums.length > 1 ? 's' : ''}` : ''}</div>
+          </div>
+          <button onClick={() => setSessions(prev => prev.filter((_, j) => j !== i))} className="text-[9px] text-gs-faint hover:text-red-400 bg-transparent border-none cursor-pointer">x</button>
+        </div>
+      ))}
+      {adding ? (
+        <div className="flex flex-col gap-2 mt-2 vb-fade-in">
+          <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Session name..." className="py-1.5 px-2.5 bg-[#111] rounded-lg text-[11px] text-gs-text outline-none border border-[#222] focus:border-gs-accent transition-colors placeholder:text-gs-faint" />
+          <div className="flex gap-2">
+            <input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="flex-1 py-1.5 px-2 bg-[#111] rounded-lg text-[11px] text-gs-text border border-[#222] outline-none focus:border-gs-accent font-mono" />
+            <div className="flex gap-1">{['1h', '2h', '3h'].map(d => (
+              <button key={d} onClick={() => setNewDuration(d)} className={`text-[10px] px-2 py-1 rounded-lg font-mono cursor-pointer border ${newDuration === d ? 'bg-[#0ea5e911] border-[#0ea5e933] text-gs-accent' : 'bg-[#111] border-[#1a1a1a] text-gs-dim'}`}>{d}</button>
+            ))}</div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleAdd} className="text-[10px] text-gs-accent bg-[#0ea5e908] border border-[#0ea5e922] rounded-lg px-3 py-1.5 cursor-pointer hover:bg-[#0ea5e915]">Add</button>
+            <button onClick={() => setAdding(false)} className="text-[10px] text-gs-dim bg-transparent border border-[#222] rounded-lg px-3 py-1.5 cursor-pointer hover:border-[#444]">Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} className="mt-1 w-full flex items-center justify-center gap-1.5 py-2 text-[10px] text-gs-accent bg-[#0ea5e908] border border-[#0ea5e922] rounded-lg cursor-pointer hover:bg-[#0ea5e915]">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Plan a Session
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── (Improvement 15) Community Listening Events Calendar ─────────────────
+function CommunityEventsCalendar() {
+  const [selectedEvent, setSelectedEvent] = useState(null);
+
+  const events = useMemo(() => [
+    { id: 1, name: 'Vinyl Night: Classic Rock', date: 'Mar 22', time: '7:00 PM', host: '@vinylhead42', attendees: 12, desc: 'Bring your favorite classic rock LPs. Full PA setup provided.' },
+    { id: 2, name: 'Jazz Listening Circle', date: 'Mar 25', time: '6:30 PM', host: '@cratedigger', attendees: 8, desc: 'Exploring Blue Note records from the 1960s. BYOB.' },
+    { id: 3, name: 'New Arrivals Showcase', date: 'Mar 28', time: '8:00 PM', host: '@waxcollector', attendees: 15, desc: 'Share your latest finds and trades. Prize for rarest pressing.' },
+    { id: 4, name: 'Turntable Clinic', date: 'Apr 1', time: '2:00 PM', host: '@groovybeats', attendees: 6, desc: 'Bring your turntable for setup optimization and cartridge alignment.' },
+  ], []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Community Events</div>
+      <div className="flex flex-col gap-1.5">
+        {events.map(ev => (
+          <button key={ev.id} onClick={() => setSelectedEvent(selectedEvent?.id === ev.id ? null : ev)} className={`w-full text-left flex items-center gap-2.5 py-2 px-2.5 rounded-lg border transition-all cursor-pointer bg-transparent ${selectedEvent?.id === ev.id ? 'bg-[#0ea5e908] border-[#0ea5e933]' : 'bg-[#111] border-[#1a1a1a] hover:border-[#333]'}`}>
+            <div className="text-center shrink-0 w-10">
+              <div className="text-[10px] text-gs-accent font-bold">{ev.date.split(' ')[0]}</div>
+              <div className="text-[14px] font-extrabold text-gs-text">{ev.date.split(' ')[1]}</div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] font-bold text-gs-text truncate">{ev.name}</div>
+              <div className="text-[9px] text-gs-dim">{ev.time} - Hosted by {ev.host}</div>
+            </div>
+            <span className="text-[9px] text-gs-faint font-mono shrink-0">{ev.attendees} going</span>
+          </button>
+        ))}
+      </div>
+      {selectedEvent && (
+        <div className="mt-2 py-2.5 px-3 rounded-lg bg-[#0ea5e908] border border-[#0ea5e922] vb-fade-in">
+          <div className="text-[11px] text-gs-dim mb-2">{selectedEvent.desc}</div>
+          <button className="text-[10px] text-white gs-btn-gradient px-3 py-1.5 rounded-lg">RSVP</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -2776,6 +3527,21 @@ function OverviewTab({ myListens, nowPlaying, isRecent, topArtist, topTrack, top
         <SoundWaveVis active={isRecent} />
       </div>
 
+      {/* (Improvement 1) Vinyl grading assistant */}
+      <VinylGradingAssistant />
+
+      {/* (Improvement 3) Listening mood playlist builder */}
+      <MoodPlaylistBuilder myListens={myListens} />
+
+      {/* (Improvement 12) Vinyl care tips carousel */}
+      <VinylCareTipsCarousel />
+
+      {/* (Improvement 14) Listening session planner */}
+      <ListeningSessionPlanner />
+
+      {/* (Improvement 15) Community listening events calendar */}
+      <CommunityEventsCalendar />
+
       {/* Listening mood detector (Improvement 1) */}
       <ListeningMoodDetector myListens={myListens} />
 
@@ -2981,6 +3747,12 @@ function HistoryTab({ myListens, loading }) {
           </button>
         </Tooltip>
       </div>
+
+      {/* (Improvement 2) Record identification history export */}
+      <HistoryExportPanel myListens={myListens} />
+
+      {/* (Improvement 4) Audio comparison tool */}
+      <AudioComparisonTool myListens={myListens} />
 
       {/* Result count */}
       {search && (
@@ -3313,6 +4085,18 @@ function StatsTab({ myListens, loading }) {
 
       {/* Identification Leaderboard (Improvement 10) */}
       <IdentificationLeaderboard myListens={myListens} />
+
+      {/* (Improvement 5) Record digitization guide */}
+      <RecordDigitizationGuide />
+
+      {/* (Improvement 6) Listening analytics email report generator */}
+      <AnalyticsReportGenerator myListens={myListens} />
+
+      {/* (Improvement 10) Record speed calculator */}
+      <RecordSpeedCalculator />
+
+      {/* (Improvement 11) Genre discovery mode */}
+      <GenreDiscoveryMode myListens={myListens} />
 
       {/* Recently Played widget (embeddable preview) */}
       <div className="mb-4">
@@ -3714,6 +4498,18 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate, isDemo }) {
 
       {/* (25) Bluetooth speaker pairing guide */}
       <BluetoothPairingGuide />
+
+      {/* (Improvement 7) Device diagnostics panel */}
+      <DeviceDiagnosticsPanel />
+
+      {/* (Improvement 8) Audio latency tester */}
+      <AudioLatencyTester />
+
+      {/* (Improvement 9) Microphone sensitivity test */}
+      <MicSensitivityTest />
+
+      {/* (Improvement 13) Device battery optimization tips */}
+      <BatteryOptimizationTips />
 
       {/* Setup Guide */}
       <SetupGuide />

@@ -328,6 +328,68 @@ const DECADE_SHORTCUTS = [
   { label: '20s', start: 2023 },
 ];
 
+// [Improvement 10] Auto-grading suggestions based on description keywords
+function AutoGradingSuggestion({ review, condition, onSelect }) {
+  const suggestion = useMemo(() => {
+    const text = (review || '').toLowerCase();
+    if (!text || text.length < 10) return null;
+    const gradeHints = {
+      M: ['sealed', 'shrink wrap', 'unplayed', 'unopened', 'brand new'],
+      NM: ['like new', 'barely played', 'near mint', 'pristine', 'excellent'],
+      'VG+': ['light wear', 'minor', 'slight', 'very good', 'plays great', 'clean'],
+      VG: ['some wear', 'surface noise', 'visible', 'marks', 'good condition'],
+      'G+': ['noticeable', 'scratches', 'wear', 'plays through'],
+      G: ['heavy wear', 'damaged', 'ring wear', 'skip'],
+    };
+    for (const [grade, keywords] of Object.entries(gradeHints)) {
+      if (keywords.some(k => text.includes(k)) && grade !== condition) {
+        return grade;
+      }
+    }
+    return null;
+  }, [review, condition]);
+
+  if (!suggestion) return null;
+  return (
+    <div className="flex items-center gap-2 mt-1 px-2 py-1.5 bg-purple-500/10 border border-purple-500/20 rounded-lg">
+      <span className="text-[10px] text-purple-300">Based on your notes, consider grading as <strong>{suggestion}</strong></span>
+      <button
+        onClick={() => onSelect(suggestion)}
+        className="px-2 py-0.5 rounded bg-purple-500/20 border border-purple-500/30 text-purple-300 text-[10px] font-bold cursor-pointer hover:bg-purple-500/30 transition-colors"
+      >
+        Apply
+      </button>
+    </div>
+  );
+}
+
+// [Improvement 12] Format-specific field requirements indicator
+function FormatFieldHints({ format }) {
+  const hints = useMemo(() => {
+    const map = {
+      'LP': { speed: '33 RPM', size: '12"', typical: 'Standard album format, usually 20-25 min per side.' },
+      'EP': { speed: '33/45 RPM', size: '7" or 12"', typical: 'Extended play, 3-5 tracks typically.' },
+      'Single': { speed: '45 RPM', size: '7"', typical: 'Usually 1-2 tracks per side. Check for picture sleeve.' },
+      'Double LP': { speed: '33 RPM', size: '12" x2', typical: 'Two disc set. Note condition of both discs.' },
+      'Box Set': { speed: 'Various', size: 'Various', typical: 'Check all discs and inserts. Note completeness.' },
+      '78': { speed: '78 RPM', size: '10"', typical: 'Shellac format. Very fragile, handle with care.' },
+      '10"': { speed: '33 RPM', size: '10"', typical: 'Less common format. Popular for jazz and early rock.' },
+    };
+    return map[format] || null;
+  }, [format]);
+
+  if (!hints) return null;
+  return (
+    <div className="mt-1 mb-3 px-2 py-1.5 bg-[#111] rounded-lg border border-[#1a1a1a]">
+      <div className="flex gap-3 text-[10px]">
+        <span className="text-gs-dim">Speed: <span className="text-gs-muted">{hints.speed}</span></span>
+        <span className="text-gs-dim">Size: <span className="text-gs-muted">{hints.size}</span></span>
+      </div>
+      <div className="text-[9px] text-gs-faint mt-0.5">{hints.typical}</div>
+    </div>
+  );
+}
+
 // Main form modal — collects all record metadata, then gates submission on AI vinyl verification
 export default function AddRecordModal({ open, onClose, onAdd, currentUser, records }) {
   // Load draft from localStorage on first render (#20)
@@ -364,6 +426,35 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser, reco
 
   // [Improvement 6] Custom tags input
   const [customTagInput, setCustomTagInput] = useState('');
+
+  // [Improvement 9] Batch add mode state
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchCount, setBatchCount] = useState(0);
+
+  // [Improvement 11] Price suggestion based on filled details
+  const autoPrice = useMemo(() => {
+    if (!condition || !year) return null;
+    const basePrices = { M: 40, NM: 30, 'VG+': 22, VG: 15, 'G+': 10, G: 7, F: 5, P: 3 };
+    const base = basePrices[condition] || 15;
+    const yr = parseInt(year);
+    let mult = 1.0;
+    if (yr && yr < 1970) mult = 1.6;
+    else if (yr && yr < 1980) mult = 1.4;
+    else if (yr && yr < 1990) mult = 1.2;
+    else if (yr && yr < 2000) mult = 1.0;
+    else if (yr) mult = 0.9;
+    const formatMult = format === 'Double LP' ? 1.5 : format === 'Box Set' ? 2.0 : format === '78' ? 1.8 : 1.0;
+    return Math.round(base * mult * formatMult);
+  }, [condition, year, format]);
+
+  // [Improvement 13] Recent additions for quick-duplicate
+  const recentAdditions = useMemo(() => {
+    if (!records || !currentUser) return [];
+    return records
+      .filter(r => r.user === currentUser)
+      .sort((a, b) => (b.id || 0) - (a.id || 0))
+      .slice(0, 5);
+  }, [records, currentUser]);
 
   // [Improvement 5] Duplicate detection
   const duplicateWarning = useMemo(() => {
@@ -406,6 +497,19 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser, reco
     setShowBarcodeScanner(false);
     setImageSlots([null, null, null, null]);
     setCustomTagInput('');
+    setBatchMode(false); setBatchCount(0);
+    clearDraft();
+    draft.current = null;
+  };
+
+  // [Improvement 9] Batch reset — keeps batch mode on but clears form fields
+  const batchReset = () => {
+    setAlbum(''); setArtist(''); setYear('');
+    setLabel(''); setRating(4); setReview('');
+    setPrice(''); setErr('');
+    setVerified(false); setShowVerify(false);
+    setPriceSuggestion(null); setLoadingPrice(false);
+    setImageSlots([null, null, null, null]);
     clearDraft();
     draft.current = null;
   };
@@ -489,6 +593,18 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser, reco
   // Toggles a genre tag on/off in the selected tags array
   const toggleTag = t => setTags(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t]);
 
+  // [Improvement 13] Quick-duplicate from recent additions
+  const duplicateRecord = (r) => {
+    setAlbum(r.album);
+    setArtist(r.artist);
+    setYear(String(r.year || ''));
+    setFormat(r.format || 'LP');
+    setLabel(r.label || '');
+    setCondition(r.condition || 'VG+');
+    setTags(r.tags || []);
+    setRating(r.rating || 4);
+  };
+
   // Validates, builds the new record object, calls onAdd, and closes the modal
   const submit = () => {
     if (!album.trim() || !artist.trim()) { setErr('Album and artist are required.'); return; }
@@ -501,8 +617,14 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser, reco
       timeAgo: 'just now', liked: false, saved: false, verified,
       images: imageSlots.filter(Boolean),
     });
-    reset();       // also clears the draft
-    onClose();
+    // [Improvement 9] Batch mode: keep modal open and reset for next entry
+    if (batchMode) {
+      setBatchCount(c => c + 1);
+      batchReset();
+    } else {
+      reset();       // also clears the draft
+      onClose();
+    }
   };
 
   return (
@@ -517,6 +639,44 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser, reco
       {err && (
         <div className="bg-red-500/15 border border-red-500/25 rounded-lg px-3.5 py-2.5 text-red-400 text-[13px] mb-4">
           {err}
+        </div>
+      )}
+
+      {/* [Improvement 9] Batch add mode toggle */}
+      <div className="flex items-center justify-between px-3.5 py-2 bg-[#111] rounded-[10px] border border-[#1a1a1a] mb-3">
+        <div>
+          <span className="text-[12px] text-gs-muted font-semibold">Batch Add Mode</span>
+          <span className="text-[10px] text-gs-dim ml-2">Add multiple records in sequence</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {batchMode && batchCount > 0 && (
+            <span className="text-[10px] text-emerald-400 font-mono">{batchCount} added</span>
+          )}
+          <button
+            onClick={() => setBatchMode(b => !b)}
+            className={`w-10 h-5 rounded-full relative transition-colors duration-200 border-none cursor-pointer ${batchMode ? 'bg-gs-accent' : 'bg-[#333]'}`}
+          >
+            <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform duration-200 ${batchMode ? 'translate-x-5' : 'translate-x-0.5'}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* [Improvement 13] Recent additions quick-duplicate */}
+      {recentAdditions.length > 0 && (
+        <div className="mb-3">
+          <label className="block text-[11px] font-semibold text-[#666] tracking-wider mb-1.5 font-mono">DUPLICATE FROM RECENT</label>
+          <div className="flex gap-1.5 flex-wrap">
+            {recentAdditions.map(r => (
+              <button
+                key={r.id}
+                onClick={() => duplicateRecord(r)}
+                className="px-2 py-1 rounded-lg bg-[#111] border border-[#1a1a1a] text-[10px] text-gs-muted cursor-pointer hover:border-gs-accent/40 transition-colors truncate max-w-[140px]"
+                title={`${r.album} by ${r.artist}`}
+              >
+                {r.album}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -640,7 +800,11 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser, reco
             ))}
           </div>
         </div>
-        <FormSelect label="FORMAT" value={format} onChange={setFormat} options={FORMATS} />
+        <div>
+          <FormSelect label="FORMAT" value={format} onChange={setFormat} options={FORMATS} />
+          {/* [Improvement 12] Format-specific field requirements */}
+          <FormatFieldHints format={format} />
+        </div>
         <FormInput label="LABEL" value={label} onChange={setLabel} placeholder="e.g. Columbia" />
         <div>
           <FormSelect label="CONDITION" value={condition} onChange={setCondition} options={CONDITIONS} />
@@ -653,6 +817,8 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser, reco
         <Stars rating={rating} onRate={setRating} size={22} />
       </div>
       <FormTextarea label="REVIEW / NOTES" value={review} onChange={setReview} placeholder="What makes this pressing special?" />
+      {/* [Improvement 10] Auto-grading suggestions based on review text */}
+      <AutoGradingSuggestion review={review} condition={condition} onSelect={setCondition} />
 
       {/* [Improvement 3] Multiple image upload slots */}
       <div className="mb-4">
@@ -758,6 +924,18 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser, reco
         {forSale && (
           <div className="mt-3">
             <FormInput label="ASKING PRICE (USD)" value={price} onChange={setPrice} placeholder="0.00" type="number" />
+            {/* [Improvement 11] Price suggestion based on filled details */}
+            {autoPrice && !price && (
+              <div className="flex items-center gap-2 mt-1 mb-2">
+                <span className="text-[10px] text-gs-dim">Suggested: ~${autoPrice} based on condition & year</span>
+                <button
+                  onClick={() => setPrice(String(autoPrice))}
+                  className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 text-[10px] font-semibold cursor-pointer hover:bg-emerald-500/25 transition-colors"
+                >
+                  Use ${autoPrice}
+                </button>
+              </div>
+            )}
             <button
               onClick={fetchPriceSuggestion}
               disabled={loadingPrice || (!album.trim() && !artist.trim())}
@@ -847,13 +1025,16 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser, reco
           onClick={() => { if ((album.trim() || artist.trim()) && !window.confirm('Discard this record? Your entries will be lost.')) return; reset(); onClose(); }}
           className="flex-1 p-[11px] bg-[#1a1a1a] border border-gs-border-hover rounded-[10px] text-gs-muted text-[13px] font-semibold cursor-pointer"
         >
-          Cancel
+          {batchMode && batchCount > 0 ? `Done (${batchCount} added)` : 'Cancel'}
         </button>
         <button
           onClick={submit}
           className={`flex-[2] p-[11px] border-none rounded-[10px] text-[13px] font-bold cursor-pointer text-white transition-all duration-300 ${verified ? 'bg-gradient-to-br from-green-500 to-gs-accent' : 'bg-gradient-to-br from-gs-accent to-gs-indigo'}`}
         >
-          {verified ? '\u2713 Add Verified Record' : 'Add to Collection'}
+          {batchMode
+            ? (verified ? '\u2713 Add & Next' : 'Add & Next')
+            : (verified ? '\u2713 Add Verified Record' : 'Add to Collection')
+          }
         </button>
       </div>
     </Modal>

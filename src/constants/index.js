@@ -239,6 +239,17 @@ export const USER_PROFILES = {
   "liam.stacks":    { displayName:"Liam Chen-Wu",     bio:"Synthwave and retrowave. Anything that sounds like a neon-lit 1985.",            location:"Toronto, CA",    favGenre:"Electronic",  accent:"#8b5cf6", followers:["creator","beau.plays","juniper.sounds","romy.rpm"], following:["beau.plays","juniper.sounds","romy.rpm","kai.wax"], followerCount:213, followingCount:167, joinedDate:"2022-11-05", collectionSize:198, avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=liam.stacks", headerUrl:"https://picsum.photos/seed/liam.stacks/1200/400" },
   "nina.grooves":   { displayName:"Nina Petrovic",    bio:"Balkan brass and Eastern European folk. Also Yugo-rock. Bijelo Dugme is life.",  location:"Belgrade, RS",   favGenre:"World",       accent:"#ca8a04", followers:["creator","dante.grooves","priya.stacks"], following:["dante.grooves","priya.stacks","sol.spins"], followerCount:78, followingCount:56, joinedDate:"2023-09-01", collectionSize:98, avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=nina.grooves", headerUrl:"https://picsum.photos/seed/nina.grooves/1200/400" },
   "theo.plays":     { displayName:"Theo Washington",  bio:"Go-go and DC funk. Rare Groove is my religion. Chuck Brown forever.",            location:"Washington, DC", favGenre:"Funk",        accent:"#06b6d4", followers:["creator","max.plays","nadia.rpm","dax.wax"], following:["max.plays","nadia.rpm","dax.wax","june.vinyl"], followerCount:189, followingCount:145, joinedDate:"2022-07-11", collectionSize:312, avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=theo.plays", headerUrl:"https://picsum.photos/seed/theo.plays/1200/400" },
+  // ── Expansion profiles (42-51) ────────────────────────────────────────────
+  "suki.vinyl":     { displayName:"Suki Yamamoto",    bio:"Ambient and new age vinyl collector. Windham Hill completist. Music for stillness.", location:"Sapporo, JP",    favGenre:"Electronic",  accent:"#06b6d4", followers:["creator","emi.spins","juniper.sounds"], following:["emi.spins","juniper.sounds","soren.stacks"], followerCount:87, followingCount:56, joinedDate:"2023-10-15", collectionSize:134, avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=suki.vinyl", headerUrl:"https://picsum.photos/seed/suki.vinyl/1200/400" },
+  "omar.beats":     { displayName:"Omar Hassan",      bio:"Egyptian jazz-funk and rare Middle Eastern grooves. Collecting pressings from Cairo to Beirut.", location:"Cairo, EG", favGenre:"World", accent:"#f59e0b", followers:["creator","sol.spins","priya.stacks","felix.rpm"], following:["sol.spins","priya.stacks","felix.rpm","nico.crates"], followerCount:156, followingCount:123, joinedDate:"2023-06-01", collectionSize:198, avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=omar.beats", headerUrl:"https://picsum.photos/seed/omar.beats/1200/400" },
+  "rosie.wax":      { displayName:"Rosie Kowalski",   bio:"Polish jazz and Eastern Bloc pressings. Muza label hunter. Komeda is everything.",   location:"Warsaw, PL",     favGenre:"Jazz",        accent:"#ec4899", followers:["creator","nina.grooves","freya.wax","soren.stacks"], following:["nina.grooves","freya.wax","soren.stacks","mara.vinyl"], followerCount:112, followingCount:89, joinedDate:"2023-08-20", collectionSize:167, avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=rosie.wax", headerUrl:"https://picsum.photos/seed/rosie.wax/1200/400" },
+  "mateo.spins":    { displayName:"Mateo Gutierrez",  bio:"Cumbia, salsa, and Latin funk on vinyl. Fania All-Stars obsessive. Born to dance.", location:"Bogota, CO",     favGenre:"World",       accent:"#f97316", followers:["creator","felix.rpm","nico.crates","vince.rpm"], following:["felix.rpm","nico.crates","vince.rpm","zara.grooves"], followerCount:189, followingCount:145, joinedDate:"2023-04-10", collectionSize:234, avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=mateo.spins", headerUrl:"https://picsum.photos/seed/mateo.spins/1200/400" },
+  "jess.crates":    { displayName:"Jess Andersen",    bio:"Riot grrrl and queercore archivist. Bikini Kill, Sleater-Kinney, Team Dresch.",      location:"Olympia, WA",    favGenre:"Punk",        accent:"#d946ef", followers:["creator","cass.stacks","cleo.spins","lou.vinyl"], following:["cass.stacks","cleo.spins","lou.vinyl","wren.stacks"], followerCount:201, followingCount:167, joinedDate:"2023-03-15", collectionSize:278, avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=jess.crates", headerUrl:"https://picsum.photos/seed/jess.crates/1200/400" },
+  "kofi.grooves":   { displayName:"Kofi Asante",      bio:"Ghanaian highlife and palm wine guitar. Also deep into 70s Nigerian boogie.",         location:"Kumasi, GH",     favGenre:"World",       accent:"#22c55e", followers:["creator","sol.spins","zara.grooves","omar.beats"], following:["sol.spins","zara.grooves","omar.beats","max.plays"], followerCount:98, followingCount:78, joinedDate:"2023-11-01", collectionSize:112, avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=kofi.grooves", headerUrl:"https://picsum.photos/seed/kofi.grooves/1200/400" },
+  "elena.rpm":      { displayName:"Elena Vasquez",    bio:"Flamenco and Spanish folk on vinyl. Paco de Lucia changed everything. Camaron too.", location:"Seville, ES",    favGenre:"World",       accent:"#ef4444", followers:["creator","dante.grooves","mateo.spins","nina.grooves"], following:["dante.grooves","mateo.spins","nina.grooves","priya.stacks"], followerCount:134, followingCount:98, joinedDate:"2023-07-08", collectionSize:156, avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=elena.rpm", headerUrl:"https://picsum.photos/seed/elena.rpm/1200/400" },
+  "miles.stacks":   { displayName:"Miles Okonkwo",    bio:"Jazz fusion and prog nerd. Return to Forever, Mahavishnu, Weather Report. If it has odd meters, I want it.", location:"Lagos, NG", favGenre:"Jazz", accent:"#8b5cf6", followers:["creator","mara.vinyl","iris.rpm","riku.records"], following:["mara.vinyl","iris.rpm","riku.records","felix.rpm"], followerCount:167, followingCount:134, joinedDate:"2023-05-25", collectionSize:189, avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=miles.stacks", headerUrl:"https://picsum.photos/seed/miles.stacks/1200/400" },
+  "astrid.vinyl":   { displayName:"Astrid Holm",      bio:"Dream pop and ethereal wave collector. 4AD label devotee. Cocteau Twins are sacred.", location:"Gothenburg, SE", favGenre:"Alternative", accent:"#a855f7", followers:["creator","cleo.spins","otto.wax","romy.rpm"], following:["cleo.spins","otto.wax","romy.rpm","juniper.sounds"], followerCount:145, followingCount:112, joinedDate:"2023-09-12", collectionSize:198, avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=astrid.vinyl", headerUrl:"https://picsum.photos/seed/astrid.vinyl/1200/400" },
+  "ray.tracks":     { displayName:"Ray Nguyen",       bio:"Vaporwave on vinyl and future funk. Macintosh Plus was just the beginning. Also into city pop crossovers.", location:"Ho Chi Minh City, VN", favGenre:"Electronic", accent:"#14b8a6", followers:["creator","yuki.vinyl","liam.stacks","beau.plays"], following:["yuki.vinyl","liam.stacks","beau.plays","juniper.sounds"], followerCount:123, followingCount:98, joinedDate:"2023-10-28", collectionSize:89, avatarUrl:"https://api.dicebear.com/9.x/notionists-neutral/svg?seed=ray.tracks", headerUrl:"https://picsum.photos/seed/ray.tracks/1200/400" },
 };
 
 // Synthetic wishlists for static users — albums they're looking for.
@@ -285,6 +296,16 @@ export const USER_WISHLISTS = {
   "liam.stacks":    [{ id: "w67", album: "Drive OST", artist: "Cliff Martinez" }, { id: "w68", album: "Turbo Kid OST", artist: "Le Matos" }],
   "nina.grooves":   [{ id: "w69", album: "Kad Bi Svi Ljudi Na Svijetu", artist: "Bijelo Dugme" }],
   "theo.plays":     [{ id: "w70", album: "Any Other Way to Go?", artist: "Chuck Brown" }, { id: "w71", album: "We Need Some Money", artist: "Chuck Brown" }],
+  "suki.vinyl":     [{ id: "w72", album: "Plantasia", artist: "Mort Garson" }, { id: "w73", album: "Deep Breakfast", artist: "Ray Lynch" }],
+  "omar.beats":     [{ id: "w74", album: "Jazz, Jazz, Jazz", artist: "The Three Pyramids" }, { id: "w75", album: "Oum Kalthoum", artist: "Oum Kalthoum" }],
+  "rosie.wax":      [{ id: "w76", album: "Astigmatic", artist: "Krzysztof Komeda" }, { id: "w77", album: "Litania", artist: "Tomasz Stanko" }],
+  "mateo.spins":    [{ id: "w78", album: "Siembra", artist: "Willie Colon & Ruben Blades" }, { id: "w79", album: "Rhythm of Life", artist: "Fania All-Stars" }],
+  "jess.crates":    [{ id: "w80", album: "Pussy Whipped", artist: "Bikini Kill" }, { id: "w81", album: "Dig Me Out", artist: "Sleater-Kinney" }],
+  "kofi.grooves":   [{ id: "w82", album: "Highlife Time", artist: "Ebo Taylor" }, { id: "w83", album: "Sweet Mother", artist: "Prince Nico Mbarga" }],
+  "elena.rpm":      [{ id: "w84", album: "Entre dos aguas", artist: "Paco de Lucia" }, { id: "w85", album: "La Leyenda del Tiempo", artist: "Camaron de la Isla" }],
+  "miles.stacks":   [{ id: "w86", album: "Romantic Warrior", artist: "Return to Forever" }, { id: "w87", album: "Heavy Weather", artist: "Weather Report" }],
+  "astrid.vinyl":   [{ id: "w88", album: "Treasure", artist: "Cocteau Twins" }, { id: "w89", album: "Heaven or Las Vegas", artist: "Cocteau Twins" }],
+  "ray.tracks":     [{ id: "w90", album: "Floral Shoppe", artist: "Macintosh Plus" }, { id: "w91", album: "Hit Vibes", artist: "Saint Pepsi" }],
 };
 
 // Marketplace browse categories — used by MarketplaceScreen category pills and featured sections
@@ -443,3 +464,180 @@ export const ONBOARDING_STEPS = [
     action: null,
   },
 ];
+
+// ── Improvement #2: Marketplace aggregate stats ─────────────────────────────
+export const MARKETPLACE_STATS = {
+  avgPriceByGenre: {
+    "Rock": 28.50, "Jazz": 42.00, "Electronic": 31.75, "Hip-Hop": 34.00,
+    "Metal": 26.00, "Pop": 22.50, "Punk": 24.00, "R&B": 30.00,
+    "Soul": 35.50, "Folk": 19.00, "Classical": 18.00, "Funk": 38.00,
+    "Alternative": 27.00, "Country": 16.50, "Reggae": 29.00, "Blues": 33.00,
+    "World": 25.00, "Experimental": 36.00,
+  },
+  avgDaysToSell: {
+    "Rock": 5.2, "Jazz": 3.8, "Electronic": 4.5, "Hip-Hop": 3.1,
+    "Metal": 6.4, "Pop": 4.0, "Punk": 7.2, "R&B": 4.8,
+    "Soul": 5.0, "Folk": 8.3, "Classical": 9.1, "Funk": 4.2,
+    "Alternative": 5.6, "Country": 7.8, "Reggae": 6.0, "Blues": 6.5,
+    "World": 7.0, "Experimental": 8.8,
+  },
+  totalListings: 12483,
+  totalSold: 8921,
+  avgSellerRating: 4.7,
+  topSellingDecade: "1970s",
+  avgConditionSold: "VG+",
+  mostWantedArtists: ["Miles Davis", "John Coltrane", "Pink Floyd", "Radiohead", "Daft Punk", "Kendrick Lamar", "Fela Kuti", "My Bloody Valentine", "Aphex Twin", "Bob Marley"],
+};
+
+// ── Improvement #3: Vinyl labels with logo accent colors ────────────────────
+export const VINYL_LABELS = [
+  { id: "blue_note",     name: "Blue Note Records",   founded: 1939, color: "#1e3a5f", country: "US", description: "The definitive jazz label. Home to Coltrane, Monk, Hancock, and more." },
+  { id: "motown",        name: "Motown Records",      founded: 1959, color: "#c41e3a", country: "US", description: "The Sound of Young America. Stevie Wonder, Marvin Gaye, The Supremes." },
+  { id: "atlantic",      name: "Atlantic Records",    founded: 1947, color: "#d4382c", country: "US", description: "Soul, R&B, rock. Aretha Franklin, Led Zeppelin, Otis Redding." },
+  { id: "columbia",      name: "Columbia Records",    founded: 1887, color: "#e31937", country: "US", description: "Oldest surviving label. Miles Davis, Bob Dylan, Bruce Springsteen." },
+  { id: "prestige",      name: "Prestige Records",    founded: 1949, color: "#2d5f2d", country: "US", description: "Hard bop and post-bop jazz. Miles Davis, Coltrane, Sonny Rollins." },
+  { id: "impulse",       name: "Impulse! Records",    founded: 1961, color: "#f47920", country: "US", description: "The House That Trane Built. Iconic orange-and-black gatefolds." },
+  { id: "ecm",           name: "ECM Records",         founded: 1969, color: "#f5f5f5", country: "DE", description: "The Most Beautiful Sound Next to Silence. Jan Garbarek, Keith Jarrett." },
+  { id: "warp",          name: "Warp Records",        founded: 1989, color: "#6b21a8", country: "UK", description: "Electronic music pioneers. Aphex Twin, Autechre, Boards of Canada." },
+  { id: "factory",       name: "Factory Records",     founded: 1978, color: "#374151", country: "UK", description: "Joy Division, New Order. Peter Saville's iconic artwork." },
+  { id: "stax",          name: "Stax Records",        founded: 1957, color: "#1e40af", country: "US", description: "Memphis soul. Otis Redding, Isaac Hayes, Booker T. & the M.G.'s." },
+  { id: "4ad",           name: "4AD",                 founded: 1979, color: "#7c3aed", country: "UK", description: "Cocteau Twins, Pixies, Throwing Muses. Ethereal and art rock." },
+  { id: "sub_pop",       name: "Sub Pop Records",     founded: 1986, color: "#65a30d", country: "US", description: "Seattle grunge and indie. Nirvana, Soundgarden, Mudhoney." },
+  { id: "verve",         name: "Verve Records",       founded: 1956, color: "#ca8a04", country: "US", description: "Ella Fitzgerald, Billie Holiday, Stan Getz. Vocal jazz royalty." },
+  { id: "dischord",      name: "Dischord Records",    founded: 1980, color: "#1f2937", country: "US", description: "DC hardcore and post-hardcore. Minor Threat, Fugazi." },
+  { id: "hyperdub",      name: "Hyperdub",            founded: 2004, color: "#0ea5e9", country: "UK", description: "Burial, Kode9, Jessy Lanza. Bass music and future sounds." },
+  { id: "island",        name: "Island Records",      founded: 1959, color: "#f97316", country: "JM", description: "Bob Marley, U2, Grace Jones. Jamaican roots, global reach." },
+  { id: "rough_trade",   name: "Rough Trade Records", founded: 1978, color: "#dc2626", country: "UK", description: "The Smiths, Strokes, Sufjan Stevens. Indie institution." },
+  { id: "fania",         name: "Fania Records",       founded: 1964, color: "#b91c1c", country: "US", description: "The Motown of salsa. Celia Cruz, Hector Lavoe, Willie Colon." },
+];
+
+// ── Improvement #4: Record format specifications ────────────────────────────
+export const RECORD_FORMATS = [
+  { id: "lp",           label: "LP (12\")",          rpm: 33, diameter: 12, description: "Standard long-playing record. 20-25 minutes per side. The most common vinyl format." },
+  { id: "7_inch",       label: "7\" Single",         rpm: 45, diameter: 7,  description: "Standard single format. One track per side. Jukebox staple." },
+  { id: "10_inch",      label: "10\"",               rpm: 33, diameter: 10, description: "Early LP format popular in the 78 rpm era. Revived for special releases." },
+  { id: "12_inch",      label: "12\" Single",        rpm: 45, diameter: 12, description: "Extended single format. Wider grooves for louder cuts. DJ essential." },
+  { id: "ep",           label: "EP (Extended Play)",  rpm: 45, diameter: 7,  description: "4-6 tracks, longer than a single but shorter than an LP. Often 7\" or 10\"." },
+  { id: "box_set",      label: "Box Set",            rpm: 33, diameter: 12, description: "Multi-disc collection, often with booklets, photos, and bonus material." },
+  { id: "picture_disc", label: "Picture Disc",       rpm: 33, diameter: 12, description: "Full-color artwork pressed into the vinyl surface. Collectible, slightly reduced audio quality." },
+  { id: "flexi_disc",   label: "Flexi Disc",         rpm: 33, diameter: 7,  description: "Thin, flexible vinyl. Often included in magazines as promotional items." },
+  { id: "78_rpm",       label: "78 RPM",             rpm: 78, diameter: 10, description: "Pre-LP shellac format. Fragile, heavy, and historically significant." },
+];
+
+// ── Improvement #5: Turntable brands with compatibility info ────────────────
+export const TURNTABLE_BRANDS = [
+  { id: "technics",     name: "Technics",      country: "JP", tier: "professional", cartridgeMount: "standard", description: "Industry standard. The SL-1200 series is legendary for DJs and audiophiles.", flagshipModel: "SL-1200MK7" },
+  { id: "rega",         name: "Rega",          country: "UK", tier: "audiophile",   cartridgeMount: "standard", description: "British hi-fi. Clean, musical sound. Planar series is the benchmark.", flagshipModel: "Planar 10" },
+  { id: "pro_ject",     name: "Pro-Ject",      country: "AT", tier: "mid_range",    cartridgeMount: "standard", description: "Austrian precision. Great value across all price points. Carbon series.", flagshipModel: "X8" },
+  { id: "audio_technica", name: "Audio-Technica", country: "JP", tier: "entry_mid", cartridgeMount: "standard", description: "Excellent entry-level tables. The AT-LP120 is the affordable Technics alternative.", flagshipModel: "AT-LP7" },
+  { id: "clearaudio",   name: "Clearaudio",    country: "DE", tier: "high_end",     cartridgeMount: "standard", description: "German engineering at its finest. Reference-grade turntables.", flagshipModel: "Innovation Compact" },
+  { id: "vpi",          name: "VPI Industries", country: "US", tier: "high_end",    cartridgeMount: "standard", description: "American-made audiophile turntables. The Scout and Prime series.", flagshipModel: "Prime 21+" },
+  { id: "fluance",      name: "Fluance",       country: "CA", tier: "entry",        cartridgeMount: "standard", description: "Budget-friendly with surprising quality. The RT85 punches above its weight.", flagshipModel: "RT85" },
+  { id: "u_turn",       name: "U-Turn Audio",  country: "US", tier: "entry",        cartridgeMount: "standard", description: "Simple, beautiful, American-made. The Orbit is a minimalist classic.", flagshipModel: "Orbit Special" },
+  { id: "denon",        name: "Denon",         country: "JP", tier: "mid_range",    cartridgeMount: "standard", description: "Hi-fi heritage since the 1910s. The DP-400 is a modern classic.", flagshipModel: "DP-3000NE" },
+  { id: "linn",         name: "Linn",          country: "UK", tier: "high_end",     cartridgeMount: "standard", description: "The Sondek LP12 has been refined for over 50 years. British audiophile royalty.", flagshipModel: "LP12 Klimax" },
+];
+
+// ── Improvement #6: FAQ data ────────────────────────────────────────────────
+export const FAQ_DATA = [
+  { id: "faq-01", category: "grading",      question: "What does VG+ mean?",                                     answer: "VG+ (Very Good Plus) means the record has light marks that do not affect playback. It may show slight sleeve wear. This is the most common collector-grade condition." },
+  { id: "faq-02", category: "grading",      question: "How do I grade my records accurately?",                   answer: "Examine under bright light at an angle. Play-grade by listening for surface noise, clicks, and pops. The Goldmine standard is the industry benchmark. When in doubt, grade conservatively." },
+  { id: "faq-03", category: "grading",      question: "What is a deep groove pressing?",                        answer: "Deep groove refers to a pronounced groove on the label area of early pressings (especially Blue Note, Prestige, Columbia). It indicates an early pressing run and is highly collectible." },
+  { id: "faq-04", category: "buying",       question: "How does the offer system work?",                        answer: "Browse listings, click 'Make Offer', and submit your price. The seller can accept, decline, or counter. If accepted, you proceed to payment. All transactions are protected." },
+  { id: "faq-05", category: "buying",       question: "Are records inspected before shipping?",                 answer: "Sellers are responsible for accurate grading. If a record arrives in worse condition than described, you can open a dispute within 48 hours of delivery." },
+  { id: "faq-06", category: "buying",       question: "Can I return a record?",                                 answer: "Returns are accepted if the record is significantly misgraded or not as described. Open a dispute within 48 hours. Our team reviews all disputes within 72 hours." },
+  { id: "faq-07", category: "selling",      question: "How do I list a record for sale?",                       answer: "Add the record to your collection, then tap 'List for Sale'. Set your price, condition, shipping options, and any notes. Your listing will appear in the marketplace immediately." },
+  { id: "faq-08", category: "selling",      question: "What percentage does GrooveStack take?",                 answer: "GrooveStack takes a 5% commission on completed sales. Shipping costs are set by the seller and paid by the buyer. There are no listing fees." },
+  { id: "faq-09", category: "selling",      question: "How should I pack records for shipping?",                answer: "Remove the record from the sleeve and place it in a poly-lined inner sleeve. Ship the record outside the jacket in a record mailer with stiffeners. Use Media Mail for domestic US orders." },
+  { id: "faq-10", category: "selling",      question: "How do I become a verified seller?",                     answer: "Complete 10 successful sales with an average rating of 4.5 or higher. Verified sellers get a badge, priority placement in search results, and lower commission rates." },
+  { id: "faq-11", category: "collecting",   question: "Original pressing vs. reissue - which should I buy?",    answer: "Original pressings are closer to the master tapes and often preferred by collectors. Reissues can sound excellent, especially audiophile remasters (Mobile Fidelity, Analogue Productions). Budget and listening goals should guide your choice." },
+  { id: "faq-12", category: "collecting",   question: "How should I store my records?",                         answer: "Store vertically, never stacked flat. Use poly inner sleeves and outer sleeves. Keep away from heat, direct sunlight, and humidity. Ideal temperature is 65-70F with 45-50% humidity." },
+  { id: "faq-13", category: "collecting",   question: "How do I clean my records?",                             answer: "For light cleaning, use a carbon fiber brush before each play. For deep cleaning, use a wet cleaning system (Spin-Clean, ultrasonic cleaner). Never use household cleaners or tap water." },
+  { id: "faq-14", category: "collecting",   question: "What is a first pressing?",                              answer: "The first commercial run from the original master tapes. Identified by matrix numbers, label variations, and pressing plant codes. Often the most collectible version." },
+  { id: "faq-15", category: "equipment",    question: "What turntable should I start with?",                    answer: "The Audio-Technica AT-LP120 and Fluance RT85 are excellent starting points ($250-$350). Avoid suitcase players - they damage records and sound terrible." },
+  { id: "faq-16", category: "equipment",    question: "Do I need a preamp?",                                    answer: "Yes. Turntables output a phono-level signal that needs amplification. Some turntables have built-in preamps. Otherwise, you need a standalone phono preamp between the turntable and amplifier." },
+  { id: "faq-17", category: "equipment",    question: "How often should I replace my stylus?",                  answer: "Every 800-1000 hours of play for most styli. A worn stylus damages records. Listen for increased surface noise, sibilance, or distortion as signs of wear." },
+  { id: "faq-18", category: "community",    question: "How do I follow other collectors?",                      answer: "Visit any user's profile and tap Follow. Their new additions, reviews, and listings will appear in your feed. You can also discover collectors through the Explore tab." },
+  { id: "faq-19", category: "community",    question: "What are achievements and how do I earn them?",          answer: "Achievements are badges earned through collecting milestones, listening streaks, social activity, and more. Check your profile to see progress toward each badge." },
+  { id: "faq-20", category: "community",    question: "Can I trade records with other users?",                  answer: "Yes! Post a trade request in the feed or message a user directly. GrooveStack facilitates the connection, but trades are handled between users. Always use the marketplace for cash transactions." },
+];
+
+// ── Improvement #7: Seasonal events ─────────────────────────────────────────
+export const SEASONAL_EVENTS = [
+  { id: "rsd_spring",     name: "Record Store Day (Spring)",    month: 4,  day: 3,  weekday: "Saturday", recurring: true, description: "The biggest day in vinyl. Exclusive releases, live performances, and long lines at your local record shop.", color: "#ef4444", icon: "shopping-bag" },
+  { id: "rsd_fall",       name: "Record Store Day (Fall)",      month: 11, day: 4,  weekday: "Friday",   recurring: true, description: "Black Friday Record Store Day. Second drop of exclusive titles for the year.", color: "#ef4444", icon: "shopping-bag" },
+  { id: "black_friday",   name: "Black Friday Sales",           month: 11, day: 4,  weekday: "Friday",   recurring: true, description: "Marketplace-wide discounts. Sellers drop prices and rare finds surface.", color: "#1f2937", icon: "tag" },
+  { id: "new_music_friday", name: "New Music Friday",           month: null, day: null, weekday: "Friday", recurring: true, description: "Weekly new vinyl releases hit shops and the marketplace every Friday.", color: "#8b5cf6", icon: "music" },
+  { id: "jazz_day",       name: "International Jazz Day",       month: 4,  day: 30, weekday: null,       recurring: true, description: "UNESCO-designated celebration of jazz. Share your favorite jazz vinyl with the community.", color: "#3b82f6", icon: "headphones" },
+  { id: "vinyl_week",     name: "National Vinyl Record Day",    month: 8,  day: 12, weekday: null,       recurring: true, description: "Celebrating the vinyl format. Share your setups, collections, and favorite spins.", color: "#f59e0b", icon: "disc" },
+  { id: "crate_dig_month", name: "Crate Digging Month",        month: 10, day: null, weekday: null,      recurring: true, description: "October is for discovering. Challenge yourself to find hidden gems in dollar bins and estate sales.", color: "#10b981", icon: "search" },
+  { id: "holiday_gifting", name: "Holiday Gift Guide Season",   month: 12, day: null, weekday: null,      recurring: true, description: "Curated gift guides for vinyl lovers. Turntables, accessories, and must-have records.", color: "#dc2626", icon: "gift" },
+  { id: "summer_listening", name: "Summer Listening Series",    month: 6,  day: null, weekday: null,      recurring: true, description: "Community listening parties and outdoor vinyl sessions. Share your summer soundtrack.", color: "#f97316", icon: "sun" },
+  { id: "clean_your_records", name: "Clean Your Records Day",  month: 3,  day: 1,  weekday: null,        recurring: true, description: "Annual reminder to deep-clean your collection. Tutorials, tips, and product recommendations.", color: "#06b6d4", icon: "droplet" },
+];
+
+// ── Improvement #8: Community badges (beyond achievements) ──────────────────
+export const COMMUNITY_BADGES = {
+  trade: [
+    { id: "first_trade",       icon: "repeat",       title: "First Trade",         description: "Complete your first record trade with another collector",       threshold: 1 },
+    { id: "trade_regular",     icon: "refresh-cw",   title: "Trade Regular",       description: "Complete 10 trades",                                           threshold: 10 },
+    { id: "trade_master",      icon: "shuffle",      title: "Trade Master",        description: "Complete 50 trades",                                           threshold: 50 },
+    { id: "cross_genre_trade", icon: "globe",        title: "Cross-Genre Trader",  description: "Trade records across 5 different genres",                      threshold: 5 },
+    { id: "international_trade", icon: "map",        title: "Global Trader",       description: "Complete a trade with someone in another country",             threshold: 1 },
+  ],
+  listening: [
+    { id: "dawn_listener",     icon: "sunrise",      title: "Dawn Listener",       description: "Listen to vinyl before 6am",                                  threshold: 1 },
+    { id: "vinyl_marathon_8h", icon: "clock",        title: "Vinyl Marathon",      description: "Listen for 8+ hours in a single day",                          threshold: 480 },
+    { id: "full_album",        icon: "disc",         title: "Full Album Club",     description: "Listen to 25 complete albums without skipping",                threshold: 25 },
+    { id: "genre_master",      icon: "layers",       title: "Genre Master",        description: "Log 50+ listens in a single genre",                            threshold: 50 },
+    { id: "world_listener",    icon: "globe",        title: "World Listener",      description: "Listen to records from 15 different countries of origin",       threshold: 15 },
+    { id: "analog_purist",     icon: "radio",        title: "Analog Purist",       description: "Log 365 consecutive days with at least one vinyl session",     threshold: 365 },
+  ],
+  social: [
+    { id: "helpful_reviewer",  icon: "thumbs-up",    title: "Helpful Reviewer",    description: "Have 10 reviews liked by other users",                         threshold: 10 },
+    { id: "conversation_starter", icon: "message-circle", title: "Conversation Starter", description: "Start 20 discussions that receive 5+ comments",         threshold: 20 },
+    { id: "welcome_wagon",     icon: "heart",        title: "Welcome Wagon",       description: "Be the first to comment on 10 new member posts",              threshold: 10 },
+    { id: "mentor",            icon: "book-open",    title: "Vinyl Mentor",        description: "Answer 25 questions in the community feed",                    threshold: 25 },
+    { id: "influencer",        icon: "trending-up",  title: "Tastemaker",          description: "Have 100 followers",                                           threshold: 100 },
+  ],
+  curation: [
+    { id: "list_maker",        icon: "list",         title: "List Maker",          description: "Create 5 curated record lists",                                threshold: 5 },
+    { id: "rare_finder",       icon: "search",       title: "Rare Finder",         description: "List 10 records valued over $100",                             threshold: 10 },
+    { id: "label_collector",   icon: "tag",          title: "Label Loyalist",      description: "Own 20+ records from a single label",                          threshold: 20 },
+    { id: "decade_completist", icon: "calendar",     title: "Decade Completist",   description: "Own records from every decade 1950s through 2020s",            threshold: 8 },
+  ],
+};
+
+// ── Improvement #9: Country of pressing origins ─────────────────────────────
+export const COUNTRY_ORIGINS = [
+  { code: "US", name: "United States",   flag: "\ud83c\uddfa\ud83c\uddf8", description: "The largest market. Home to Columbia, Blue Note, Motown, Atlantic, and thousands more." },
+  { code: "UK", name: "United Kingdom",  flag: "\ud83c\uddec\ud83c\udde7", description: "EMI, Decca, Factory, Rough Trade. British pressings are prized for quality." },
+  { code: "DE", name: "Germany",         flag: "\ud83c\udde9\ud83c\uddea", description: "Deutsche Grammophon, ECM. German engineering extends to vinyl pressing." },
+  { code: "JP", name: "Japan",           flag: "\ud83c\uddef\ud83c\uddf5", description: "Legendary pressing quality. OBIs, inserts, and meticulous attention to detail." },
+  { code: "NL", name: "Netherlands",     flag: "\ud83c\uddf3\ud83c\uddf1", description: "Philips/Phonogram. Dutch pressings are common for European releases." },
+  { code: "CA", name: "Canada",          flag: "\ud83c\udde8\ud83c\udde6", description: "Quality pressings, often on par with US originals. Unique catalog numbers." },
+  { code: "FR", name: "France",          flag: "\ud83c\uddeb\ud83c\uddf7", description: "Barclay, Pathe-Marconi. French pressings of jazz are highly sought after." },
+  { code: "IT", name: "Italy",           flag: "\ud83c\uddee\ud83c\uddf9", description: "Rich prog rock and library music scene. Unique pressings and artwork." },
+  { code: "AU", name: "Australia",       flag: "\ud83c\udde6\ud83c\uddfa", description: "Festival, Mushroom Records. Australian pressings with unique sleeves." },
+  { code: "SE", name: "Sweden",          flag: "\ud83c\uddf8\ud83c\uddea", description: "ABBA's homeland. Strong indie and metal pressing tradition." },
+  { code: "BR", name: "Brazil",          flag: "\ud83c\udde7\ud83c\uddf7", description: "Rich bossa nova and tropicalia heritage. Unique local pressings." },
+  { code: "KR", name: "South Korea",     flag: "\ud83c\uddf0\ud83c\uddf7", description: "Growing market with quality modern pressings and K-pop vinyl." },
+  { code: "IN", name: "India",           flag: "\ud83c\uddee\ud83c\uddf3", description: "HMV India / Saregama. Bollywood soundtracks and Indian classical on vinyl." },
+  { code: "ZA", name: "South Africa",    flag: "\ud83c\uddff\ud83c\udde6", description: "Gallo Records. Unique pressings of local and international artists." },
+  { code: "JM", name: "Jamaica",         flag: "\ud83c\uddef\ud83c\uddf2", description: "The birthplace of reggae, ska, and dub. Studio One, Island, Trojan." },
+  { code: "NG", name: "Nigeria",         flag: "\ud83c\uddf3\ud83c\uddec", description: "Afrobeat capital. Kalakuta, Decca West Africa. Fela Kuti's home." },
+  { code: "CZ", name: "Czech Republic",  flag: "\ud83c\udde8\ud83c\uddff", description: "Supraphon label. Eastern Bloc pressings with unique cover art." },
+  { code: "PL", name: "Poland",          flag: "\ud83c\uddf5\ud83c\uddf1", description: "Muza / Polskie Nagrania. Polish jazz pressings are highly collectible." },
+];
+
+// ── Improvement #10: Decade themes ──────────────────────────────────────────
+export const DECADE_THEMES = {
+  "1950s": { label: "The Fifties",   colorPrimary: "#c2410c", colorSecondary: "#fed7aa", gradient: "linear-gradient(135deg, #c2410c, #ea580c)", icon: "radio",       description: "The birth of rock and roll. Elvis, Chuck Berry, Little Richard. Mono pressings and shellac transitions." },
+  "1960s": { label: "The Sixties",   colorPrimary: "#4f46e5", colorSecondary: "#c7d2fe", gradient: "linear-gradient(135deg, #4f46e5, #7c3aed)", icon: "peace",       description: "The British Invasion, psychedelia, and Motown. Vinyl's golden age. Beatles, Stones, Hendrix." },
+  "1970s": { label: "The Seventies", colorPrimary: "#b45309", colorSecondary: "#fde68a", gradient: "linear-gradient(135deg, #b45309, #d97706)", icon: "headphones",  description: "Prog, punk, disco, funk. Album art became an art form. Gatefolds and concept albums." },
+  "1980s": { label: "The Eighties",  colorPrimary: "#db2777", colorSecondary: "#fbcfe8", gradient: "linear-gradient(135deg, #db2777, #9333ea)", icon: "zap",         description: "New wave, synth-pop, and hip-hop's birth. Vinyl competed with cassettes and CDs." },
+  "1990s": { label: "The Nineties",  colorPrimary: "#059669", colorSecondary: "#a7f3d0", gradient: "linear-gradient(135deg, #059669, #0d9488)", icon: "disc",        description: "Grunge, Britpop, electronic music. Vinyl nearly died. The underground kept it alive." },
+  "2000s": { label: "The 2000s",     colorPrimary: "#0284c7", colorSecondary: "#bae6fd", gradient: "linear-gradient(135deg, #0284c7, #0ea5e9)", icon: "refresh-cw",  description: "The vinyl revival begins. Indie labels lead the charge. Record Store Day is born." },
+  "2010s": { label: "The 2010s",     colorPrimary: "#7c3aed", colorSecondary: "#ddd6fe", gradient: "linear-gradient(135deg, #7c3aed, #a855f7)", icon: "trending-up", description: "Vinyl outsells CDs. Colored vinyl explosion. Streaming and vinyl coexist." },
+  "2020s": { label: "The 2020s",     colorPrimary: "#0f172a", colorSecondary: "#e2e8f0", gradient: "linear-gradient(135deg, #0f172a, #334155)", icon: "star",        description: "Record sales at 30-year highs. Supply chain challenges. New pressing plants open worldwide." },
+};

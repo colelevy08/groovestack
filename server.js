@@ -8788,6 +8788,916 @@ app.post('/api/records/:id/auto-price', authMiddleware, async (req, res) => {
   }
 });
 
+// ── Feature F26: Marketplace Analytics Summary ────────────────────────────────
+
+// GET /api/analytics/marketplace — GMV, listings, active users summary
+app.get('/api/analytics/marketplace', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const period = req.query.period || '30d';
+    const intervalMap = { '7d': '7 days', '30d': '30 days', '90d': '90 days', '1y': '1 year' };
+    const interval = intervalMap[period] || '30 days';
+
+    const [gmv, listings, activeUsers, avgOrderValue, topCategories] = await Promise.all([
+      pool.query(
+        `SELECT COALESCE(SUM(amount), 0) as total_gmv, COUNT(*) as total_transactions
+         FROM purchases WHERE status IN ('completed', 'paid') AND created_at >= now() - interval '${interval}'`
+      ),
+      pool.query(
+        `SELECT COUNT(*) as total_listings, COUNT(*) FILTER (WHERE for_sale = true) as active_listings,
+         COUNT(*) FILTER (WHERE created_at >= now() - interval '${interval}') as new_listings
+         FROM records`
+      ),
+      pool.query(
+        `SELECT COUNT(DISTINCT user_id) as active_sellers,
+         COUNT(DISTINCT buyer_id) as active_buyers
+         FROM purchases WHERE created_at >= now() - interval '${interval}'`
+      ),
+      pool.query(
+        `SELECT COALESCE(AVG(amount), 0) as avg_order_value
+         FROM purchases WHERE status IN ('completed', 'paid') AND created_at >= now() - interval '${interval}'`
+      ),
+      pool.query(
+        `SELECT genre, COUNT(*) as sale_count, COALESCE(SUM(p.amount), 0) as revenue
+         FROM purchases p JOIN records r ON r.id = p.record_id
+         WHERE p.created_at >= now() - interval '${interval}' AND r.genre IS NOT NULL
+         GROUP BY genre ORDER BY revenue DESC LIMIT 10`
+      ),
+    ]);
+
+    res.json({
+      success: true,
+      period,
+      analytics: {
+        gmv: Math.round(parseFloat(gmv.rows[0].total_gmv) * 100) / 100,
+        totalTransactions: parseInt(gmv.rows[0].total_transactions),
+        totalListings: parseInt(listings.rows[0].total_listings),
+        activeListings: parseInt(listings.rows[0].active_listings),
+        newListings: parseInt(listings.rows[0].new_listings),
+        activeSellers: parseInt(activeUsers.rows[0].active_sellers),
+        activeBuyers: parseInt(activeUsers.rows[0].active_buyers),
+        avgOrderValue: Math.round(parseFloat(avgOrderValue.rows[0].avg_order_value) * 100) / 100,
+        topCategories: topCategories.rows,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Marketplace analytics error:', err.message);
+    res.status(500).json({ error: 'Failed to generate marketplace analytics' });
+  }
+});
+
+// ── Feature F27: Record Condition Grading Standards ───────────────────────────
+
+const GRADING_STANDARDS = {
+  'Mint (M)': {
+    code: 'M',
+    description: 'Perfect, unplayed condition. Factory sealed or equivalent.',
+    vinylCriteria: ['No scratches', 'No scuffs', 'No warps', 'Original shine'],
+    sleeveCriteria: ['No ring wear', 'No seam splits', 'No writing', 'Sharp corners'],
+    priceMultiplier: 1.5,
+  },
+  'Near Mint (NM)': {
+    code: 'NM',
+    description: 'Nearly perfect. May have been played but shows no visible signs of wear.',
+    vinylCriteria: ['No visible scratches', 'No marks under bright light', 'Flat surface'],
+    sleeveCriteria: ['Minimal ring wear', 'No splits', 'No writing'],
+    priceMultiplier: 1.3,
+  },
+  'Very Good Plus (VG+)': {
+    code: 'VG+',
+    description: 'Shows some signs of play but still sounds excellent.',
+    vinylCriteria: ['Light scratches that do not affect play', 'Slight surface noise'],
+    sleeveCriteria: ['Light ring wear', 'Minor edge wear', 'No major defects'],
+    priceMultiplier: 1.1,
+  },
+  'Very Good (VG)': {
+    code: 'VG',
+    description: 'Surface noise evident during quiet passages. Groove distortion minimal.',
+    vinylCriteria: ['Surface scratches', 'Light groove wear', 'Plays through without skipping'],
+    sleeveCriteria: ['Ring wear', 'Minor seam wear', 'Minor writing or stickers'],
+    priceMultiplier: 1.0,
+  },
+  'Good Plus (G+)': {
+    code: 'G+',
+    description: 'Significant surface noise and wear but plays through.',
+    vinylCriteria: ['Scratches audible', 'Some groove distortion', 'No skips'],
+    sleeveCriteria: ['Heavy ring wear', 'Seam splits', 'Writing or stickers'],
+    priceMultiplier: 0.8,
+  },
+  'Good (G)': {
+    code: 'G',
+    description: 'Plays through with distracting noise. Suitable for casual listening only.',
+    vinylCriteria: ['Heavy scratches', 'Groove wear', 'Possible skips'],
+    sleeveCriteria: ['Heavy wear', 'Splits', 'Tape repairs'],
+    priceMultiplier: 0.6,
+  },
+  'Fair (F)': {
+    code: 'F',
+    description: 'Barely playable. For completists only.',
+    vinylCriteria: ['Deep scratches', 'Skips', 'Warps'],
+    sleeveCriteria: ['Major damage', 'Pieces missing'],
+    priceMultiplier: 0.4,
+  },
+  'Poor (P)': {
+    code: 'P',
+    description: 'Unplayable or damaged beyond reasonable use.',
+    vinylCriteria: ['Cracked', 'Severely warped', 'Will not play'],
+    sleeveCriteria: ['Destroyed', 'Missing'],
+    priceMultiplier: 0.2,
+  },
+};
+
+// GET /api/grading-standards — get record condition grading reference
+app.get('/api/grading-standards', (req, res) => {
+  const format = req.query.format;
+  if (format === 'simple') {
+    const simple = Object.entries(GRADING_STANDARDS).map(([name, data]) => ({
+      grade: name,
+      code: data.code,
+      description: data.description,
+      priceMultiplier: data.priceMultiplier,
+    }));
+    return res.json({ success: true, grades: simple });
+  }
+  res.json({ success: true, grades: GRADING_STANDARDS });
+});
+
+// POST /api/records/:id/grade — grade a specific record
+app.post('/api/records/:id/grade', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const recordId = parseInt(req.params.id);
+    const { vinylGrade, sleeveGrade, notes } = req.body;
+    if (!vinylGrade) return res.status(400).json({ error: 'vinylGrade is required' });
+
+    const validGrades = Object.values(GRADING_STANDARDS).map(g => g.code);
+    if (!validGrades.includes(vinylGrade)) {
+      return res.status(400).json({ error: `Invalid vinyl grade. Valid: ${validGrades.join(', ')}` });
+    }
+
+    await pool.query(
+      'UPDATE records SET condition = $1 WHERE id = $2',
+      [vinylGrade, recordId]
+    );
+
+    res.json({
+      success: true,
+      recordId,
+      grading: { vinylGrade, sleeveGrade: sleeveGrade || null, notes: notes || null, gradedAt: new Date().toISOString() },
+    });
+  } catch (err) {
+    console.error('Grading error:', err.message);
+    res.status(500).json({ error: 'Failed to grade record' });
+  }
+});
+
+// ── Feature F28: Shipping Carrier Integration Placeholders ────────────────────
+
+const SHIPPING_CARRIERS = {
+  usps: { name: 'USPS', services: ['Priority Mail', 'First Class', 'Media Mail'], trackingUrl: 'https://tools.usps.com/go/TrackConfirmAction?tLabels=' },
+  ups: { name: 'UPS', services: ['Ground', '3 Day Select', '2nd Day Air', 'Next Day Air'], trackingUrl: 'https://www.ups.com/track?tracknum=' },
+  fedex: { name: 'FedEx', services: ['Ground', 'Express Saver', '2Day', 'Priority Overnight'], trackingUrl: 'https://www.fedex.com/fedextrack/?trknbr=' },
+  dhl: { name: 'DHL', services: ['Express Worldwide', 'eCommerce'], trackingUrl: 'https://www.dhl.com/en/express/tracking.html?AWB=' },
+};
+
+// GET /api/shipping/carriers — list supported shipping carriers
+app.get('/api/shipping/carriers', (req, res) => {
+  res.json({ success: true, carriers: SHIPPING_CARRIERS });
+});
+
+// POST /api/shipping/rate-estimate — get shipping rate estimate (placeholder)
+app.post('/api/shipping/rate-estimate', authMiddleware, (req, res) => {
+  const { carrier, service, fromZip, toZip, weightOz } = req.body;
+  if (!carrier || !fromZip || !toZip || !weightOz) {
+    return res.status(400).json({ error: 'carrier, fromZip, toZip, and weightOz are required' });
+  }
+
+  if (!SHIPPING_CARRIERS[carrier]) {
+    return res.status(400).json({ error: `Unsupported carrier. Supported: ${Object.keys(SHIPPING_CARRIERS).join(', ')}` });
+  }
+
+  // Placeholder rate calculation — replace with real carrier API integration
+  const baseRate = weightOz <= 16 ? 4.50 : weightOz <= 32 ? 7.50 : 12.00;
+  const carrierMultiplier = { usps: 1.0, ups: 1.3, fedex: 1.25, dhl: 1.8 };
+  const estimatedRate = Math.round(baseRate * (carrierMultiplier[carrier] || 1.0) * 100) / 100;
+
+  res.json({
+    success: true,
+    estimate: {
+      carrier: SHIPPING_CARRIERS[carrier].name,
+      service: service || SHIPPING_CARRIERS[carrier].services[0],
+      fromZip, toZip, weightOz,
+      estimatedRate,
+      currency: 'USD',
+      disclaimer: 'Placeholder estimate. Connect carrier API for live rates.',
+      estimatedAt: new Date().toISOString(),
+    },
+  });
+});
+
+// GET /api/shipping/track/:carrier/:trackingNumber — get tracking URL
+app.get('/api/shipping/track/:carrier/:trackingNumber', (req, res) => {
+  const { carrier, trackingNumber } = req.params;
+  const c = SHIPPING_CARRIERS[carrier];
+  if (!c) return res.status(400).json({ error: `Unsupported carrier: ${carrier}` });
+  res.json({ success: true, carrier: c.name, trackingNumber, trackingUrl: c.trackingUrl + trackingNumber });
+});
+
+// ── Feature F29: Tax Reporting for Sellers ────────────────────────────────────
+
+// GET /api/sellers/:id/tax-report — generate tax reporting summary
+app.get('/api/sellers/:id/tax-report', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const sellerId = parseInt(req.params.id);
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+
+    const [sales, expenses, monthlyBreakdown] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) as total_sales, COALESCE(SUM(amount), 0) as gross_revenue,
+         COALESCE(SUM(CASE WHEN status = 'refunded' THEN amount ELSE 0 END), 0) as refunds
+         FROM purchases WHERE seller_id = $1 AND EXTRACT(YEAR FROM created_at) = $2`,
+        [sellerId, year]
+      ),
+      pool.query(
+        `SELECT COALESCE(SUM(shipping_cost), 0) as total_shipping,
+         COALESCE(SUM(platform_fee), 0) as total_platform_fees
+         FROM purchases WHERE seller_id = $1 AND EXTRACT(YEAR FROM created_at) = $2 AND status IN ('completed', 'paid')`,
+        [sellerId, year]
+      ),
+      pool.query(
+        `SELECT EXTRACT(MONTH FROM created_at) as month, COUNT(*) as sales, COALESCE(SUM(amount), 0) as revenue
+         FROM purchases WHERE seller_id = $1 AND EXTRACT(YEAR FROM created_at) = $2 AND status IN ('completed', 'paid')
+         GROUP BY month ORDER BY month`,
+        [sellerId, year]
+      ),
+    ]);
+
+    const grossRevenue = parseFloat(sales.rows[0].gross_revenue);
+    const refundTotal = parseFloat(sales.rows[0].refunds);
+    const shippingCosts = parseFloat(expenses.rows[0].total_shipping);
+    const platformFees = parseFloat(expenses.rows[0].total_platform_fees);
+    const netRevenue = grossRevenue - refundTotal - shippingCosts - platformFees;
+
+    const requires1099 = grossRevenue >= 600; // IRS 1099-K threshold
+
+    res.json({
+      success: true,
+      taxReport: {
+        sellerId,
+        taxYear: year,
+        grossRevenue: Math.round(grossRevenue * 100) / 100,
+        refunds: Math.round(refundTotal * 100) / 100,
+        shippingCosts: Math.round(shippingCosts * 100) / 100,
+        platformFees: Math.round(platformFees * 100) / 100,
+        netRevenue: Math.round(netRevenue * 100) / 100,
+        totalSales: parseInt(sales.rows[0].total_sales),
+        monthlyBreakdown: monthlyBreakdown.rows,
+        requires1099,
+        disclaimer: 'This is an informational summary only. Consult a tax professional for filing guidance.',
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Tax report error:', err.message);
+    res.status(500).json({ error: 'Failed to generate tax report' });
+  }
+});
+
+// ── Feature F30: Inventory Sync with Discogs ──────────────────────────────────
+
+// POST /api/inventory/discogs-sync — sync inventory with Discogs collection
+app.post('/api/inventory/discogs-sync', authMiddleware, async (req, res) => {
+  const DISCOGS_TOKEN = process.env.DISCOGS_TOKEN;
+  if (!DISCOGS_TOKEN) return res.status(503).json({ error: 'Discogs integration not configured (set DISCOGS_TOKEN)' });
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+
+  try {
+    const { discogsUsername, direction } = req.body;
+    if (!discogsUsername) return res.status(400).json({ error: 'discogsUsername is required' });
+    const syncDirection = direction === 'export' ? 'export' : 'import';
+
+    // Placeholder — in production, call Discogs API: GET /users/{username}/collection/folders/0/releases
+    const syncResult = {
+      userId: req.user.id,
+      discogsUsername,
+      direction: syncDirection,
+      status: 'pending',
+      itemsProcessed: 0,
+      itemsAdded: 0,
+      itemsUpdated: 0,
+      itemsSkipped: 0,
+      errors: [],
+      startedAt: new Date().toISOString(),
+      note: 'Placeholder — connect to Discogs API for live sync. API endpoint: GET /users/{username}/collection/folders/0/releases',
+    };
+
+    res.json({ success: true, sync: syncResult });
+  } catch (err) {
+    console.error('Discogs sync error:', err.message);
+    res.status(500).json({ error: 'Failed to start Discogs sync' });
+  }
+});
+
+// GET /api/inventory/discogs-sync/status — check sync status
+app.get('/api/inventory/discogs-sync/status', authMiddleware, (req, res) => {
+  // Placeholder — return last sync status from a store in production
+  res.json({
+    success: true,
+    lastSync: null,
+    note: 'No sync history available. POST to /api/inventory/discogs-sync to start a sync.',
+  });
+});
+
+// ── Feature F31: Automated Listing Optimization Suggestions ───────────────────
+
+// GET /api/records/:id/optimize — get listing optimization suggestions
+app.get('/api/records/:id/optimize', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const recordId = parseInt(req.params.id);
+    const record = await pool.query('SELECT * FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+    const r = record.rows[0];
+
+    const suggestions = [];
+    let score = 100;
+
+    // Check title quality
+    if (!r.title || r.title.length < 3) {
+      suggestions.push({ field: 'title', priority: 'high', suggestion: 'Add a descriptive title for better search visibility.' });
+      score -= 20;
+    }
+
+    // Check description
+    if (!r.description || r.description.length < 50) {
+      suggestions.push({ field: 'description', priority: 'high', suggestion: 'Add a detailed description (50+ characters). Include pressing details, matrix numbers, and condition notes.' });
+      score -= 15;
+    }
+
+    // Check images
+    if (!r.image_url) {
+      suggestions.push({ field: 'images', priority: 'high', suggestion: 'Add at least one photo. Listings with photos sell 5x faster.' });
+      score -= 20;
+    }
+
+    // Check pricing
+    if (r.for_sale && (!r.price || r.price <= 0)) {
+      suggestions.push({ field: 'price', priority: 'high', suggestion: 'Set a price for your listing. Use /api/records/:id/auto-price for suggestions.' });
+      score -= 15;
+    }
+
+    // Check condition
+    if (!r.condition) {
+      suggestions.push({ field: 'condition', priority: 'medium', suggestion: 'Add a condition grade. See /api/grading-standards for reference.' });
+      score -= 10;
+    }
+
+    // Check genre
+    if (!r.genre) {
+      suggestions.push({ field: 'genre', priority: 'medium', suggestion: 'Add a genre for better category-based discovery.' });
+      score -= 10;
+    }
+
+    // Check year
+    if (!r.year || r.year <= 0) {
+      suggestions.push({ field: 'year', priority: 'low', suggestion: 'Add the release year for collectors searching by era.' });
+      score -= 5;
+    }
+
+    score = Math.max(0, score);
+
+    res.json({
+      success: true,
+      recordId,
+      optimization: {
+        score,
+        rating: score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'needs_improvement' : 'poor',
+        suggestions,
+        analyzedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Listing optimization error:', err.message);
+    res.status(500).json({ error: 'Failed to generate optimization suggestions' });
+  }
+});
+
+// ── Feature F32: Cross-Platform Listing (Placeholder) ─────────────────────────
+
+const SUPPORTED_PLATFORMS = {
+  discogs: { name: 'Discogs', supported: true, apiDocs: 'https://www.discogs.com/developers/' },
+  ebay: { name: 'eBay', supported: false, apiDocs: 'https://developer.ebay.com/' },
+  reverb: { name: 'Reverb', supported: false, apiDocs: 'https://reverb.com/page/api' },
+  depop: { name: 'Depop', supported: false, apiDocs: null },
+};
+
+// GET /api/cross-list/platforms — list supported cross-listing platforms
+app.get('/api/cross-list/platforms', (req, res) => {
+  res.json({ success: true, platforms: SUPPORTED_PLATFORMS });
+});
+
+// POST /api/cross-list/publish — publish listing to external platforms (placeholder)
+app.post('/api/cross-list/publish', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { recordId, platforms } = req.body;
+    if (!recordId || !platforms || !Array.isArray(platforms)) {
+      return res.status(400).json({ error: 'recordId and platforms (array) are required' });
+    }
+
+    const record = await pool.query('SELECT * FROM records WHERE id = $1', [parseInt(recordId)]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+
+    const results = platforms.map(platform => {
+      const p = SUPPORTED_PLATFORMS[platform];
+      if (!p) return { platform, status: 'error', message: 'Unsupported platform' };
+      return {
+        platform: p.name,
+        status: 'pending',
+        message: `Placeholder — connect ${p.name} API for live cross-listing.`,
+        apiDocs: p.apiDocs,
+      };
+    });
+
+    res.json({
+      success: true,
+      recordId: parseInt(recordId),
+      crossList: { results, submittedAt: new Date().toISOString() },
+    });
+  } catch (err) {
+    console.error('Cross-list error:', err.message);
+    res.status(500).json({ error: 'Failed to cross-list record' });
+  }
+});
+
+// ── Feature F33: Record Authentication Service Endpoint ───────────────────────
+
+// POST /api/records/:id/authenticate — submit record for authentication
+app.post('/api/records/:id/authenticate', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const recordId = parseInt(req.params.id);
+    const record = await pool.query('SELECT * FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+    const r = record.rows[0];
+
+    const { matrixNumber, labelVariant, deadWaxNotes, photos } = req.body;
+
+    // Authentication checks (simplified heuristic — production would use ML/expert review)
+    const checks = [];
+    let authenticityScore = 50; // Start neutral
+
+    if (matrixNumber) {
+      checks.push({ check: 'matrix_number', status: 'provided', note: 'Matrix number submitted for cross-reference.' });
+      authenticityScore += 15;
+    } else {
+      checks.push({ check: 'matrix_number', status: 'missing', note: 'Provide the matrix/runout number for better verification.' });
+    }
+
+    if (labelVariant) {
+      checks.push({ check: 'label_variant', status: 'provided', note: 'Label variant noted for pressing identification.' });
+      authenticityScore += 10;
+    }
+
+    if (deadWaxNotes) {
+      checks.push({ check: 'dead_wax', status: 'provided', note: 'Dead wax inscription details submitted.' });
+      authenticityScore += 15;
+    }
+
+    if (photos && photos.length >= 3) {
+      checks.push({ check: 'photos', status: 'sufficient', note: `${photos.length} photos submitted.` });
+      authenticityScore += 10;
+    } else {
+      checks.push({ check: 'photos', status: 'insufficient', note: 'Submit at least 3 photos (label, vinyl surface, sleeve) for review.' });
+    }
+
+    authenticityScore = Math.min(100, authenticityScore);
+
+    res.json({
+      success: true,
+      recordId,
+      authentication: {
+        score: authenticityScore,
+        verdict: authenticityScore >= 80 ? 'likely_authentic' : authenticityScore >= 50 ? 'needs_review' : 'insufficient_data',
+        checks,
+        record: { title: r.title, artist: r.artist, year: r.year },
+        note: 'Automated pre-screening. For official authentication, submit for expert review.',
+        assessedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Authentication error:', err.message);
+    res.status(500).json({ error: 'Failed to authenticate record' });
+  }
+});
+
+// ── Feature F34: Community Moderation Tools ───────────────────────────────────
+
+const moderationReports = new Map(); // reportId -> report
+let moderationReportCounter = 1;
+
+// POST /api/moderation/report — submit a content report
+app.post('/api/moderation/report', authMiddleware, (req, res) => {
+  const { targetType, targetId, reason, details } = req.body;
+  const validTypes = ['listing', 'user', 'review', 'comment', 'message'];
+  const validReasons = ['spam', 'counterfeit', 'harassment', 'inappropriate', 'copyright', 'other'];
+
+  if (!targetType || !targetId || !reason) {
+    return res.status(400).json({ error: 'targetType, targetId, and reason are required' });
+  }
+  if (!validTypes.includes(targetType)) {
+    return res.status(400).json({ error: `Invalid targetType. Valid: ${validTypes.join(', ')}` });
+  }
+  if (!validReasons.includes(reason)) {
+    return res.status(400).json({ error: `Invalid reason. Valid: ${validReasons.join(', ')}` });
+  }
+
+  const report = {
+    id: moderationReportCounter++,
+    reporterId: req.user.id,
+    targetType,
+    targetId: parseInt(targetId),
+    reason,
+    details: details || null,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    resolvedAt: null,
+    resolution: null,
+  };
+
+  moderationReports.set(report.id, report);
+  res.status(201).json({ success: true, report });
+});
+
+// GET /api/moderation/reports — list moderation reports (admin)
+app.get('/api/moderation/reports', authMiddleware, (req, res) => {
+  const status = req.query.status || 'pending';
+  const reports = Array.from(moderationReports.values())
+    .filter(r => status === 'all' || r.status === status)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  res.json({ success: true, reports, count: reports.length });
+});
+
+// PUT /api/moderation/reports/:id/resolve — resolve a moderation report (admin)
+app.put('/api/moderation/reports/:id/resolve', authMiddleware, (req, res) => {
+  const reportId = parseInt(req.params.id);
+  const report = moderationReports.get(reportId);
+  if (!report) return res.status(404).json({ error: 'Report not found' });
+
+  const { resolution, action } = req.body;
+  const validActions = ['dismissed', 'warning_issued', 'content_removed', 'user_suspended', 'user_banned'];
+  if (!resolution || !action) return res.status(400).json({ error: 'resolution and action are required' });
+  if (!validActions.includes(action)) {
+    return res.status(400).json({ error: `Invalid action. Valid: ${validActions.join(', ')}` });
+  }
+
+  report.status = 'resolved';
+  report.resolution = { action, notes: resolution, resolvedBy: req.user.id };
+  report.resolvedAt = new Date().toISOString();
+
+  res.json({ success: true, report });
+});
+
+// ── Feature F35: Platform Announcement System ─────────────────────────────────
+
+const announcements = [];
+let announcementCounter = 1;
+
+// POST /api/announcements — create a platform announcement (admin)
+app.post('/api/announcements', authMiddleware, (req, res) => {
+  const { title, body, type, targetAudience, expiresAt } = req.body;
+  const validTypes = ['info', 'feature', 'maintenance', 'promotion', 'urgent'];
+
+  if (!title || !body) return res.status(400).json({ error: 'title and body are required' });
+  if (type && !validTypes.includes(type)) {
+    return res.status(400).json({ error: `Invalid type. Valid: ${validTypes.join(', ')}` });
+  }
+
+  const announcement = {
+    id: announcementCounter++,
+    title,
+    body,
+    type: type || 'info',
+    targetAudience: targetAudience || 'all', // 'all', 'sellers', 'buyers', 'new_users'
+    authorId: req.user.id,
+    active: true,
+    createdAt: new Date().toISOString(),
+    expiresAt: expiresAt || null,
+    readBy: [],
+  };
+
+  announcements.unshift(announcement);
+  res.status(201).json({ success: true, announcement });
+});
+
+// GET /api/announcements — get active announcements
+app.get('/api/announcements', (req, res) => {
+  const now = new Date().toISOString();
+  const active = announcements.filter(a => a.active && (!a.expiresAt || a.expiresAt > now));
+  const audience = req.query.audience || 'all';
+  const filtered = audience === 'all' ? active : active.filter(a => a.targetAudience === 'all' || a.targetAudience === audience);
+
+  res.json({ success: true, announcements: filtered, count: filtered.length });
+});
+
+// PUT /api/announcements/:id — update or deactivate an announcement
+app.put('/api/announcements/:id', authMiddleware, (req, res) => {
+  const id = parseInt(req.params.id);
+  const announcement = announcements.find(a => a.id === id);
+  if (!announcement) return res.status(404).json({ error: 'Announcement not found' });
+
+  const { title, body, type, active } = req.body;
+  if (title) announcement.title = title;
+  if (body) announcement.body = body;
+  if (type) announcement.type = type;
+  if (typeof active === 'boolean') announcement.active = active;
+  announcement.updatedAt = new Date().toISOString();
+
+  res.json({ success: true, announcement });
+});
+
+// ── Feature F36: User Milestone Achievements ──────────────────────────────────
+
+const MILESTONES = [
+  { id: 'first_listing', name: 'First Listing', description: 'Created your first listing', icon: 'record', threshold: 1, field: 'listings' },
+  { id: 'collector_10', name: 'Collector', description: 'Added 10 records to your collection', icon: 'stack', threshold: 10, field: 'collection' },
+  { id: 'collector_100', name: 'Serious Collector', description: 'Added 100 records to your collection', icon: 'crate', threshold: 100, field: 'collection' },
+  { id: 'first_sale', name: 'First Sale', description: 'Completed your first sale', icon: 'cash', threshold: 1, field: 'sales' },
+  { id: 'seller_10', name: 'Active Seller', description: 'Completed 10 sales', icon: 'shop', threshold: 10, field: 'sales' },
+  { id: 'seller_100', name: 'Power Seller', description: 'Completed 100 sales', icon: 'store', threshold: 100, field: 'sales' },
+  { id: 'reviewer_5', name: 'Critic', description: 'Written 5 reviews', icon: 'pen', threshold: 5, field: 'reviews' },
+  { id: 'social_butterfly', name: 'Social Butterfly', description: 'Followed 20 other collectors', icon: 'people', threshold: 20, field: 'following' },
+  { id: 'influencer', name: 'Influencer', description: 'Gained 50 followers', icon: 'star', threshold: 50, field: 'followers' },
+  { id: 'vinyl_buddy', name: 'Vinyl Buddy User', description: 'Identified a record using Vinyl Buddy', icon: 'device', threshold: 1, field: 'identifications' },
+];
+
+// GET /api/users/:id/milestones — get user milestones and achievements
+app.get('/api/users/:id/milestones', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const userId = parseInt(req.params.id);
+
+    const [listings, collection, sales, reviews, following, followers] = await Promise.all([
+      pool.query('SELECT COUNT(*) as cnt FROM records WHERE user_id = $1 AND for_sale = true', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM records WHERE user_id = $1', [userId]),
+      pool.query("SELECT COUNT(*) as cnt FROM purchases WHERE seller_id = $1 AND status IN ('completed', 'paid')", [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM reviews WHERE user_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM follows WHERE follower_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM follows WHERE followed_id = $1', [userId]),
+    ]);
+
+    const counts = {
+      listings: parseInt(listings.rows[0].cnt),
+      collection: parseInt(collection.rows[0].cnt),
+      sales: parseInt(sales.rows[0].cnt),
+      reviews: parseInt(reviews.rows[0].cnt),
+      following: parseInt(following.rows[0].cnt),
+      followers: parseInt(followers.rows[0].cnt),
+      identifications: 0, // Placeholder — would come from vinyl_buddy_identifications table
+    };
+
+    const achieved = MILESTONES.filter(m => counts[m.field] >= m.threshold).map(m => ({
+      ...m, achieved: true, progress: 100,
+    }));
+    const inProgress = MILESTONES.filter(m => counts[m.field] < m.threshold).map(m => ({
+      ...m, achieved: false, progress: Math.round((counts[m.field] / m.threshold) * 100),
+      current: counts[m.field],
+    }));
+
+    res.json({
+      success: true,
+      userId,
+      milestones: { achieved, inProgress, totalAchieved: achieved.length, totalAvailable: MILESTONES.length },
+      stats: counts,
+    });
+  } catch (err) {
+    console.error('Milestones error:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve milestones' });
+  }
+});
+
+// ── Feature F37: Collection Appraisal Report ──────────────────────────────────
+
+// GET /api/users/:id/collection/appraisal — get collection value appraisal
+app.get('/api/users/:id/collection/appraisal', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const userId = parseInt(req.params.id);
+
+    const [records, totalValue, conditionBreakdown, genreBreakdown, rarityEstimate] = await Promise.all([
+      pool.query('SELECT COUNT(*) as cnt FROM records WHERE user_id = $1', [userId]),
+      pool.query('SELECT COALESCE(SUM(price), 0) as total, COALESCE(AVG(price), 0) as avg_price FROM records WHERE user_id = $1 AND price > 0', [userId]),
+      pool.query(
+        `SELECT condition, COUNT(*) as cnt, COALESCE(AVG(price), 0) as avg_price
+         FROM records WHERE user_id = $1 AND condition IS NOT NULL GROUP BY condition ORDER BY cnt DESC`,
+        [userId]
+      ),
+      pool.query(
+        `SELECT genre, COUNT(*) as cnt, COALESCE(SUM(price), 0) as total_value
+         FROM records WHERE user_id = $1 AND genre IS NOT NULL GROUP BY genre ORDER BY total_value DESC LIMIT 10`,
+        [userId]
+      ),
+      pool.query(
+        `SELECT r.id, r.title, r.artist, r.price, COALESCE(lc.cnt, 0) as like_count
+         FROM records r
+         LEFT JOIN (SELECT record_id, COUNT(*) as cnt FROM likes GROUP BY record_id) lc ON lc.record_id = r.id
+         WHERE r.user_id = $1 AND r.price > 0
+         ORDER BY r.price DESC LIMIT 10`,
+        [userId]
+      ),
+    ]);
+
+    const totalRecords = parseInt(records.rows[0].cnt);
+    const estimatedTotal = parseFloat(totalValue.rows[0].total);
+    const avgPrice = parseFloat(totalValue.rows[0].avg_price);
+
+    res.json({
+      success: true,
+      userId,
+      appraisal: {
+        totalRecords,
+        estimatedValue: Math.round(estimatedTotal * 100) / 100,
+        averageRecordValue: Math.round(avgPrice * 100) / 100,
+        conditionBreakdown: conditionBreakdown.rows,
+        genreBreakdown: genreBreakdown.rows,
+        mostValuable: rarityEstimate.rows,
+        insuranceRecommendation: estimatedTotal > 1000 ? 'Consider insuring your collection.' : null,
+        appraisedAt: new Date().toISOString(),
+        disclaimer: 'Estimated values based on listed prices and market data. Actual values may vary.',
+      },
+    });
+  } catch (err) {
+    console.error('Appraisal error:', err.message);
+    res.status(500).json({ error: 'Failed to generate appraisal' });
+  }
+});
+
+// ── Feature F38: Market Demand Forecasting ────────────────────────────────────
+
+// GET /api/analytics/demand-forecast — forecast market demand
+app.get('/api/analytics/demand-forecast', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const genre = req.query.genre || null;
+
+    const [recentSales, searchTrends, wishlistDemand, supplyLevels] = await Promise.all([
+      pool.query(
+        `SELECT DATE_TRUNC('week', created_at) as week, COUNT(*) as sales, COALESCE(SUM(amount), 0) as revenue
+         FROM purchases WHERE created_at >= now() - interval '12 weeks' AND status IN ('completed', 'paid')
+         ${genre ? "AND record_id IN (SELECT id FROM records WHERE genre = '" + genre.replace(/'/g, "''") + "')" : ''}
+         GROUP BY week ORDER BY week`
+      ),
+      pool.query(
+        `SELECT genre, COUNT(*) as listing_count FROM records
+         WHERE created_at >= now() - interval '4 weeks' AND genre IS NOT NULL
+         ${genre ? "AND genre = '" + genre.replace(/'/g, "''") + "'" : ''}
+         GROUP BY genre ORDER BY listing_count DESC LIMIT 10`
+      ),
+      pool.query(
+        `SELECT r.genre, COUNT(*) as wishlist_count FROM wishlists w
+         JOIN records r ON r.id = w.record_id WHERE r.genre IS NOT NULL
+         ${genre ? "AND r.genre = '" + genre.replace(/'/g, "''") + "'" : ''}
+         GROUP BY r.genre ORDER BY wishlist_count DESC LIMIT 10`
+      ),
+      pool.query(
+        `SELECT genre, COUNT(*) as available FROM records
+         WHERE for_sale = true AND genre IS NOT NULL
+         ${genre ? "AND genre = '" + genre.replace(/'/g, "''") + "'" : ''}
+         GROUP BY genre ORDER BY available DESC LIMIT 10`
+      ),
+    ]);
+
+    // Simple trend analysis
+    const weeklyData = recentSales.rows;
+    let trend = 'stable';
+    if (weeklyData.length >= 4) {
+      const recentAvg = weeklyData.slice(-4).reduce((sum, w) => sum + parseInt(w.sales), 0) / 4;
+      const olderAvg = weeklyData.slice(0, -4).reduce((sum, w) => sum + parseInt(w.sales), 0) / Math.max(1, weeklyData.length - 4);
+      if (recentAvg > olderAvg * 1.2) trend = 'increasing';
+      else if (recentAvg < olderAvg * 0.8) trend = 'decreasing';
+    }
+
+    res.json({
+      success: true,
+      forecast: {
+        genre: genre || 'all',
+        trend,
+        weeklySales: weeklyData,
+        hotGenres: searchTrends.rows,
+        wishlistDemand: wishlistDemand.rows,
+        currentSupply: supplyLevels.rows,
+        forecastedAt: new Date().toISOString(),
+        note: 'Forecast based on historical trends. External factors may affect actual demand.',
+      },
+    });
+  } catch (err) {
+    console.error('Demand forecast error:', err.message);
+    res.status(500).json({ error: 'Failed to generate demand forecast' });
+  }
+});
+
+// ── Feature F39: Seller Onboarding Checklist ──────────────────────────────────
+
+const ONBOARDING_STEPS = [
+  { id: 'profile_complete', name: 'Complete Your Profile', description: 'Add a bio, avatar, and location.', category: 'setup' },
+  { id: 'first_listing', name: 'Create First Listing', description: 'List your first record for sale.', category: 'listings' },
+  { id: 'payment_setup', name: 'Set Up Payment', description: 'Connect Stripe to receive payments.', category: 'payments' },
+  { id: 'shipping_address', name: 'Add Shipping Address', description: 'Set your default ship-from address.', category: 'shipping' },
+  { id: 'shipping_rates', name: 'Configure Shipping Rates', description: 'Set your shipping rates or enable calculated shipping.', category: 'shipping' },
+  { id: 'grading_policy', name: 'Set Grading Policy', description: 'Define your grading standards and return policy.', category: 'policies' },
+  { id: 'verify_email', name: 'Verify Email', description: 'Confirm your email address.', category: 'setup' },
+  { id: 'five_listings', name: 'List 5 Records', description: 'Build your shop with at least 5 listings.', category: 'listings' },
+];
+
+// GET /api/sellers/:id/onboarding — get seller onboarding checklist
+app.get('/api/sellers/:id/onboarding', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const sellerId = parseInt(req.params.id);
+
+    const [user, listingCount, stripeConnected] = await Promise.all([
+      pool.query('SELECT * FROM users WHERE id = $1', [sellerId]),
+      pool.query('SELECT COUNT(*) as cnt FROM records WHERE user_id = $1 AND for_sale = true', [sellerId]),
+      pool.query("SELECT COUNT(*) as cnt FROM users WHERE id = $1 AND stripe_account_id IS NOT NULL", [sellerId]),
+    ]);
+
+    if (user.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const u = user.rows[0];
+    const listings = parseInt(listingCount.rows[0].cnt);
+    const hasStripe = parseInt(stripeConnected.rows[0].cnt) > 0;
+
+    const completionMap = {
+      profile_complete: !!(u.bio && u.avatar_url),
+      first_listing: listings >= 1,
+      payment_setup: hasStripe,
+      shipping_address: !!u.shipping_address,
+      shipping_rates: !!u.shipping_rates_set,
+      grading_policy: !!u.grading_policy,
+      verify_email: !!u.email_verified,
+      five_listings: listings >= 5,
+    };
+
+    const steps = ONBOARDING_STEPS.map(step => ({
+      ...step,
+      completed: completionMap[step.id] || false,
+    }));
+
+    const completedCount = steps.filter(s => s.completed).length;
+    const progress = Math.round((completedCount / steps.length) * 100);
+
+    res.json({
+      success: true,
+      sellerId,
+      onboarding: {
+        steps,
+        completedCount,
+        totalSteps: steps.length,
+        progress,
+        status: progress === 100 ? 'complete' : progress >= 50 ? 'in_progress' : 'started',
+      },
+    });
+  } catch (err) {
+    console.error('Onboarding error:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve onboarding checklist' });
+  }
+});
+
+// ── Feature F40: API Rate Limit Status Endpoint ───────────────────────────────
+
+// GET /api/rate-limit/status — check current rate limit status for the caller
+app.get('/api/rate-limit/status', (req, res) => {
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const now = Date.now();
+
+  // Gather all buckets for this IP
+  const buckets = {};
+  for (const [key, entry] of rateLimitBuckets.entries()) {
+    if (key.startsWith(`${ip}:`)) {
+      const bucketName = key.split(':').slice(1).join(':');
+      buckets[bucketName] = {
+        requestsUsed: entry.count,
+        resetsAt: new Date(entry.resetAt).toISOString(),
+        remainingMs: Math.max(0, entry.resetAt - now),
+        expired: now > entry.resetAt,
+      };
+    }
+  }
+
+  res.json({
+    success: true,
+    ip,
+    rateLimits: {
+      buckets,
+      activeBuckets: Object.keys(buckets).length,
+      note: 'Rate limits are per-IP. Buckets reset independently after their window expires.',
+    },
+    checkedAt: new Date().toISOString(),
+  });
+});
+
 // ── Feature 20: Server startup banner with configuration summary ──────────────
 
 const PORT = process.env.PORT || process.env.SERVER_PORT || 3001;

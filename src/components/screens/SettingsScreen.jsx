@@ -248,6 +248,71 @@ export default function SettingsScreen({ currentUser, profile, deviceCode, vinyl
     { label: 'Rose', value: 'rose', color: '#ec4899' },
   ], []);
 
+  // ── Improvement 16: Import settings from other platforms ──
+  const [platformImportStatus, setPlatformImportStatus] = useState(null);
+  const importPlatforms = useMemo(() => [
+    { name: 'Discogs', icon: 'D', color: '#ff5500', desc: 'Import collection data and wantlist' },
+    { name: 'Vinyl Me Please', icon: 'V', color: '#e91e63', desc: 'Import membership preferences' },
+    { name: 'Bandcamp', icon: 'B', color: '#1da0c3', desc: 'Import purchases and wishlist' },
+    { name: 'MusicBrainz', icon: 'M', color: '#ba478f', desc: 'Import listening metadata' },
+  ], []);
+
+  // ── Improvement 17: Notification scheduling (digest times) ──
+  const [digestEnabled, setDigestEnabled] = useState(false);
+  const [digestTime, setDigestTime] = useState('09:00');
+  const [digestDays, setDigestDays] = useState(['Mon', 'Wed', 'Fri']);
+
+  // ── Improvement 18: Privacy mode (hide activity) ──
+  const [privacyMode, setPrivacyMode] = useState(false);
+  const [hideCollection, setHideCollection] = useState(false);
+  const [hideListeningHistory, setHideListeningHistory] = useState(false);
+  const [hideWishlist, setHideWishlist] = useState(false);
+
+  // ── Improvement 19: Auto-list records for sale based on rules ──
+  const [autoListEnabled, setAutoListEnabled] = useState(false);
+  const [autoListMinValue, setAutoListMinValue] = useState('50');
+  const [autoListCondition, setAutoListCondition] = useState('NM');
+  const [autoListDuplicates, setAutoListDuplicates] = useState(true);
+
+  // ── Improvement 20: Marketplace fee preferences ──
+  const [feeAbsorb, setFeeAbsorb] = useState('split');
+  const [autoRelist, setAutoRelist] = useState(true);
+  const [relistDiscount, setRelistDiscount] = useState('5');
+
+  // ── Improvement 21: Default currency selection ──
+  const [currency, setCurrency] = useState('USD');
+  const currencyOptions = useMemo(() => [
+    { label: 'USD ($)', value: 'USD' }, { label: 'EUR (\u20AC)', value: 'EUR' },
+    { label: 'GBP (\u00A3)', value: 'GBP' }, { label: 'JPY (\u00A5)', value: 'JPY' },
+    { label: 'CAD ($)', value: 'CAD' }, { label: 'AUD ($)', value: 'AUD' },
+  ], []);
+
+  // ── Improvement 22: Time zone setting ──
+  const [timeZone, setTimeZone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York');
+  const timeZoneOptions = useMemo(() => [
+    'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
+    'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Asia/Tokyo', 'Asia/Shanghai',
+    'Australia/Sydney', 'Pacific/Auckland',
+  ], []);
+
+  // ── Improvement 23: Shipping preferences ──
+  const [defaultCarrier, setDefaultCarrier] = useState('USPS');
+  const [shippingInsurance, setShippingInsurance] = useState(false);
+  const [insuranceThreshold, setInsuranceThreshold] = useState('50');
+  const [requireSignature, setRequireSignature] = useState(false);
+
+  // ── Improvement 24b: Collection organization defaults ──
+  const [collectionSort, setCollectionSort] = useState('artist');
+  const [collectionView, setCollectionView] = useState('grid');
+  const [showGrades, setShowGrades] = useState(true);
+  const [showValues, setShowValues] = useState(false);
+
+  // ── Improvement 25: Data retention policy settings ──
+  const [retentionPeriod, setRetentionPeriod] = useState('forever');
+  const [autoDeleteMessages, setAutoDeleteMessages] = useState(false);
+  const [autoDeleteMsgDays, setAutoDeleteMsgDays] = useState('90');
+  const [anonymizeOldData, setAnonymizeOldData] = useState(false);
+
   const handleSaveShipping = useCallback(() => {
     setShippingSaved(true);
     setTimeout(() => setShippingSaved(false), 2000);
@@ -1260,6 +1325,389 @@ export default function SettingsScreen({ currentUser, profile, deviceCode, vinyl
             </button>
           ))}
         </div>
+      </SettingsCard>
+
+      {/* ── Improvement 16: Import Settings from Other Platforms ── */}
+      <SectionHeader
+        title="Import from Platform"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[11px] text-gs-dim mb-3">Import your collection, preferences, and data from other vinyl platforms.</div>
+        <div className="flex flex-col gap-1.5">
+          {importPlatforms.map(platform => (
+            <div key={platform.name} className="flex items-center justify-between py-2 border-b border-[#111] last:border-b-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ background: platform.color }}>
+                  {platform.icon}
+                </div>
+                <div>
+                  <div className="text-[12px] font-semibold text-gs-text">{platform.name}</div>
+                  <div className="text-[10px] text-gs-dim">{platform.desc}</div>
+                </div>
+              </div>
+              <button
+                onClick={() => { setPlatformImportStatus(platform.name); setTimeout(() => setPlatformImportStatus(null), 2000); }}
+                className="text-[11px] text-gs-accent bg-transparent border border-gs-accent/30 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-gs-accent/10 transition-colors"
+              >
+                {platformImportStatus === platform.name ? 'Importing...' : 'Import'}
+              </button>
+            </div>
+          ))}
+        </div>
+      </SettingsCard>
+
+      {/* ── Improvement 17: Notification Scheduling (Digest Times) ── */}
+      <SectionHeader
+        title="Notification Digest"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>}
+      />
+      <SettingsCard>
+        <SettingsRow label="Digest Mode" description="Bundle notifications into a single daily summary">
+          <Toggle on={digestEnabled} onToggle={() => setDigestEnabled(v => !v)} />
+        </SettingsRow>
+        {digestEnabled && (
+          <div className="mt-3 pt-3 border-t border-[#111]">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-1">
+                <label className="text-[10px] text-gs-dim font-mono block mb-1">Delivery Time</label>
+                <input
+                  type="time"
+                  value={digestTime}
+                  onChange={e => setDigestTime(e.target.value)}
+                  className="w-full py-1.5 px-2 bg-[#111] rounded-lg text-xs text-gs-text border border-[#222] outline-none focus:border-gs-accent transition-colors font-mono"
+                />
+              </div>
+            </div>
+            <label className="text-[10px] text-gs-dim font-mono block mb-1.5">Digest Days</label>
+            <div className="flex gap-1">
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
+                <button
+                  key={day}
+                  onClick={() => setDigestDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day])}
+                  className={`text-[10px] px-2 py-1 rounded-lg font-mono cursor-pointer transition-all border ${
+                    digestDays.includes(day)
+                      ? 'bg-[#f59e0b11] border-[#f59e0b33] text-[#f59e0b] font-bold'
+                      : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+                  }`}
+                >
+                  {day}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </SettingsCard>
+
+      {/* ── Improvement 18: Privacy Mode ─────────────────────── */}
+      <SectionHeader
+        title="Privacy Mode"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>}
+      />
+      <SettingsCard>
+        <SettingsRow label="Privacy Mode" description="Hide all activity from other users when enabled">
+          <Toggle on={privacyMode} onToggle={() => setPrivacyMode(v => !v)} />
+        </SettingsRow>
+        {privacyMode && (
+          <div className="mt-3 pt-3 border-t border-[#111]">
+            <SettingsRow label="Hide Collection" description="Others cannot browse your record collection">
+              <Toggle on={hideCollection} onToggle={() => setHideCollection(v => !v)} />
+            </SettingsRow>
+            <SettingsRow label="Hide Listening History" description="Your Vinyl Buddy activity is private">
+              <Toggle on={hideListeningHistory} onToggle={() => setHideListeningHistory(v => !v)} />
+            </SettingsRow>
+            <SettingsRow label="Hide Wishlist" description="Keep your wantlist hidden from other users">
+              <Toggle on={hideWishlist} onToggle={() => setHideWishlist(v => !v)} />
+            </SettingsRow>
+          </div>
+        )}
+      </SettingsCard>
+
+      {/* ── Improvement 19: Auto-List Records for Sale ────────── */}
+      <SectionHeader
+        title="Auto-List Rules"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" /></svg>}
+      />
+      <SettingsCard>
+        <SettingsRow label="Auto-List Enabled" description="Automatically list records for sale based on your rules">
+          <Toggle on={autoListEnabled} onToggle={() => setAutoListEnabled(v => !v)} />
+        </SettingsRow>
+        {autoListEnabled && (
+          <div className="mt-3 pt-3 border-t border-[#111]">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-1">
+                <label className="text-[10px] text-gs-dim font-mono block mb-1">Min Estimated Value ($)</label>
+                <input
+                  type="number"
+                  value={autoListMinValue}
+                  onChange={e => setAutoListMinValue(e.target.value)}
+                  className="w-full py-1.5 px-2.5 bg-[#111] rounded-lg text-xs text-gs-text border border-[#222] outline-none focus:border-gs-accent transition-colors font-mono"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-[10px] text-gs-dim font-mono block mb-1">Min Condition</label>
+                <div className="flex gap-1">
+                  {['M', 'NM', 'VG+', 'VG'].map(c => (
+                    <button
+                      key={c}
+                      onClick={() => setAutoListCondition(c)}
+                      className={`text-[10px] px-2 py-1 rounded-lg font-mono cursor-pointer transition-all border ${
+                        autoListCondition === c
+                          ? 'bg-[#22c55e11] border-[#22c55e33] text-[#22c55e] font-bold'
+                          : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+                      }`}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <SettingsRow label="Auto-List Duplicates" description="Automatically list duplicate records in your collection">
+              <Toggle on={autoListDuplicates} onToggle={() => setAutoListDuplicates(v => !v)} />
+            </SettingsRow>
+          </div>
+        )}
+      </SettingsCard>
+
+      {/* ── Improvement 20: Marketplace Fee Preferences ──────── */}
+      <SectionHeader
+        title="Marketplace Fees"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[11px] text-gs-dim mb-3">How marketplace fees (5%) are handled on sales.</div>
+        <div className="flex gap-1 mb-3">
+          {[{ label: 'I pay', value: 'seller' }, { label: 'Buyer pays', value: 'buyer' }, { label: 'Split 50/50', value: 'split' }].map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setFeeAbsorb(opt.value)}
+              className={`text-[10px] px-3 py-1.5 rounded-lg font-mono cursor-pointer transition-all border flex-1 ${
+                feeAbsorb === opt.value
+                  ? 'bg-[#f9731611] border-[#f9731633] text-[#f97316] font-bold'
+                  : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <SettingsRow label="Auto-Relist Unsold Items" description="Automatically relist items that don't sell within 30 days">
+          <Toggle on={autoRelist} onToggle={() => setAutoRelist(v => !v)} />
+        </SettingsRow>
+        {autoRelist && (
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-[10px] text-gs-dim font-mono">Relist discount:</span>
+            <div className="flex gap-1">
+              {['0', '5', '10', '15'].map(d => (
+                <button
+                  key={d}
+                  onClick={() => setRelistDiscount(d)}
+                  className={`text-[10px] px-2 py-1 rounded-lg font-mono cursor-pointer transition-all border ${
+                    relistDiscount === d
+                      ? 'bg-[#f9731611] border-[#f9731633] text-[#f97316] font-bold'
+                      : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+                  }`}
+                >
+                  {d}%
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </SettingsCard>
+
+      {/* ── Improvement 21: Default Currency Selection ────────── */}
+      <SectionHeader
+        title="Currency"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[13px] font-semibold text-gs-text mb-3">Default Currency</div>
+        <div className="flex flex-wrap gap-1.5">
+          {currencyOptions.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setCurrency(opt.value)}
+              className={`text-[11px] px-3 py-1.5 rounded-lg cursor-pointer transition-all border ${
+                currency === opt.value
+                  ? 'bg-[#14b8a611] border-[#14b8a633] text-[#14b8a6] font-bold'
+                  : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <div className="mt-2 text-[10px] text-gs-faint">All prices will be displayed in {currency}. Conversion is approximate.</div>
+      </SettingsCard>
+
+      {/* ── Improvement 22: Time Zone Setting ────────────────── */}
+      <SectionHeader
+        title="Time Zone"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[13px] font-semibold text-gs-text mb-3">Your Time Zone</div>
+        <div className="flex flex-col gap-1">
+          {timeZoneOptions.map(tz => (
+            <button
+              key={tz}
+              onClick={() => setTimeZone(tz)}
+              className={`text-left text-[11px] py-2 px-3 rounded-lg cursor-pointer transition-all border ${
+                timeZone === tz
+                  ? 'bg-[#8b5cf611] border-[#8b5cf633] text-[#8b5cf6] font-bold'
+                  : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+              }`}
+            >
+              {tz.replace(/_/g, ' ')}
+            </button>
+          ))}
+        </div>
+        <div className="mt-2 text-[10px] text-gs-faint">Affects all timestamps and scheduled notifications.</div>
+      </SettingsCard>
+
+      {/* ── Improvement 23: Shipping Preferences ─────────────── */}
+      <SectionHeader
+        title="Shipping Preferences"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[11px] text-gs-dim mb-3">Set defaults for outgoing shipments.</div>
+        <SettingsRow label="Default Carrier" description="Preferred shipping carrier for marketplace orders">
+          <div className="flex gap-1">
+            {['USPS', 'UPS', 'FedEx', 'DHL'].map(c => (
+              <button
+                key={c}
+                onClick={() => setDefaultCarrier(c)}
+                className={`text-[10px] px-2 py-1 rounded-lg font-mono cursor-pointer transition-all border ${
+                  defaultCarrier === c
+                    ? 'bg-[#06b6d411] border-[#06b6d433] text-[#06b6d4] font-bold'
+                    : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+                }`}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </SettingsRow>
+        <SettingsRow label="Shipping Insurance" description="Automatically add insurance to shipments">
+          <Toggle on={shippingInsurance} onToggle={() => setShippingInsurance(v => !v)} />
+        </SettingsRow>
+        {shippingInsurance && (
+          <div className="mt-2 flex items-center gap-2 ml-2">
+            <span className="text-[10px] text-gs-dim font-mono">For orders over $</span>
+            <input
+              type="number"
+              value={insuranceThreshold}
+              onChange={e => setInsuranceThreshold(e.target.value)}
+              className="w-20 py-1 px-2 bg-[#111] rounded-lg text-xs text-gs-text border border-[#222] outline-none focus:border-gs-accent transition-colors font-mono"
+            />
+          </div>
+        )}
+        <SettingsRow label="Require Signature" description="Require delivery signature for all shipments">
+          <Toggle on={requireSignature} onToggle={() => setRequireSignature(v => !v)} />
+        </SettingsRow>
+      </SettingsCard>
+
+      {/* ── Improvement 24b: Collection Organization Defaults ── */}
+      <SectionHeader
+        title="Collection Organization"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ec4899" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>}
+      />
+      <SettingsCard>
+        <SettingsRow label="Default Sort" description="How your collection is sorted by default">
+          <div className="flex gap-1">
+            {[{ l: 'Artist', v: 'artist' }, { l: 'Album', v: 'album' }, { l: 'Year', v: 'year' }, { l: 'Added', v: 'added' }].map(opt => (
+              <button
+                key={opt.v}
+                onClick={() => setCollectionSort(opt.v)}
+                className={`text-[10px] px-2 py-1 rounded-lg font-mono cursor-pointer transition-all border ${
+                  collectionSort === opt.v
+                    ? 'bg-[#ec489911] border-[#ec489933] text-[#ec4899] font-bold'
+                    : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+                }`}
+              >
+                {opt.l}
+              </button>
+            ))}
+          </div>
+        </SettingsRow>
+        <SettingsRow label="Default View" description="Grid or list layout for your collection">
+          <div className="flex gap-1">
+            {['grid', 'list'].map(v => (
+              <button
+                key={v}
+                onClick={() => setCollectionView(v)}
+                className={`text-[10px] px-2.5 py-1 rounded-lg font-mono cursor-pointer transition-all border capitalize ${
+                  collectionView === v
+                    ? 'bg-[#ec489911] border-[#ec489933] text-[#ec4899] font-bold'
+                    : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        </SettingsRow>
+        <SettingsRow label="Show Grades" description="Display vinyl condition grades in your collection">
+          <Toggle on={showGrades} onToggle={() => setShowGrades(v => !v)} />
+        </SettingsRow>
+        <SettingsRow label="Show Estimated Values" description="Display median Discogs pricing next to records">
+          <Toggle on={showValues} onToggle={() => setShowValues(v => !v)} />
+        </SettingsRow>
+      </SettingsCard>
+
+      {/* ── Improvement 25: Data Retention Policy Settings ────── */}
+      <SectionHeader
+        title="Data Retention"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[11px] text-gs-dim mb-3">Control how long your data is retained on our servers.</div>
+        <SettingsRow label="Listening History Retention" description="How long to keep your Vinyl Buddy listening data">
+          <div className="flex gap-1">
+            {[{ l: '6mo', v: '6months' }, { l: '1yr', v: '1year' }, { l: '2yr', v: '2years' }, { l: 'Forever', v: 'forever' }].map(opt => (
+              <button
+                key={opt.v}
+                onClick={() => setRetentionPeriod(opt.v)}
+                className={`text-[10px] px-2 py-1 rounded-lg font-mono cursor-pointer transition-all border ${
+                  retentionPeriod === opt.v
+                    ? 'bg-[#ef444411] border-[#ef444433] text-[#ef4444] font-bold'
+                    : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+                }`}
+              >
+                {opt.l}
+              </button>
+            ))}
+          </div>
+        </SettingsRow>
+        <SettingsRow label="Auto-Delete Old Messages" description="Automatically remove messages older than the specified period">
+          <Toggle on={autoDeleteMessages} onToggle={() => setAutoDeleteMessages(v => !v)} />
+        </SettingsRow>
+        {autoDeleteMessages && (
+          <div className="mt-2 flex items-center gap-2 ml-2">
+            <span className="text-[10px] text-gs-dim font-mono">Delete after</span>
+            <div className="flex gap-1">
+              {['30', '60', '90', '180'].map(d => (
+                <button
+                  key={d}
+                  onClick={() => setAutoDeleteMsgDays(d)}
+                  className={`text-[10px] px-2 py-1 rounded-lg font-mono cursor-pointer transition-all border ${
+                    autoDeleteMsgDays === d
+                      ? 'bg-[#ef444411] border-[#ef444433] text-[#ef4444] font-bold'
+                      : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+                  }`}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <SettingsRow label="Anonymize Old Data" description="Strip personal identifiers from data older than retention period">
+          <Toggle on={anonymizeOldData} onToggle={() => setAnonymizeOldData(v => !v)} />
+        </SettingsRow>
       </SettingsCard>
 
       {/* ── Improvement 25: About / Credits ────────────────── */}

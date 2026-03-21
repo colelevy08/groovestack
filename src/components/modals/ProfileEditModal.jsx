@@ -59,6 +59,15 @@ const SOCIAL_PLATFORMS = [
   { key: 'bandcamp', label: 'Bandcamp', placeholder: 'https://yourname.bandcamp.com', icon: '\uD83C\uDFB5' },
 ];
 
+// [Improvement 16] Profile template library
+const PROFILE_TEMPLATES = [
+  { name: 'Collector', bio: 'Passionate vinyl collector with a love for rare pressings and first editions.', favGenre: 'Rock', accentColor: '#10b981' },
+  { name: 'DJ', bio: 'Spinning records since day one. Always hunting for the perfect groove.', favGenre: 'Electronic', accentColor: '#6366f1' },
+  { name: 'Seller', bio: 'Curating quality vinyl at fair prices. Fast shipping and careful packaging.', favGenre: 'Jazz', accentColor: '#f59e0b' },
+  { name: 'Listener', bio: 'Music lover exploring new sounds through vinyl. Quality over quantity.', favGenre: 'Soul', accentColor: '#ec4899' },
+  { name: 'Archivist', bio: 'Preserving music history one record at a time. Specializing in rare finds.', favGenre: 'Classical', accentColor: '#8b5cf6' },
+];
+
 export default function ProfileEditModal({ open, onClose, profile, onSave, currentUser, onUsernameChange }) {
   const [username, setUsername] = useState(currentUser);
   const [usernameError, setUsernameError] = useState("");
@@ -100,6 +109,20 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
   // [Improvement 4] Account deletion confirmation
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+
+  // [Improvement 14] Profile analytics preview
+  const [showAnalytics, setShowAnalytics] = useState(false);
+
+  // [Improvement 15] A/B test profile variants
+  const [showAbTest, setShowAbTest] = useState(false);
+  const [variantA, setVariantA] = useState({ bio: '', displayName: '' });
+  const [variantB, setVariantB] = useState({ bio: '', displayName: '' });
+  const [activeVariant, setActiveVariant] = useState('A');
+
+  // [Improvement 17] Import profile from Discogs
+  const [showDiscogsImport, setShowDiscogsImport] = useState(false);
+  const [discogsUsername, setDiscogsUsername] = useState('');
+  const [discogsImporting, setDiscogsImporting] = useState(false);
 
   const headerInputRef = useRef(null);
   const avatarInputRef = useRef(null);
@@ -523,6 +546,208 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
                 </button>
               </label>
             </div>
+          </div>
+
+          {/* [Improvement 14] Profile Analytics Preview */}
+          <div className="border-t border-gs-border mt-4 pt-4 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="gs-label">PROFILE ANALYTICS</div>
+              <button
+                onClick={() => setShowAnalytics(a => !a)}
+                className="text-[10px] text-gs-dim hover:text-gs-muted bg-transparent border-none cursor-pointer font-semibold"
+              >
+                {showAnalytics ? 'Hide' : 'Show Preview'}
+              </button>
+            </div>
+            {showAnalytics && (
+              <div className="p-3 bg-[#0a0a0a] rounded-lg border border-gs-border space-y-3">
+                <div className="text-[11px] text-gs-muted mb-2">How your changes affect visibility:</div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-gs-dim">Profile completeness</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 h-2 bg-[#1a1a1a] rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                          style={{
+                            width: `${Math.min(100, [displayName, bio, location, favGenre, avatarUrl, headerUrl, Object.values(socialLinks).filter(Boolean).length > 0].filter(Boolean).length / 7 * 100)}%`
+                          }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-emerald-400 font-mono">
+                        {Math.round([displayName, bio, location, favGenre, avatarUrl, headerUrl, Object.values(socialLinks).filter(Boolean).length > 0].filter(Boolean).length / 7 * 100)}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-gs-dim">Search discoverability</span>
+                    <span className={`text-[10px] font-semibold ${bio && bio.length > 50 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {bio && bio.length > 50 ? 'High' : bio ? 'Medium' : 'Low'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-gs-dim">Trust signals</span>
+                    <span className={`text-[10px] font-semibold ${avatarUrl ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {avatarUrl ? 'Strong' : 'Needs avatar'}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-[9px] text-gs-faint mt-2">Complete profiles get up to 3x more views and offers.</div>
+              </div>
+            )}
+          </div>
+
+          {/* [Improvement 15] A/B Test Profile Variants */}
+          <div className="border-t border-gs-border mt-4 pt-4 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="gs-label">A/B TEST VARIANTS</div>
+              <button
+                onClick={() => {
+                  setShowAbTest(a => !a);
+                  if (!showAbTest) {
+                    setVariantA({ bio: bio || '', displayName: displayName || '' });
+                    setVariantB({ bio: bio || '', displayName: displayName || '' });
+                  }
+                }}
+                className="text-[10px] text-gs-dim hover:text-gs-muted bg-transparent border-none cursor-pointer font-semibold"
+              >
+                {showAbTest ? 'Close' : 'Set Up Test'}
+              </button>
+            </div>
+            {showAbTest && (
+              <div className="p-3 bg-[#0a0a0a] rounded-lg border border-gs-border space-y-3">
+                <div className="text-[11px] text-gs-muted mb-2">Create two profile variants to test which performs better:</div>
+                <div className="flex gap-1 mb-3">
+                  <button
+                    onClick={() => setActiveVariant('A')}
+                    className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer border-none transition-colors ${activeVariant === 'A' ? 'bg-gs-accent text-black' : 'bg-[#1a1a1a] text-gs-dim'}`}
+                  >
+                    Variant A
+                  </button>
+                  <button
+                    onClick={() => setActiveVariant('B')}
+                    className={`flex-1 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer border-none transition-colors ${activeVariant === 'B' ? 'bg-purple-500 text-white' : 'bg-[#1a1a1a] text-gs-dim'}`}
+                  >
+                    Variant B
+                  </button>
+                </div>
+                {activeVariant === 'A' ? (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={variantA.displayName}
+                      onChange={e => setVariantA(v => ({ ...v, displayName: e.target.value }))}
+                      placeholder="Display name variant A"
+                      className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-neutral-100 text-[12px] outline-none placeholder:text-gs-faint focus:border-gs-accent/40 transition-colors"
+                    />
+                    <textarea
+                      value={variantA.bio}
+                      onChange={e => setVariantA(v => ({ ...v, bio: e.target.value }))}
+                      placeholder="Bio variant A"
+                      rows={2}
+                      className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-neutral-100 text-[12px] outline-none placeholder:text-gs-faint focus:border-gs-accent/40 transition-colors resize-y font-sans"
+                    />
+                    <button
+                      onClick={() => { setDisplayName(variantA.displayName); setBio(variantA.bio); }}
+                      className="w-full py-1.5 bg-gs-accent/15 border border-gs-accent/30 rounded-lg text-gs-accent text-[11px] font-bold cursor-pointer hover:bg-gs-accent/25 transition-colors"
+                    >
+                      Apply Variant A
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={variantB.displayName}
+                      onChange={e => setVariantB(v => ({ ...v, displayName: e.target.value }))}
+                      placeholder="Display name variant B"
+                      className="w-full bg-[#111] border border-purple-500/20 rounded-lg px-3 py-2 text-neutral-100 text-[12px] outline-none placeholder:text-gs-faint focus:border-purple-500/40 transition-colors"
+                    />
+                    <textarea
+                      value={variantB.bio}
+                      onChange={e => setVariantB(v => ({ ...v, bio: e.target.value }))}
+                      placeholder="Bio variant B"
+                      rows={2}
+                      className="w-full bg-[#111] border border-purple-500/20 rounded-lg px-3 py-2 text-neutral-100 text-[12px] outline-none placeholder:text-gs-faint focus:border-purple-500/40 transition-colors resize-y font-sans"
+                    />
+                    <button
+                      onClick={() => { setDisplayName(variantB.displayName); setBio(variantB.bio); }}
+                      className="w-full py-1.5 bg-purple-500/15 border border-purple-500/30 rounded-lg text-purple-400 text-[11px] font-bold cursor-pointer hover:bg-purple-500/25 transition-colors"
+                    >
+                      Apply Variant B
+                    </button>
+                  </div>
+                )}
+                <div className="text-[9px] text-gs-faint">Test different bios and names to see which gets more engagement. Stats coming soon.</div>
+              </div>
+            )}
+          </div>
+
+          {/* [Improvement 16] Profile Template Library */}
+          <div className="border-t border-gs-border mt-4 pt-4 mb-4">
+            <div className="gs-label mb-3">PROFILE TEMPLATES</div>
+            <div className="flex flex-wrap gap-1.5">
+              {PROFILE_TEMPLATES.map(t => (
+                <button
+                  key={t.name}
+                  onClick={() => {
+                    setBio(t.bio);
+                    setFavGenre(t.favGenre);
+                    setAccentColor(t.accentColor);
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg border border-gs-border-hover bg-[#111] text-[11px] text-gs-muted font-semibold cursor-pointer hover:border-gs-accent/40 transition-colors flex items-center gap-1.5"
+                >
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: t.accentColor }} />
+                  {t.name}
+                </button>
+              ))}
+            </div>
+            <div className="text-[9px] text-gs-faint mt-1.5">Apply a template to quickly set up your bio, genre, and accent color.</div>
+          </div>
+
+          {/* [Improvement 17] Import Profile from Discogs */}
+          <div className="border-t border-gs-border mt-4 pt-4 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="gs-label">IMPORT FROM DISCOGS</div>
+              <button
+                onClick={() => setShowDiscogsImport(d => !d)}
+                className="text-[10px] text-gs-dim hover:text-gs-muted bg-transparent border-none cursor-pointer font-semibold"
+              >
+                {showDiscogsImport ? 'Cancel' : 'Import'}
+              </button>
+            </div>
+            {showDiscogsImport && (
+              <div className="p-3 bg-[#0a0a0a] rounded-lg border border-gs-border">
+                <div className="text-[11px] text-gs-muted mb-2">Enter your Discogs username to import your profile info:</div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={discogsUsername}
+                    onChange={e => setDiscogsUsername(e.target.value)}
+                    placeholder="Discogs username"
+                    className="flex-1 bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-neutral-100 text-[12px] outline-none placeholder:text-gs-faint focus:border-gs-accent/40 transition-colors"
+                  />
+                  <button
+                    onClick={async () => {
+                      if (!discogsUsername.trim()) return;
+                      setDiscogsImporting(true);
+                      // Simulate Discogs profile fetch
+                      await new Promise(r => setTimeout(r, 1200));
+                      setBio(`Vinyl collector and music enthusiast. Find me on Discogs as ${discogsUsername.trim()}.`);
+                      setSocialLinks(prev => ({ ...prev, discogs: `https://www.discogs.com/user/${discogsUsername.trim()}` }));
+                      setDiscogsImporting(false);
+                      setShowDiscogsImport(false);
+                      setDiscogsUsername('');
+                    }}
+                    disabled={discogsImporting || !discogsUsername.trim()}
+                    className="px-4 py-2 rounded-lg border-none text-white text-[12px] font-bold cursor-pointer bg-gradient-to-br from-gs-accent to-gs-indigo disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {discogsImporting ? 'Importing...' : 'Import'}
+                  </button>
+                </div>
+                <div className="text-[9px] text-gs-faint mt-2">We will import your bio and link your Discogs profile.</div>
+              </div>
+            )}
           </div>
 
           {/* ── Shipping Address ──────────────────────────────────────────── */}

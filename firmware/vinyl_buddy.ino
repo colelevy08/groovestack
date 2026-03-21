@@ -43,6 +43,16 @@
 #include <esp_system.h>
 #include <ArduinoJson.h>
 #include <math.h>
+#include <BLEDevice.h>            // #16: Bluetooth Low Energy
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+#include <SD.h>                   // #17: SD Card Logging
+#include <SPI.h>
+#include <Wire.h>                 // #18: OLED Display (SSD1306)
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <esp_task_wdt.h>         // #22: Watchdog Timer
 
 /* ============================================================================
  * SECTION 1: Constants and Pin Definitions
@@ -119,6 +129,57 @@
 #define CONFIG_AP_SSID        "VinylBuddy-Setup"
 #define CONFIG_AP_PASS        "groovestack"
 #define WEB_SERVER_PORT       80
+
+// --- BLE (#16 Bluetooth Low Energy) ---
+#define BLE_SERVICE_UUID      "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
+#define BLE_CHAR_STATUS_UUID  "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+#define BLE_CHAR_RESULT_UUID  "beb5483e-36e1-4688-b7f5-ea07361b26a9"
+#define BLE_CHAR_CMD_UUID     "beb5483e-36e1-4688-b7f5-ea07361b26aa"
+#define BLE_DEVICE_NAME       "VinylBuddy"
+
+// --- SD Card Logging (#17) ---
+#define SD_CS_PIN             5
+#define LOG_FILE_PATH         "/vinylbuddy_log.csv"
+#define MAX_LOG_FILE_SIZE     (10 * 1024 * 1024)  // 10MB max log file
+
+// --- OLED Display (#18 SSD1306) ---
+#define OLED_WIDTH            128
+#define OLED_HEIGHT           64
+#define OLED_RESET            -1
+#define OLED_I2C_ADDR         0x3C
+
+// --- Multiple Microphone Support (#19) ---
+#define I2S_MIC2_SCK_PIN      14
+#define I2S_MIC2_WS_PIN       12
+#define I2S_MIC2_SD_PIN       27
+#define I2S_PORT_2            I2S_NUM_1
+#define MAX_MICROPHONES       2
+
+// --- Audio Gain Auto-Calibration (#20) ---
+#define AUTOGAIN_TARGET_RMS     3000
+#define AUTOGAIN_TOLERANCE      500
+#define AUTOGAIN_MIN            0.2f
+#define AUTOGAIN_MAX            8.0f
+#define AUTOGAIN_INTERVAL_MS    10000   // Re-check every 10 seconds
+
+// --- Power Management (#21) ---
+#define POWER_MODE_FULL         0
+#define POWER_MODE_ECO          1
+#define POWER_MODE_SLEEP        2
+#define ECO_CPU_FREQ_MHZ        80      // Reduced CPU frequency
+#define FULL_CPU_FREQ_MHZ       240     // Full CPU frequency
+#define LOW_BATTERY_THRESHOLD   15      // Percent
+
+// --- Watchdog Timer (#22) ---
+#define WDT_TIMEOUT_S           30      // Watchdog timeout in seconds
+
+// --- Error Recovery (#23) ---
+#define MAX_CONSECUTIVE_ERRORS  5
+#define ERROR_COOLDOWN_MS       5000
+#define MAX_ERROR_LOG_SIZE      20
+
+// --- Performance Profiling (#24) ---
+#define PERF_HISTORY_SIZE       60      // 60 samples for rolling average
 
 /* ============================================================================
  * SECTION 2: Data Structures
@@ -237,6 +298,62 @@ float temperatureC = 0.0f;
 // --- Uptime (#20) ---
 unsigned long bootTime = 0;
 
+// --- BLE (#16) ---
+BLEServer* pBLEServer = NULL;
+BLECharacteristic* pStatusCharacteristic = NULL;
+BLECharacteristic* pResultCharacteristic = NULL;
+BLECharacteristic* pCommandCharacteristic = NULL;
+bool bleConnected = false;
+bool bleEnabled = false;
+
+// --- SD Card Logging (#17) ---
+bool sdCardAvailable = false;
+unsigned long sdLogEntries = 0;
+
+// --- OLED Display (#18) ---
+Adafruit_SSD1306 oledDisplay(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
+bool oledAvailable = false;
+unsigned long lastOledUpdate = 0;
+
+// --- Multiple Microphones (#19) ---
+int activeMicCount = 1;
+bool mic2Available = false;
+int16_t audioBuffer2[AUDIO_BUFFER_SIZE];
+volatile uint32_t audioWriteIndex2 = 0;
+
+// --- Audio Gain Auto-Calibration (#20) ---
+unsigned long lastAutoGainCheck = 0;
+bool autoGainEnabled = true;
+
+// --- Power Management (#21) ---
+int currentPowerMode = POWER_MODE_FULL;
+
+// --- Error Recovery (#23) ---
+int consecutiveErrors = 0;
+unsigned long lastErrorTime = 0;
+struct ErrorLogEntry {
+  unsigned long timestamp;
+  char module[16];
+  char message[64];
+};
+ErrorLogEntry errorLog[MAX_ERROR_LOG_SIZE];
+int errorLogIndex = 0;
+int errorLogCount = 0;
+
+// --- Performance Profiling (#24) ---
+struct PerfMetrics {
+  unsigned long loopTimeUs;
+  unsigned long audioReadTimeUs;
+  unsigned long fftTimeUs;
+  unsigned long networkTimeUs;
+  uint32_t freeHeap;
+  int wifiRssi;
+};
+PerfMetrics perfHistory[PERF_HISTORY_SIZE];
+int perfIndex = 0;
+unsigned long lastPerfSample = 0;
+unsigned long loopStartTime = 0;
+
 /* ============================================================================
  * SECTION 4: Forward Declarations
  * ============================================================================ */
@@ -278,6 +395,24 @@ void enterDeepSleep();
 void serialDebug(const char* tag, const char* msg);
 void serialDebugf(const char* tag, const char* fmt, ...);
 String getDeviceInfoJSON();
+void initBLE();
+void updateBLEStatus();
+void initSDCard();
+void logToSD(const char* tag, const char* message);
+void initOLED();
+void updateOLED();
+void initSecondMicrophone();
+void readAudioSamplesMic2();
+void autoCallibrateGain();
+void setPowerMode(int mode);
+void checkPowerManagement();
+void initWatchdog();
+void feedWatchdog();
+void logError(const char* module, const char* message);
+void attemptErrorRecovery();
+void recordPerfSample();
+void printPerfReport();
+bool validateConfig();
 
 /* ============================================================================
  * SECTION 5: (#19) Serial Debug Logging
@@ -1491,7 +1626,568 @@ void setAudioGain(float gain) {
 }
 
 /* ============================================================================
- * SECTION 28: setup() - Main Initialization
+ * SECTION 28: (#16) Bluetooth Low Energy Support
+ * ============================================================================ */
+
+class BLEServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer* server) {
+    bleConnected = true;
+    serialDebug("BLE", "Client connected");
+    logToSD("BLE", "Client connected");
+  }
+
+  void onDisconnect(BLEServer* server) {
+    bleConnected = false;
+    serialDebug("BLE", "Client disconnected");
+    server->startAdvertising();
+  }
+};
+
+class BLECommandCallback : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* pCharacteristic) {
+    std::string value = pCharacteristic->getValue();
+    if (value.length() > 0) {
+      serialDebugf("BLE", "Command received: %s", value.c_str());
+      if (value == "identify") {
+        if (deviceState == STATE_LISTENING || deviceState == STATE_IDLE) {
+          lastActivityTime = millis();
+          startRecording();
+        }
+      } else if (value == "status") {
+        updateBLEStatus();
+      } else if (value == "gain_up") {
+        setAudioGain(currentAudioGain + 0.5f);
+      } else if (value == "gain_down") {
+        setAudioGain(currentAudioGain - 0.5f);
+      }
+    }
+  }
+};
+
+void initBLE() {
+  serialDebug("BLE", "Initializing Bluetooth Low Energy");
+
+  BLEDevice::init(BLE_DEVICE_NAME);
+  pBLEServer = BLEDevice::createServer();
+  pBLEServer->setCallbacks(new BLEServerCallbacks());
+
+  BLEService* pService = pBLEServer->createService(BLE_SERVICE_UUID);
+
+  // Status characteristic (notify)
+  pStatusCharacteristic = pService->createCharacteristic(
+    BLE_CHAR_STATUS_UUID,
+    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
+  );
+  pStatusCharacteristic->addDescriptor(new BLE2902());
+
+  // Result characteristic (notify)
+  pResultCharacteristic = pService->createCharacteristic(
+    BLE_CHAR_RESULT_UUID,
+    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
+  );
+  pResultCharacteristic->addDescriptor(new BLE2902());
+
+  // Command characteristic (write)
+  pCommandCharacteristic = pService->createCharacteristic(
+    BLE_CHAR_CMD_UUID,
+    BLECharacteristic::PROPERTY_WRITE
+  );
+  pCommandCharacteristic->setCallbacks(new BLECommandCallback());
+
+  pService->start();
+
+  BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
+  pAdvertising->addServiceUUID(BLE_SERVICE_UUID);
+  pAdvertising->setScanResponse(true);
+  pAdvertising->setMinPreferred(0x06);
+  pAdvertising->start();
+
+  bleEnabled = true;
+  serialDebug("BLE", "BLE initialized and advertising");
+}
+
+void updateBLEStatus() {
+  if (!bleEnabled || !bleConnected) return;
+
+  JsonDocument doc;
+  doc["state"] = (int)deviceState;
+  doc["battery"] = batteryPercent;
+  doc["wifi"] = wifiConnected;
+  doc["gain"] = currentAudioGain;
+  doc["temp"] = temperatureC;
+
+  String output;
+  serializeJson(doc, output);
+  pStatusCharacteristic->setValue(output.c_str());
+  pStatusCharacteristic->notify();
+}
+
+/* ============================================================================
+ * SECTION 29: (#17) SD Card Logging
+ * ============================================================================ */
+
+void initSDCard() {
+  serialDebug("SD", "Initializing SD card");
+
+  if (!SD.begin(SD_CS_PIN)) {
+    serialDebug("SD", "SD card not found or initialization failed");
+    sdCardAvailable = false;
+    return;
+  }
+
+  uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+  serialDebugf("SD", "SD card initialized: %lluMB", cardSize);
+  sdCardAvailable = true;
+
+  // Create log file with header if it doesn't exist
+  if (!SD.exists(LOG_FILE_PATH)) {
+    File logFile = SD.open(LOG_FILE_PATH, FILE_WRITE);
+    if (logFile) {
+      logFile.println("timestamp_ms,tag,message");
+      logFile.close();
+      serialDebug("SD", "Created new log file with header");
+    }
+  }
+
+  // Check log file size and rotate if needed
+  File logFile = SD.open(LOG_FILE_PATH, FILE_READ);
+  if (logFile) {
+    if (logFile.size() > MAX_LOG_FILE_SIZE) {
+      logFile.close();
+      SD.remove("/vinylbuddy_log_old.csv");
+      SD.rename(LOG_FILE_PATH, "/vinylbuddy_log_old.csv");
+      File newLog = SD.open(LOG_FILE_PATH, FILE_WRITE);
+      if (newLog) {
+        newLog.println("timestamp_ms,tag,message");
+        newLog.close();
+      }
+      serialDebug("SD", "Log file rotated due to size limit");
+    } else {
+      logFile.close();
+    }
+  }
+}
+
+void logToSD(const char* tag, const char* message) {
+  if (!sdCardAvailable) return;
+
+  File logFile = SD.open(LOG_FILE_PATH, FILE_APPEND);
+  if (logFile) {
+    logFile.printf("%lu,%s,%s\n", millis(), tag, message);
+    logFile.close();
+    sdLogEntries++;
+  }
+}
+
+/* ============================================================================
+ * SECTION 30: (#18) OLED Display Support (SSD1306)
+ * ============================================================================ */
+
+void initOLED() {
+  serialDebug("OLED", "Initializing SSD1306 OLED display");
+
+  Wire.begin();
+  if (!oledDisplay.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDR)) {
+    serialDebug("OLED", "OLED display not found");
+    oledAvailable = false;
+    return;
+  }
+
+  oledAvailable = true;
+  oledDisplay.clearDisplay();
+  oledDisplay.setTextSize(1);
+  oledDisplay.setTextColor(SSD1306_WHITE);
+  oledDisplay.setCursor(0, 0);
+  oledDisplay.println("Vinyl Buddy");
+  oledDisplay.printf("FW: %s\n", FIRMWARE_VERSION);
+  oledDisplay.println("Initializing...");
+  oledDisplay.display();
+  serialDebug("OLED", "OLED display initialized");
+}
+
+void updateOLED() {
+  if (!oledAvailable) return;
+  if (millis() - lastOledUpdate < 1000) return;  // Update at most once per second
+  lastOledUpdate = millis();
+
+  oledDisplay.clearDisplay();
+  oledDisplay.setCursor(0, 0);
+  oledDisplay.setTextSize(1);
+
+  // Line 1: Status
+  const char* stateStr;
+  switch (deviceState) {
+    case STATE_LISTENING:    stateStr = "Listening";    break;
+    case STATE_RECORDING:    stateStr = "Recording";    break;
+    case STATE_IDENTIFYING:  stateStr = "Identifying";  break;
+    case STATE_CONNECTING:   stateStr = "Connecting";   break;
+    case STATE_CONFIG_AP:    stateStr = "Config AP";    break;
+    case STATE_PAIRING:      stateStr = "Pairing";      break;
+    case STATE_OTA_UPDATE:   stateStr = "OTA Update";   break;
+    default:                 stateStr = "Idle";          break;
+  }
+  oledDisplay.printf("State: %s\n", stateStr);
+
+  // Line 2: WiFi
+  if (wifiConnected) {
+    oledDisplay.printf("WiFi: %ddBm\n", getWiFiRSSI());
+  } else {
+    oledDisplay.println("WiFi: Disconnected");
+  }
+
+  // Line 3: Battery
+  oledDisplay.printf("Batt: %d%% (%.1fV)\n", batteryPercent, batteryVoltage);
+
+  // Line 4: Temperature
+  oledDisplay.printf("Temp: %.1fC\n", temperatureC);
+
+  // Line 5: Audio gain
+  oledDisplay.printf("Gain: %.1f  Mic: %d\n", currentAudioGain, activeMicCount);
+
+  // Line 6: BLE
+  oledDisplay.printf("BLE: %s\n", bleConnected ? "Connected" : (bleEnabled ? "Advertising" : "Off"));
+
+  // Line 7: Uptime
+  unsigned long upSec = (millis() - bootTime) / 1000;
+  oledDisplay.printf("Up: %luh %lum %lus\n", upSec / 3600, (upSec % 3600) / 60, upSec % 60);
+
+  // Line 8: Heap
+  oledDisplay.printf("Heap: %d bytes\n", ESP.getFreeHeap());
+
+  oledDisplay.display();
+}
+
+/* ============================================================================
+ * SECTION 31: (#19) Multiple Microphone Support
+ * ============================================================================ */
+
+void initSecondMicrophone() {
+  serialDebug("MIC2", "Initializing secondary INMP441 microphone on I2S_NUM_1");
+
+  const i2s_config_t i2s_config = {
+    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
+    .sample_rate = SAMPLE_RATE,
+    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+    .channel_format = CHANNEL_FORMAT,
+    .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+    .dma_buf_count = DMA_BUF_COUNT,
+    .dma_buf_len = DMA_BUF_LEN,
+    .use_apll = false,
+    .tx_desc_auto_clear = false,
+    .fixed_mclk = 0
+  };
+
+  const i2s_pin_config_t pin_config = {
+    .bck_io_num = I2S_MIC2_SCK_PIN,
+    .ws_io_num = I2S_MIC2_WS_PIN,
+    .data_out_num = I2S_PIN_NO_CHANGE,
+    .data_in_num = I2S_MIC2_SD_PIN
+  };
+
+  esp_err_t err = i2s_driver_install(I2S_PORT_2, &i2s_config, 0, NULL);
+  if (err != ESP_OK) {
+    serialDebugf("MIC2", "Secondary mic driver install failed: %d (mic not connected?)", err);
+    mic2Available = false;
+    return;
+  }
+
+  err = i2s_set_pin(I2S_PORT_2, &pin_config);
+  if (err != ESP_OK) {
+    serialDebugf("MIC2", "Secondary mic pin config failed: %d", err);
+    i2s_driver_uninstall(I2S_PORT_2);
+    mic2Available = false;
+    return;
+  }
+
+  i2s_zero_dma_buffer(I2S_PORT_2);
+  delay(50);
+
+  mic2Available = true;
+  activeMicCount = 2;
+  serialDebug("MIC2", "Secondary microphone initialized");
+}
+
+void readAudioSamplesMic2() {
+  if (!mic2Available) return;
+
+  int16_t tempBuffer[DMA_BUF_LEN];
+  size_t bytesRead = 0;
+
+  esp_err_t err = i2s_read(I2S_PORT_2, tempBuffer, sizeof(tempBuffer), &bytesRead, 10);
+  if (err != ESP_OK || bytesRead == 0) return;
+
+  int samplesRead = bytesRead / sizeof(int16_t);
+  for (int i = 0; i < samplesRead; i++) {
+    float amplified = tempBuffer[i] * currentAudioGain;
+    amplified = constrain(amplified, -32768, 32767);
+    audioBuffer2[audioWriteIndex2] = (int16_t)amplified;
+    audioWriteIndex2 = (audioWriteIndex2 + 1) % AUDIO_BUFFER_SIZE;
+  }
+}
+
+/* ============================================================================
+ * SECTION 32: (#20) Audio Gain Auto-Calibration
+ * ============================================================================ */
+
+void autoCallibrateGain() {
+  if (!autoGainEnabled) return;
+  if (millis() - lastAutoGainCheck < AUTOGAIN_INTERVAL_MS) return;
+  if (deviceState != STATE_LISTENING) return;  // Only calibrate when idle-listening
+  lastAutoGainCheck = millis();
+
+  // Calculate RMS of recent audio samples
+  uint32_t sumSquares = 0;
+  int sampleCount = min((uint32_t)4096, (uint32_t)AUDIO_BUFFER_SIZE);
+  uint32_t readIdx = (audioWriteIndex + AUDIO_BUFFER_SIZE - sampleCount) % AUDIO_BUFFER_SIZE;
+
+  for (int i = 0; i < sampleCount; i++) {
+    int32_t sample = audioBuffer[(readIdx + i) % AUDIO_BUFFER_SIZE];
+    sumSquares += (sample * sample) / sampleCount;  // Divide early to prevent overflow
+  }
+  float rms = sqrtf((float)sumSquares);
+
+  if (rms < 10) return;  // No meaningful audio, skip calibration
+
+  // Adjust gain towards target RMS
+  float targetRatio = (float)AUTOGAIN_TARGET_RMS / rms;
+  float newGain = currentAudioGain * (0.9f + 0.1f * targetRatio);  // Smooth adjustment
+  newGain = constrain(newGain, AUTOGAIN_MIN, AUTOGAIN_MAX);
+
+  if (fabsf(newGain - currentAudioGain) > 0.05f) {
+    serialDebugf("AUTOGAIN", "RMS: %.0f, adjusting gain: %.2f -> %.2f", rms, currentAudioGain, newGain);
+    setAudioGain(newGain);
+    logToSD("AUTOGAIN", "Gain auto-adjusted");
+  }
+}
+
+/* ============================================================================
+ * SECTION 33: (#21) Power Management Optimization
+ * ============================================================================ */
+
+void setPowerMode(int mode) {
+  if (mode == currentPowerMode) return;
+
+  switch (mode) {
+    case POWER_MODE_FULL:
+      setCpuFrequencyMhz(FULL_CPU_FREQ_MHZ);
+      if (bleEnabled && !BLEDevice::getInitialized()) initBLE();
+      serialDebug("POWER", "Switched to FULL power mode (240MHz)");
+      break;
+
+    case POWER_MODE_ECO:
+      setCpuFrequencyMhz(ECO_CPU_FREQ_MHZ);
+      serialDebug("POWER", "Switched to ECO power mode (80MHz)");
+      logToSD("POWER", "ECO mode activated");
+      break;
+
+    case POWER_MODE_SLEEP:
+      serialDebug("POWER", "Preparing for SLEEP power mode");
+      logToSD("POWER", "Entering deep sleep");
+      enterDeepSleep();
+      return;  // Won't reach here
+  }
+
+  currentPowerMode = mode;
+}
+
+void checkPowerManagement() {
+  // Auto-switch to ECO mode on low battery
+  if (batteryPercent <= LOW_BATTERY_THRESHOLD && currentPowerMode == POWER_MODE_FULL) {
+    serialDebug("POWER", "Low battery detected, switching to ECO mode");
+    setPowerMode(POWER_MODE_ECO);
+  }
+
+  // Switch back to full when charging detected (voltage rising above threshold)
+  if (batteryPercent > LOW_BATTERY_THRESHOLD + 10 && currentPowerMode == POWER_MODE_ECO) {
+    serialDebug("POWER", "Battery recovered, switching to FULL mode");
+    setPowerMode(POWER_MODE_FULL);
+  }
+
+  // Critical battery — force sleep
+  if (batteryPercent <= 5 && batteryVoltage > 0.5f) {
+    serialDebug("POWER", "Critical battery level, forcing deep sleep");
+    setPowerMode(POWER_MODE_SLEEP);
+  }
+}
+
+/* ============================================================================
+ * SECTION 34: (#22) Watchdog Timer
+ * ============================================================================ */
+
+void initWatchdog() {
+  serialDebugf("WDT", "Initializing watchdog timer (%ds timeout)", WDT_TIMEOUT_S);
+  esp_task_wdt_init(WDT_TIMEOUT_S, true);  // true = panic on timeout (triggers reset)
+  esp_task_wdt_add(NULL);  // Add current task to watchdog
+  serialDebug("WDT", "Watchdog timer initialized");
+}
+
+void feedWatchdog() {
+  esp_task_wdt_reset();
+}
+
+/* ============================================================================
+ * SECTION 35: (#23) Error Recovery System
+ * ============================================================================ */
+
+void logError(const char* module, const char* message) {
+  serialDebugf("ERROR", "[%s] %s", module, message);
+  logToSD("ERROR", message);
+
+  // Store in circular error log
+  ErrorLogEntry& entry = errorLog[errorLogIndex];
+  entry.timestamp = millis();
+  strlcpy(entry.module, module, sizeof(entry.module));
+  strlcpy(entry.message, message, sizeof(entry.message));
+  errorLogIndex = (errorLogIndex + 1) % MAX_ERROR_LOG_SIZE;
+  if (errorLogCount < MAX_ERROR_LOG_SIZE) errorLogCount++;
+
+  consecutiveErrors++;
+  lastErrorTime = millis();
+
+  if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+    serialDebugf("ERROR", "Max consecutive errors reached (%d), attempting recovery", consecutiveErrors);
+    attemptErrorRecovery();
+  }
+}
+
+void attemptErrorRecovery() {
+  serialDebug("RECOVERY", "Starting error recovery sequence");
+  logToSD("RECOVERY", "Error recovery initiated");
+
+  // Step 1: Reset audio subsystem
+  serialDebug("RECOVERY", "Resetting I2S audio");
+  i2s_driver_uninstall(I2S_PORT);
+  delay(100);
+  initI2SMicrophone();
+
+  // Step 2: Reset WiFi if disconnected
+  if (!wifiConnected) {
+    serialDebug("RECOVERY", "Reconnecting WiFi");
+    WiFi.disconnect(true);
+    delay(500);
+    connectWiFi();
+  }
+
+  // Step 3: Reset state machine
+  deviceState = STATE_LISTENING;
+  setLedState(LED_LISTENING);
+  isRecording = false;
+  retryCount = 0;
+
+  // Step 4: Recalibrate audio
+  if (wifiConnected) {
+    calibrateNoiseFloor();
+  }
+
+  consecutiveErrors = 0;
+  serialDebug("RECOVERY", "Error recovery complete");
+  logToSD("RECOVERY", "Recovery completed successfully");
+}
+
+/* ============================================================================
+ * SECTION 36: (#24) Performance Profiling
+ * ============================================================================ */
+
+void recordPerfSample() {
+  if (millis() - lastPerfSample < 1000) return;  // Sample once per second
+  lastPerfSample = millis();
+
+  PerfMetrics& m = perfHistory[perfIndex];
+  m.loopTimeUs = micros() - loopStartTime;
+  m.freeHeap = ESP.getFreeHeap();
+  m.wifiRssi = wifiConnected ? getWiFiRSSI() : 0;
+  m.audioReadTimeUs = 0;   // Set by instrumented audio read
+  m.fftTimeUs = 0;         // Set by instrumented FFT
+  m.networkTimeUs = 0;     // Set by instrumented network calls
+
+  perfIndex = (perfIndex + 1) % PERF_HISTORY_SIZE;
+}
+
+void printPerfReport() {
+  unsigned long avgLoopTime = 0;
+  uint32_t minHeap = UINT32_MAX;
+  uint32_t maxHeap = 0;
+  int validSamples = 0;
+
+  for (int i = 0; i < PERF_HISTORY_SIZE; i++) {
+    if (perfHistory[i].freeHeap > 0) {
+      avgLoopTime += perfHistory[i].loopTimeUs;
+      if (perfHistory[i].freeHeap < minHeap) minHeap = perfHistory[i].freeHeap;
+      if (perfHistory[i].freeHeap > maxHeap) maxHeap = perfHistory[i].freeHeap;
+      validSamples++;
+    }
+  }
+
+  if (validSamples == 0) {
+    serialDebug("PERF", "No performance data collected yet");
+    return;
+  }
+
+  avgLoopTime /= validSamples;
+  serialDebug("PERF", "=== Performance Report ===");
+  serialDebugf("PERF", "Avg loop time: %lu us", avgLoopTime);
+  serialDebugf("PERF", "Heap - Min: %u, Max: %u, Current: %u", minHeap, maxHeap, ESP.getFreeHeap());
+  serialDebugf("PERF", "Errors logged: %d, Consecutive: %d", errorLogCount, consecutiveErrors);
+  serialDebugf("PERF", "Power mode: %s", currentPowerMode == POWER_MODE_FULL ? "FULL" : "ECO");
+  serialDebugf("PERF", "Active mics: %d, BLE: %s, SD: %s, OLED: %s",
+    activeMicCount,
+    bleEnabled ? "on" : "off",
+    sdCardAvailable ? "yes" : "no",
+    oledAvailable ? "yes" : "no");
+}
+
+/* ============================================================================
+ * SECTION 37: (#25) Configuration Validation
+ * ============================================================================ */
+
+bool validateConfig() {
+  bool valid = true;
+  serialDebug("CONFIG", "Validating device configuration...");
+
+  // Validate WiFi credentials
+  if (strlen(config.wifi_ssid_1) == 0) {
+    serialDebug("CONFIG", "WARNING: No primary WiFi SSID configured");
+    valid = false;
+  }
+
+  // Validate audio gain range
+  if (config.audio_gain < 0.1f || config.audio_gain > 10.0f) {
+    serialDebugf("CONFIG", "WARNING: Audio gain out of range (%.2f), resetting to default", config.audio_gain);
+    config.audio_gain = DEFAULT_AUDIO_GAIN;
+  }
+
+  // Validate silence threshold
+  if (config.silence_threshold < 50 || config.silence_threshold > 10000) {
+    serialDebugf("CONFIG", "WARNING: Silence threshold out of range (%d), resetting to default", config.silence_threshold);
+    config.silence_threshold = DEFAULT_SILENCE_THRESHOLD;
+  }
+
+  // Validate API key format (if paired)
+  if (config.paired) {
+    if (strlen(config.api_key) < 10) {
+      serialDebug("CONFIG", "WARNING: API key appears invalid");
+      valid = false;
+    }
+    if (strlen(config.device_id) < 10) {
+      serialDebug("CONFIG", "WARNING: Device ID appears invalid");
+      valid = false;
+    }
+  }
+
+  // Validate pair code format
+  if (strlen(config.pair_code) > 0 && strlen(config.pair_code) != 6) {
+    serialDebugf("CONFIG", "WARNING: Pair code has invalid length (%d), regenerating", strlen(config.pair_code));
+    generatePairCode();
+  }
+
+  serialDebugf("CONFIG", "Configuration validation %s", valid ? "passed" : "has warnings");
+  logToSD("CONFIG", valid ? "Validation passed" : "Validation has warnings");
+  return valid;
+}
+
+/* ============================================================================
+ * SECTION 38: setup() - Main Initialization
  * ============================================================================ */
 
 void setup() {
@@ -1522,10 +2218,18 @@ void setup() {
       break;
   }
 
+  // Initialize watchdog timer (#22)
+  initWatchdog();
+
   // Initialize peripherals
   initLEDs();           // #9: LED status indicators
   initButton();         // #10: Button handling
   loadConfig();         // #13: Load saved configuration
+  validateConfig();     // #25: Configuration validation
+
+  // Initialize optional hardware
+  initSDCard();         // #17: SD card logging
+  initOLED();           // #18: OLED display
 
   // Configure ADC for battery and temperature (#14, #24)
   analogReadResolution(12);
@@ -1535,6 +2239,12 @@ void setup() {
 
   // Initialize I2S microphone (#2, #3)
   initI2SMicrophone();
+
+  // Try secondary microphone (#19)
+  initSecondMicrophone();
+
+  // Initialize BLE (#16)
+  initBLE();
 
   // Connect to WiFi (#1, #23)
   connectWiFi();
@@ -1564,10 +2274,15 @@ void setup() {
 }
 
 /* ============================================================================
- * SECTION 29: loop() - Main Event Loop
+ * SECTION 39: loop() - Main Event Loop
  * ============================================================================ */
 
 void loop() {
+  loopStartTime = micros();  // #24: Performance profiling
+
+  // --- Watchdog (#22) ---
+  feedWatchdog();
+
   // --- Always-running tasks ---
   updateLED();          // #9: Animate LED state
   handleButton();       // #10, #30: Button press handling
@@ -1586,7 +2301,21 @@ void loop() {
 
   // --- Audio processing (#3, #4, #5, #6) ---
   readAudioSamples();       // Read I2S mic into circular buffer
+  readAudioSamplesMic2();   // #19: Read secondary mic
   autoRecordingCheck();     // Auto-trigger recording on audio detection
+
+  // --- Audio gain auto-calibration (#20) ---
+  autoCallibrateGain();
+
+  // --- OLED display update (#18) ---
+  updateOLED();
+
+  // --- BLE status update (#16) ---
+  static unsigned long lastBLEUpdate = 0;
+  if (bleConnected && millis() - lastBLEUpdate >= 2000) {
+    lastBLEUpdate = millis();
+    updateBLEStatus();
+  }
 
   // --- Periodic tasks (run less frequently) ---
   static unsigned long lastPeriodicCheck = 0;
@@ -1595,12 +2324,26 @@ void loop() {
 
     readBattery();          // #14: Battery monitoring
     readTemperature();      // #24: Temperature monitoring
+    checkPowerManagement(); // #21: Power management optimization
 
-    // #16: Log WiFi signal strength
+    // Log WiFi signal strength
     if (wifiConnected) {
-      serialDebugf("STATUS", "WiFi RSSI: %d dBm, Battery: %d%%, Temp: %.1fC, Heap: %d",
-        getWiFiRSSI(), batteryPercent, temperatureC, ESP.getFreeHeap());
+      serialDebugf("STATUS", "WiFi RSSI: %d dBm, Battery: %d%%, Temp: %.1fC, Heap: %d, PwrMode: %s",
+        getWiFiRSSI(), batteryPercent, temperatureC, ESP.getFreeHeap(),
+        currentPowerMode == POWER_MODE_FULL ? "FULL" : "ECO");
     }
+
+    // #23: Reset consecutive error count after cooldown
+    if (consecutiveErrors > 0 && millis() - lastErrorTime > ERROR_COOLDOWN_MS) {
+      consecutiveErrors = 0;
+    }
+  }
+
+  // --- Performance report (every 60 seconds) ---
+  static unsigned long lastPerfReport = 0;
+  if (millis() - lastPerfReport >= 60000) {
+    lastPerfReport = millis();
+    printPerfReport();
   }
 
   // --- Network tasks (only when connected) ---
@@ -1610,6 +2353,9 @@ void loop() {
 
   // --- Power management (#15) ---
   checkIdleTimeout();
+
+  // --- Performance profiling (#24) ---
+  recordPerfSample();
 
   // Small yield to prevent watchdog reset
   delay(1);
