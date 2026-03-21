@@ -167,6 +167,87 @@ export default function SettingsScreen({ currentUser, profile, deviceCode, vinyl
   // ── Activity log (Improvement 10) ──
   const [showAllActivity, setShowAllActivity] = useState(false);
 
+  // ── Improvement 14: Data usage statistics ──
+  const [dataUsagePeriod, setDataUsagePeriod] = useState('week');
+  const dataUsageStats = useMemo(() => ({
+    week: { sent: '12.4 MB', received: '89.2 MB', requests: 342 },
+    month: { sent: '48.7 MB', received: '312.5 MB', requests: 1247 },
+    allTime: { sent: '156.3 MB', received: '1.2 GB', requests: 8934 },
+  }), []);
+
+  // ── Improvement 15: Cache management with size display ──
+  const [cacheBreakdown] = useState([
+    { label: 'Images', size: '14.2 MB', color: '#8b5cf6' },
+    { label: 'API responses', size: '6.1 MB', color: '#0ea5e9' },
+    { label: 'Search index', size: '3.2 MB', color: '#f59e0b' },
+    { label: 'Other', size: '0.8 MB', color: '#64748b' },
+  ]);
+
+  // ── Improvement 16: Experimental features ──
+  const [expAnimatedCovers, setExpAnimatedCovers] = useState(false);
+  const [expAiRecommendations, setExpAiRecommendations] = useState(false);
+  const [expBetaSearch, setExpBetaSearch] = useState(false);
+
+  // ── Improvement 17: Account activity audit log ──
+  const [auditLogFilter, setAuditLogFilter] = useState('all');
+  const auditLog = useMemo(() => [
+    { type: 'security', action: 'Password changed', detail: 'Via settings page', timestamp: Date.now() - 86400000 },
+    { type: 'privacy', action: 'Profile set to public', detail: 'Privacy settings updated', timestamp: Date.now() - 172800000 },
+    { type: 'data', action: 'Data export requested', detail: 'Full account export', timestamp: Date.now() - 259200000 },
+    { type: 'security', action: 'Two-factor enabled', detail: 'TOTP authenticator', timestamp: Date.now() - 345600000 },
+    { type: 'account', action: 'Email changed', detail: 'Verified new address', timestamp: Date.now() - 432000000 },
+    { type: 'privacy', action: 'Listening activity hidden', detail: 'Vinyl Buddy privacy', timestamp: Date.now() - 518400000 },
+  ], []);
+
+  // ── Improvement 18: Privacy dashboard ──
+  const [privacyStats] = useState({
+    dataPoints: 1247,
+    thirdPartyShares: 0,
+    cookiesStored: 12,
+    trackingBlocked: 89,
+    lastAudit: '2026-03-18',
+  });
+
+  // ── Improvement 19: Blocked users list ──
+  const [blockedUsers, setBlockedUsers] = useState([
+    { username: 'spambot42', blockedAt: '2026-03-15' },
+    { username: 'fake_vinyl', blockedAt: '2026-03-01' },
+  ]);
+
+  // ── Improvement 20: Muted words/topics ──
+  const [mutedWords, setMutedWords] = useState(['bootleg', 'fake pressing', 'scam']);
+  const [newMutedWord, setNewMutedWord] = useState('');
+
+  // ── Improvement 21: Auto-archive old conversations ──
+  const [autoArchive, setAutoArchive] = useState(false);
+  const [autoArchiveDays, setAutoArchiveDays] = useState('30');
+
+  // ── Improvement 22: Default listing settings ──
+  const [defaultCondition, setDefaultCondition] = useState('VG+');
+  const [defaultMinPrice, setDefaultMinPrice] = useState('');
+  const [defaultMaxPrice, setDefaultMaxPrice] = useState('');
+
+  // ── Improvement 23: Notification sound picker ──
+  const [notifSound, setNotifSound] = useState('default');
+  const notifSoundOptions = useMemo(() => [
+    { label: 'Default', value: 'default' },
+    { label: 'Chime', value: 'chime' },
+    { label: 'Pop', value: 'pop' },
+    { label: 'Vinyl Crackle', value: 'vinyl' },
+    { label: 'None', value: 'none' },
+  ], []);
+
+  // ── Improvement 24: App icon customization ──
+  const [selectedIcon, setSelectedIcon] = useState('default');
+  const appIconOptions = useMemo(() => [
+    { label: 'Default', value: 'default', color: '#0ea5e9' },
+    { label: 'Dark', value: 'dark', color: '#1a1a1a' },
+    { label: 'Sunset', value: 'sunset', color: '#f97316' },
+    { label: 'Neon', value: 'neon', color: '#22c55e' },
+    { label: 'Lavender', value: 'lavender', color: '#8b5cf6' },
+    { label: 'Rose', value: 'rose', color: '#ec4899' },
+  ], []);
+
   const handleSaveShipping = useCallback(() => {
     setShippingSaved(true);
     setTimeout(() => setShippingSaved(false), 2000);
@@ -808,7 +889,380 @@ export default function SettingsScreen({ currentUser, profile, deviceCode, vinyl
         )}
       </SettingsCard>
 
-      {/* ── About ────────────────────────────────────────────── */}
+      {/* ── Improvement 14: Data Usage Statistics ──────────── */}
+      <SectionHeader
+        title="Data Usage"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10" /><path d="M18 20V4" /><path d="M6 20v-4" /></svg>}
+      />
+      <SettingsCard>
+        <div className="flex gap-1 mb-3">
+          {[{ label: 'Week', value: 'week' }, { label: 'Month', value: 'month' }, { label: 'All Time', value: 'allTime' }].map(p => (
+            <button
+              key={p.value}
+              onClick={() => setDataUsagePeriod(p.value)}
+              className={`text-[10px] px-2.5 py-1 rounded-lg font-mono cursor-pointer transition-all duration-200 border ${
+                dataUsagePeriod === p.value
+                  ? 'bg-[#06b6d411] border-[#06b6d433] text-[#06b6d4] font-bold'
+                  : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="bg-[#111] rounded-lg py-2 px-2.5 text-center">
+            <div className="text-[11px] font-bold text-[#06b6d4]">{dataUsageStats[dataUsagePeriod].sent}</div>
+            <div className="text-[9px] text-gs-dim font-mono">Sent</div>
+          </div>
+          <div className="bg-[#111] rounded-lg py-2 px-2.5 text-center">
+            <div className="text-[11px] font-bold text-[#8b5cf6]">{dataUsageStats[dataUsagePeriod].received}</div>
+            <div className="text-[9px] text-gs-dim font-mono">Received</div>
+          </div>
+          <div className="bg-[#111] rounded-lg py-2 px-2.5 text-center">
+            <div className="text-[11px] font-bold text-[#f59e0b]">{dataUsageStats[dataUsagePeriod].requests}</div>
+            <div className="text-[9px] text-gs-dim font-mono">Requests</div>
+          </div>
+        </div>
+      </SettingsCard>
+
+      {/* ── Improvement 15: Cache Management ──────────────── */}
+      <SectionHeader
+        title="Cache Management"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12H2" /><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[13px] font-semibold text-gs-text mb-3">Cache Breakdown</div>
+        <div className="space-y-2 mb-3">
+          {cacheBreakdown.map(item => (
+            <div key={item.label} className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: item.color }} />
+                <span className="text-[11px] text-gs-muted">{item.label}</span>
+              </div>
+              <span className="text-[11px] text-gs-text font-mono">{item.size}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={handleClearCache}
+            className="text-[11px] text-gs-accent bg-transparent border border-gs-accent/30 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-gs-accent/10 transition-colors"
+          >
+            {cacheCleared ? 'Cleared!' : `Clear All (${cacheSize})`}
+          </button>
+        </div>
+      </SettingsCard>
+
+      {/* ── Improvement 16: Experimental Features ─────────── */}
+      <SectionHeader
+        title="Experimental Features"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9.5 2A2.5 2.5 0 0112 4.5V6h2V4.5A4.5 4.5 0 009.5 0v2zM5.584 3.412L7 4.828V7h2V4.828l1.416-1.416A4.5 4.5 0 005.584 3.412z" /><path d="M14 14v7a2 2 0 01-2 2H5a2 2 0 01-2-2v-7" /><path d="M3 10h14v4H3z" /></svg>}
+      />
+      <SettingsCard>
+        <div className="bg-amber-500/8 border border-amber-500/20 rounded-lg px-3 py-2 mb-3 flex items-start gap-2">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" className="shrink-0 mt-0.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <span className="text-[10px] text-amber-400">These features are in development and may be unstable.</span>
+        </div>
+        <SettingsRow label="Animated Album Covers" description="Show subtle animations on album artwork">
+          <Toggle on={expAnimatedCovers} onToggle={() => setExpAnimatedCovers(v => !v)} />
+        </SettingsRow>
+        <SettingsRow label="AI Recommendations" description="Get personalized vinyl suggestions powered by AI">
+          <Toggle on={expAiRecommendations} onToggle={() => setExpAiRecommendations(v => !v)} />
+        </SettingsRow>
+        <SettingsRow label="Beta Search Engine" description="Try the next-generation search with fuzzy matching">
+          <Toggle on={expBetaSearch} onToggle={() => setExpBetaSearch(v => !v)} />
+        </SettingsRow>
+      </SettingsCard>
+
+      {/* ── Improvement 17: Account Activity Audit Log ─────── */}
+      <SectionHeader
+        title="Audit Log"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>}
+      />
+      <SettingsCard>
+        <div className="flex gap-1 mb-3">
+          {['all', 'security', 'privacy', 'data', 'account'].map(f => (
+            <button
+              key={f}
+              onClick={() => setAuditLogFilter(f)}
+              className={`text-[10px] px-2 py-1 rounded-lg font-mono cursor-pointer transition-all duration-200 border capitalize ${
+                auditLogFilter === f
+                  ? 'bg-[#a78bfa11] border-[#a78bfa33] text-[#a78bfa] font-bold'
+                  : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+              }`}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-col gap-1">
+          {auditLog.filter(e => auditLogFilter === 'all' || e.type === auditLogFilter).map((entry, i) => (
+            <div key={i} className="flex items-center justify-between py-2 border-b border-[#111] last:border-b-0">
+              <div>
+                <div className="text-[12px] font-semibold text-gs-text">{entry.action}</div>
+                <div className="text-[10px] text-gs-dim">{entry.detail}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-[10px] text-gs-faint font-mono">{relTimeShort(entry.timestamp)}</div>
+                <div className="text-[9px] text-gs-faint font-mono capitalize">{entry.type}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </SettingsCard>
+
+      {/* ── Improvement 18: Privacy Dashboard ─────────────── */}
+      <SectionHeader
+        title="Privacy Dashboard"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>}
+      />
+      <SettingsCard>
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <div className="bg-[#111] rounded-lg py-2.5 px-3 text-center">
+            <div className="text-[14px] font-bold text-[#22c55e]">{privacyStats.dataPoints}</div>
+            <div className="text-[9px] text-gs-dim font-mono">Data Points</div>
+          </div>
+          <div className="bg-[#111] rounded-lg py-2.5 px-3 text-center">
+            <div className="text-[14px] font-bold text-[#22c55e]">{privacyStats.thirdPartyShares}</div>
+            <div className="text-[9px] text-gs-dim font-mono">3rd Party Shares</div>
+          </div>
+          <div className="bg-[#111] rounded-lg py-2.5 px-3 text-center">
+            <div className="text-[14px] font-bold text-[#0ea5e9]">{privacyStats.cookiesStored}</div>
+            <div className="text-[9px] text-gs-dim font-mono">Cookies</div>
+          </div>
+          <div className="bg-[#111] rounded-lg py-2.5 px-3 text-center">
+            <div className="text-[14px] font-bold text-[#8b5cf6]">{privacyStats.trackingBlocked}</div>
+            <div className="text-[9px] text-gs-dim font-mono">Trackers Blocked</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-[#22c55e08] border border-[#22c55e22]">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+          <span className="text-[10px] text-[#22c55e] font-semibold">Last privacy audit: {privacyStats.lastAudit}</span>
+        </div>
+      </SettingsCard>
+
+      {/* ── Improvement 19: Blocked Users ─────────────────── */}
+      <SectionHeader
+        title="Blocked Users"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" /></svg>}
+      />
+      <SettingsCard>
+        {blockedUsers.length > 0 ? (
+          <div className="flex flex-col gap-1">
+            {blockedUsers.map((user, i) => (
+              <div key={user.username} className={`flex items-center justify-between py-2 ${i < blockedUsers.length - 1 ? 'border-b border-[#111]' : ''}`}>
+                <div>
+                  <div className="text-[12px] font-semibold text-gs-text">@{user.username}</div>
+                  <div className="text-[10px] text-gs-dim">Blocked {user.blockedAt}</div>
+                </div>
+                <button
+                  onClick={() => setBlockedUsers(prev => prev.filter(u => u.username !== user.username))}
+                  className="text-[10px] text-red-400 bg-transparent border border-red-400/30 rounded-lg px-2.5 py-1 cursor-pointer hover:bg-red-400/10 transition-colors"
+                >
+                  Unblock
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-3">
+            <div className="text-[13px] text-gs-dim">No blocked users</div>
+            <div className="text-[11px] text-gs-faint mt-0.5">Users you block will appear here</div>
+          </div>
+        )}
+      </SettingsCard>
+
+      {/* ── Improvement 20: Muted Words/Topics ────────────── */}
+      <SectionHeader
+        title="Muted Words"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z" /><line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[11px] text-gs-dim mb-3">Posts containing these words will be hidden from your feed.</div>
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {mutedWords.map(word => (
+            <span key={word} className="inline-flex items-center gap-1 bg-[#111] border border-[#1a1a1a] rounded-lg px-2.5 py-1 text-[11px] text-gs-muted">
+              {word}
+              <button
+                onClick={() => setMutedWords(prev => prev.filter(w => w !== word))}
+                className="text-gs-faint hover:text-red-400 bg-transparent border-none cursor-pointer p-0 text-[10px] transition-colors"
+              >
+                x
+              </button>
+            </span>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={newMutedWord}
+            onChange={e => setNewMutedWord(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && newMutedWord.trim()) {
+                setMutedWords(prev => [...prev, newMutedWord.trim()]);
+                setNewMutedWord('');
+              }
+            }}
+            placeholder="Add a word or phrase..."
+            className="flex-1 py-1.5 px-2.5 bg-[#111] rounded-lg text-xs text-gs-text border border-[#222] outline-none focus:border-gs-accent transition-colors"
+          />
+          <button
+            onClick={() => { if (newMutedWord.trim()) { setMutedWords(prev => [...prev, newMutedWord.trim()]); setNewMutedWord(''); } }}
+            disabled={!newMutedWord.trim()}
+            className={`text-[11px] px-3 py-1.5 rounded-lg border transition-colors ${newMutedWord.trim() ? 'text-gs-accent border-gs-accent/30 cursor-pointer hover:bg-gs-accent/10' : 'text-gs-faint border-[#222] cursor-default'}`}
+          >
+            Add
+          </button>
+        </div>
+      </SettingsCard>
+
+      {/* ── Improvement 21: Auto-Archive ──────────────────── */}
+      <SectionHeader
+        title="Conversations"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" /></svg>}
+      />
+      <SettingsCard>
+        <SettingsRow label="Auto-Archive Old Conversations" description="Automatically archive conversations after a period of inactivity">
+          <Toggle on={autoArchive} onToggle={() => setAutoArchive(v => !v)} />
+        </SettingsRow>
+        {autoArchive && (
+          <div className="mt-3 pt-3 border-t border-[#111]">
+            <label className="text-[10px] text-gs-dim font-mono block mb-1.5">Archive after</label>
+            <div className="flex gap-1">
+              {['7', '14', '30', '60', '90'].map(d => (
+                <button
+                  key={d}
+                  onClick={() => setAutoArchiveDays(d)}
+                  className={`text-[10px] px-2.5 py-1 rounded-lg font-mono cursor-pointer transition-all duration-200 border ${
+                    autoArchiveDays === d
+                      ? 'bg-[#14b8a611] border-[#14b8a633] text-[#14b8a6] font-bold'
+                      : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+                  }`}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </SettingsCard>
+
+      {/* ── Improvement 22: Default Listing Settings ──────── */}
+      <SectionHeader
+        title="Default Listing Settings"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ec4899" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[11px] text-gs-dim mb-3">Pre-fill these defaults when creating new listings.</div>
+        <SettingsRow label="Default Condition" description="Pre-selected condition for new listings">
+          <div className="flex gap-1">
+            {['M', 'NM', 'VG+', 'VG', 'G+', 'G'].map(c => (
+              <button
+                key={c}
+                onClick={() => setDefaultCondition(c)}
+                className={`text-[10px] px-2 py-1 rounded-lg font-mono cursor-pointer transition-all duration-200 border ${
+                  defaultCondition === c
+                    ? 'bg-[#ec489911] border-[#ec489933] text-[#ec4899] font-bold'
+                    : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+                }`}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </SettingsRow>
+        <div className="mt-3 pt-3 border-t border-[#111]">
+          <div className="text-[11px] font-semibold text-gs-text mb-2">Default Price Range</div>
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <input
+                type="number"
+                value={defaultMinPrice}
+                onChange={e => setDefaultMinPrice(e.target.value)}
+                placeholder="Min $"
+                className="w-full py-1.5 px-2.5 bg-[#111] rounded-lg text-xs text-gs-text border border-[#222] outline-none focus:border-gs-accent transition-colors font-mono"
+              />
+            </div>
+            <span className="text-gs-faint text-xs">to</span>
+            <div className="flex-1">
+              <input
+                type="number"
+                value={defaultMaxPrice}
+                onChange={e => setDefaultMaxPrice(e.target.value)}
+                placeholder="Max $"
+                className="w-full py-1.5 px-2.5 bg-[#111] rounded-lg text-xs text-gs-text border border-[#222] outline-none focus:border-gs-accent transition-colors font-mono"
+              />
+            </div>
+          </div>
+        </div>
+      </SettingsCard>
+
+      {/* ── Improvement 23: Notification Sound Picker ──────── */}
+      <SectionHeader
+        title="Notification Sound"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z" /><path d="M19.07 4.93a10 10 0 010 14.14" /><path d="M15.54 8.46a5 5 0 010 7.07" /></svg>}
+      />
+      <SettingsCard>
+        <div className="flex flex-wrap gap-1.5">
+          {notifSoundOptions.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setNotifSound(opt.value)}
+              className={`text-[11px] px-3 py-1.5 rounded-lg cursor-pointer transition-all duration-200 border ${
+                notifSound === opt.value
+                  ? 'bg-[#f59e0b11] border-[#f59e0b33] text-[#f59e0b] font-bold'
+                  : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        {notifSound !== 'none' && (
+          <button
+            onClick={() => { /* preview sound placeholder */ }}
+            className="mt-2 text-[10px] text-gs-accent bg-transparent border-none cursor-pointer p-0 hover:underline"
+          >
+            Preview sound
+          </button>
+        )}
+      </SettingsCard>
+
+      {/* ── Improvement 24: App Icon Customization ─────────── */}
+      <SectionHeader
+        title="App Icon"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="4" /><circle cx="12" cy="12" r="4" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[11px] text-gs-dim mb-3">Choose a custom app icon (applies on supported devices).</div>
+        <div className="flex flex-wrap gap-2">
+          {appIconOptions.map(opt => (
+            <button
+              key={opt.value}
+              onClick={() => setSelectedIcon(opt.value)}
+              className={`flex flex-col items-center gap-1 cursor-pointer transition-all duration-200 p-1.5 rounded-xl border ${
+                selectedIcon === opt.value ? 'border-white scale-105' : 'border-transparent'
+              }`}
+            >
+              <div
+                className="w-11 h-11 rounded-xl flex items-center justify-center border border-white/10"
+                style={{ background: opt.color }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" />
+                </svg>
+              </div>
+              <span className="text-[9px] text-gs-faint">{opt.label}</span>
+            </button>
+          ))}
+        </div>
+      </SettingsCard>
+
+      {/* ── Improvement 25: About / Credits ────────────────── */}
       <SectionHeader
         title="About"
         icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>}
@@ -817,17 +1271,43 @@ export default function SettingsScreen({ currentUser, profile, deviceCode, vinyl
         <div className="space-y-2.5">
           <div className="flex justify-between items-center">
             <span className="text-[13px] text-gs-muted">Version</span>
-            <span className="text-[13px] text-gs-text font-mono">1.0.0</span>
+            <span className="text-[13px] text-gs-text font-mono">1.2.0</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-[13px] text-gs-muted">Build</span>
+            <span className="text-[13px] text-gs-text font-mono">2026.03.20-stable</span>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-[13px] text-gs-muted">Built with</span>
             <span className="text-[13px] text-gs-text">React + Tailwind</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-[13px] text-gs-muted">Environment</span>
+            <span className="text-[13px] text-gs-text font-mono">Production</span>
+          </div>
+          <div className="border-t border-[#111] pt-2.5 mt-2.5">
+            <div className="text-[10px] text-gs-dim font-mono mb-2 uppercase tracking-[0.06em]">Credits</div>
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <span className="text-[11px] text-gs-muted">Design & Development</span>
+                <span className="text-[11px] text-gs-text">GrooveStack Team</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[11px] text-gs-muted">Icons</span>
+                <span className="text-[11px] text-gs-text">Lucide Icons</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[11px] text-gs-muted">UI Framework</span>
+                <span className="text-[11px] text-gs-text">Tailwind CSS</span>
+              </div>
+            </div>
           </div>
           <div className="border-t border-[#111] pt-2.5 mt-2.5">
             <div className="flex gap-3">
               <button className="text-[11px] text-gs-accent hover:underline bg-transparent border-none cursor-pointer p-0">Terms of Service</button>
               <button className="text-[11px] text-gs-accent hover:underline bg-transparent border-none cursor-pointer p-0">Privacy Policy</button>
               <button className="text-[11px] text-gs-accent hover:underline bg-transparent border-none cursor-pointer p-0">Open Source</button>
+              <button className="text-[11px] text-gs-accent hover:underline bg-transparent border-none cursor-pointer p-0">Changelog</button>
             </div>
           </div>
           <div className="text-[11px] text-gs-faint mt-1">

@@ -11,6 +11,20 @@ import Avatar from '../ui/Avatar';
 import { condColor } from '../../utils/helpers';
 import { USER_WISHLISTS, CONDITIONS_DETAIL } from '../../constants';
 import { recordToJsonLd, injectJsonLd } from '../../utils/structuredData';
+import { getDiscogsPrice } from '../../utils/discogs';
+
+// Estimate heuristic: base price by condition with year multiplier
+function estimateValue(condition, year) {
+  const basePrices = { M: 40, NM: 30, 'VG+': 22, VG: 15, 'G+': 10, G: 7, F: 5, P: 3 };
+  const base = basePrices[condition] || 15;
+  let yearMult = 1.0;
+  if (year && year < 1970) yearMult = 1.6;
+  else if (year && year < 1980) yearMult = 1.4;
+  else if (year && year < 1990) yearMult = 1.2;
+  else if (year && year < 2000) yearMult = 1.0;
+  else if (year) yearMult = 0.9;
+  return Math.round(base * yearMult);
+}
 
 // [Improvement 1] Condition grade explanation tooltip component
 function ConditionTooltip({ condition }) {
@@ -147,6 +161,7 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
   const [showNegotiate, setShowNegotiate] = useState(false);
   const [offerAmount, setOfferAmount] = useState('');
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [discogsPrice, setDiscogsPrice] = useState(null);
 
   // Inject structured data (JSON-LD) when viewing a record (#24)
   useEffect(() => {
@@ -158,6 +173,7 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
       setShowNegotiate(false);
       setOfferAmount('');
       setAudioPlaying(false);
+      setDiscogsPrice(null);
       // Load saved collector note from localStorage
       const savedNote = localStorage.getItem(`gs_note_${record.id}`);
       if (savedNote) {
@@ -166,6 +182,12 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
       } else {
         setCollectorNote('');
         setNoteSaved(false);
+      }
+      // Fetch Discogs market price
+      if (record.album && record.artist) {
+        getDiscogsPrice(record.album, record.artist).then(data => {
+          if (data && data.median) setDiscogsPrice(data.median);
+        });
       }
     }
   }, [open, record]);
@@ -193,15 +215,33 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
       .slice(0, 4);
   }, [record, records]);
 
-  // Estimate market value based on condition
+  // Estimate market value based on condition + year, or use Discogs data
   const marketValue = useMemo(() => {
     if (!record) return null;
-    const base = { M: 45, NM: 35, "VG+": 28, VG: 22, "G+": 15, G: 10, F: 6, P: 3 };
-    const val = base[record.condition] || 20;
-    // Add a bit of variance based on the record name hash
-    const hash = record.album.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-    return (val + (hash % 15)).toFixed(2);
+    if (discogsPrice) return discogsPrice;
+    return estimateValue(record.condition, record.year);
+  }, [record, discogsPrice]);
+
+  const isDiscogsData = !!discogsPrice;
+
+  // Wishlist demand: count how many users want this record
+  const wantCount = useMemo(() => {
+    if (!record) return 0;
+    return Object.values(USER_WISHLISTS).filter(items =>
+      items.some(w => w.album.toLowerCase() === record.album.toLowerCase() && w.artist.toLowerCase() === record.artist.toLowerCase())
+    ).length;
   }, [record]);
+
+  const isPopular = (record?.likes || 0) >= 3;
+
+  // Price comparison badge for for-sale listings
+  const priceBadge = useMemo(() => {
+    if (!record || !record.forSale || !record.price || !marketValue) return null;
+    const p = parseFloat(record.price);
+    if (p <= marketValue * 0.85) return { label: 'Listed below estimate', color: '#10b981' };
+    if (p <= marketValue * 1.15) return { label: 'Fair price', color: '#60a5fa' };
+    return null;
+  }, [record, marketValue]);
 
   // [Improvement 3] Derive catalog number and release country from record
   const catalogNumber = useMemo(() => {
@@ -318,15 +358,56 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
         </div>
       </div>
 
-      {/* Market value estimate with price history */}
+      {/* Market value — Discogs data or honest estimate */}
       <div className="px-3.5 py-2.5 bg-[#111] rounded-[10px] mb-4 border border-[#1a1a1a]">
         <div className="flex items-center justify-between">
-          <span className="text-[11px] text-gs-dim font-mono tracking-wider">MARKET VALUE</span>
-          <span className="text-sm font-bold text-emerald-400">~${marketValue}</span>
+          <span className="text-[11px] text-gs-dim font-mono tracking-wider">
+            {isDiscogsData ? 'MARKET PRICE (DISCOGS)' : 'EST. VALUE'}
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-bold text-emerald-400">
+              {isDiscogsData ? `$${marketValue}` : `~$${marketValue}`}
+            </span>
+            {!isDiscogsData && (
+              <span className="text-[9px] text-gs-faint font-mono" title="Based on condition and year, not real market data">Est.</span>
+            )}
+          </div>
         </div>
+        {!isDiscogsData && (
+          <div className="text-[9px] text-gs-faint mt-1 leading-relaxed">
+            Estimate based on condition ({record.condition}) and release year ({record.year}). Actual market value may vary.
+          </div>
+        )}
+        {/* Price badge for for-sale listings */}
+        {priceBadge && (
+          <div className="mt-2">
+            <span
+              className="text-[10px] font-bold px-2 py-0.5 rounded-full border"
+              style={{ color: priceBadge.color, borderColor: `${priceBadge.color}33`, background: `${priceBadge.color}11` }}
+            >
+              {priceBadge.label}
+            </span>
+          </div>
+        )}
         {/* [Improvement 9] Price history sparkline */}
         <PriceHistoryChart record={record} />
       </div>
+
+      {/* Demand signals: popularity + wishlist count */}
+      {(isPopular || wantCount > 0) && (
+        <div className="flex gap-2 flex-wrap mb-4">
+          {isPopular && (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border" style={{ color: '#f472b6', borderColor: '#f472b633', background: '#f472b611' }}>
+              Popular
+            </span>
+          )}
+          {wantCount > 0 && (
+            <span className="text-[10px] font-semibold text-amber-400">
+              {wantCount} {wantCount === 1 ? 'person wants' : 'people want'} this
+            </span>
+          )}
+        </div>
+      )}
 
       {/* [Improvement 5] Audio preview placeholder */}
       <div className="flex items-center gap-2 px-3.5 py-2 bg-[#111] rounded-[10px] mb-4 border border-[#1a1a1a]">
@@ -484,15 +565,16 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
         )}
       </div>
 
-      {/* [Improvement 8] Price negotiation quick button */}
+      {/* Prominent Make an Offer for all for-sale listings */}
       {record.forSale && !isOwn && (
         <div className="mt-3">
           {!showNegotiate ? (
             <button
               onClick={() => { setShowNegotiate(true); setOfferAmount(String(Math.floor((record.price || 20) * 0.85))); }}
-              className="w-full py-2 bg-[#111] border border-[#1a1a1a] rounded-lg text-gs-dim text-[11px] font-semibold cursor-pointer hover:border-gs-accent/40 transition-colors font-mono"
+              className="w-full py-2.5 rounded-lg text-white text-[12px] font-bold cursor-pointer transition-all hover:opacity-90 border-none"
+              style={{ background: 'linear-gradient(135deg, #f59e0b, #ef4444)' }}
             >
-              &#x1F4B0; Make an Offer
+              Make an Offer
             </button>
           ) : (
             <div className="p-3 bg-[#111] border border-[#1a1a1a] rounded-lg">

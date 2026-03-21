@@ -9,8 +9,29 @@ import AlbumArt from '../ui/AlbumArt';
 import Badge from '../ui/Badge';
 import Paginated from '../Paginated';
 import Empty from '../ui/Empty';
-import { GENRES, GENRE_MAP, CONDITIONS, USER_PROFILES } from '../../constants';
+import { GENRES, GENRE_MAP, CONDITIONS, USER_PROFILES, USER_WISHLISTS } from '../../constants';
 import { getProfile, condColor } from '../../utils/helpers';
+
+// Estimate heuristic: base price by condition with year multiplier
+function estimateValue(condition, year) {
+  const basePrices = { M: 40, NM: 30, 'VG+': 22, VG: 15, 'G+': 10, G: 7, F: 5, P: 3 };
+  const base = basePrices[condition] || 15;
+  let yearMult = 1.0;
+  if (year && year < 1970) yearMult = 1.6;
+  else if (year && year < 1980) yearMult = 1.4;
+  else if (year && year < 1990) yearMult = 1.2;
+  else if (year && year < 2000) yearMult = 1.0;
+  else if (year) yearMult = 0.9;
+  return Math.round(base * yearMult);
+}
+
+// Count how many users have this record on their wishlist
+function getWantCount(record) {
+  if (!record) return 0;
+  return Object.values(USER_WISHLISTS).filter(items =>
+    items.some(w => w.album.toLowerCase() === record.album.toLowerCase() && w.artist.toLowerCase() === record.artist.toLowerCase())
+  ).length;
+}
 
 const COND_RANK = { M: 8, NM: 7, "VG+": 6, VG: 5, "G+": 4, G: 3, F: 2, P: 1 };
 
@@ -1089,7 +1110,29 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
                 </div>
                 <div className="text-right shrink-0">
                   <div className="relative">
-                    <div className="text-2xl font-extrabold text-gs-text tracking-[-0.03em] mb-1.5">${r.price}</div>
+                    <div className="text-2xl font-extrabold text-gs-text tracking-[-0.03em] mb-0.5">${r.price}</div>
+                    {/* Estimate below listing price */}
+                    <div className="text-[9px] mb-1" style={{ color: '#6b7280' }}>
+                      Est. ~${estimateValue(r.condition, r.year)}
+                    </div>
+                    {/* Price fairness badge */}
+                    {(() => {
+                      const est = estimateValue(r.condition, r.year);
+                      const p = parseFloat(r.price);
+                      if (p <= est * 0.85) return <div className="text-[9px] font-bold text-green-400 mb-1">Below estimate</div>;
+                      if (p <= est * 1.15) return <div className="text-[9px] font-bold text-blue-400 mb-1">Fair price</div>;
+                      return null;
+                    })()}
+                    {/* Want count */}
+                    {(() => {
+                      const wc = getWantCount(r);
+                      if (wc > 0) return <div className="text-[9px] text-amber-400 mb-1">{wc} {wc === 1 ? 'person wants' : 'people want'} this</div>;
+                      return null;
+                    })()}
+                    {/* Popular badge */}
+                    {(r.likes || 0) >= 3 && (
+                      <div className="text-[9px] font-bold text-pink-400 mb-1">Popular</div>
+                    )}
                     {/* Improvement 9: Price comparison tooltip on hover */}
                     {hoveredRecordId === r.id && (() => {
                       const comp = getPriceComparison(r);
@@ -1105,14 +1148,14 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
                       );
                     })()}
                   </div>
-                  <div className="flex gap-1.5">
+                  <div className="flex gap-1.5 flex-wrap justify-end">
                     {!bulkMode && (
                       <>
+                        <button onClick={e => { e.stopPropagation(); onBuy(r); }}
+                          className="py-2 px-3 rounded-lg border-none text-white font-bold text-[11px] cursor-pointer"
+                          style={{ background: 'linear-gradient(135deg, #f59e0b, #ef4444)' }}>Make an Offer</button>
                         <button onClick={e => { e.stopPropagation(); onAddToCart(r); }}
                           className="gs-btn-secondary py-2 px-3 text-[11px] font-bold rounded-lg">+ Cart</button>
-                        <button onClick={e => { e.stopPropagation(); onBuy(r); }}
-                          className="py-2 px-[18px] rounded-lg border-none text-black font-bold text-xs cursor-pointer"
-                          style={{ background: `linear-gradient(135deg,${r.accent},#6366f1)` }}>Buy Now</button>
                       </>
                     )}
                   </div>

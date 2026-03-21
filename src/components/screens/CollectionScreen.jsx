@@ -9,6 +9,19 @@ import Paginated from '../Paginated';
 import Empty from '../ui/Empty';
 import { CONDITIONS, FORMATS } from '../../constants';
 
+// Estimate heuristic: base price by condition with year multiplier
+function estimateValue(condition, year) {
+  const basePrices = { M: 40, NM: 30, 'VG+': 22, VG: 15, 'G+': 10, G: 7, F: 5, P: 3 };
+  const base = basePrices[condition] || 15;
+  let yearMult = 1.0;
+  if (year && year < 1970) yearMult = 1.6;
+  else if (year && year < 1980) yearMult = 1.4;
+  else if (year && year < 1990) yearMult = 1.2;
+  else if (year && year < 2000) yearMult = 1.0;
+  else if (year) yearMult = 0.9;
+  return Math.round(base * yearMult);
+}
+
 const SORT_OPTIONS = [
   { key: "dateDesc", label: "Date Added (Newest)" },
   { key: "dateAsc", label: "Date Added (Oldest)" },
@@ -394,6 +407,8 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, on
   // Statistics — Improvement 8: avg condition + condition distribution + decade breakdown
   const stats = useMemo(() => {
     const totalValue = mine.reduce((sum, r) => sum + (r.forSale && r.price ? parseFloat(r.price) : 0), 0);
+    // Estimated collection value based on condition + year heuristic
+    const estCollectionValue = mine.reduce((sum, r) => sum + estimateValue(r.condition, r.year), 0);
     const genreMap = {};
     mine.forEach(r => {
       (r.tags || []).forEach(t => {
@@ -427,7 +442,10 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, on
     });
     const decades = Object.entries(decadeMap).sort((a, b) => a[0].localeCompare(b[0]));
 
-    return { totalValue, genres, forSaleCount, avgCondition, condDist, decades };
+    // Records not listed for sale (candidates for "List yours for sale" CTA)
+    const unlistedCount = mine.filter(r => !r.forSale).length;
+
+    return { totalValue, estCollectionValue, genres, forSaleCount, avgCondition, condDist, decades, unlistedCount };
   }, [mine]);
 
   // Grouped records for visual grouping mode — Improvement 9: group by decade
@@ -554,26 +572,49 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, on
         </div>
       </div>
 
-      {/* Statistics bar — Improvement 8: expanded with avg condition */}
+      {/* Statistics bar — expanded with estimated collection value */}
       {mine.length > 0 && (
-        <div className="grid grid-cols-4 gap-2.5 mb-4">
-          <div className="bg-gs-card border border-gs-border rounded-xl py-3 px-3 text-center">
-            <div className="text-lg font-extrabold tracking-tight text-gs-accent">{mine.length}</div>
-            <div className="text-[10px] text-gs-dim font-mono mt-0.5">Records</div>
+        <>
+          <div className="grid grid-cols-4 gap-2.5 mb-2.5">
+            <div className="bg-gs-card border border-gs-border rounded-xl py-3 px-3 text-center">
+              <div className="text-lg font-extrabold tracking-tight text-gs-accent">{mine.length}</div>
+              <div className="text-[10px] text-gs-dim font-mono mt-0.5">Records</div>
+            </div>
+            <div className="bg-gs-card border border-gs-border rounded-xl py-3 px-3 text-center">
+              <div className="text-lg font-extrabold tracking-tight text-emerald-400">~${stats.estCollectionValue.toLocaleString()}</div>
+              <div className="text-[10px] text-gs-dim font-mono mt-0.5">Est. Value</div>
+            </div>
+            <div className="bg-gs-card border border-gs-border rounded-xl py-3 px-3 text-center">
+              <div className="text-lg font-extrabold tracking-tight text-violet-500">{stats.genres.length}</div>
+              <div className="text-[10px] text-gs-dim font-mono mt-0.5">Genres</div>
+            </div>
+            <div className="bg-gs-card border border-gs-border rounded-xl py-3 px-3 text-center">
+              <div className="text-lg font-extrabold tracking-tight text-amber-500">{stats.avgCondition}</div>
+              <div className="text-[10px] text-gs-dim font-mono mt-0.5">Avg Cond.</div>
+            </div>
           </div>
-          <div className="bg-gs-card border border-gs-border rounded-xl py-3 px-3 text-center">
-            <div className="text-lg font-extrabold tracking-tight text-green-500">${stats.totalValue.toFixed(0)}</div>
-            <div className="text-[10px] text-gs-dim font-mono mt-0.5">Listed Value</div>
+          {/* Listed value and list-for-sale CTA */}
+          <div className="flex items-center justify-between bg-gs-card border border-gs-border rounded-xl py-2.5 px-3.5 mb-4">
+            <div className="flex items-center gap-4">
+              {stats.forSaleCount > 0 && (
+                <div className="text-[11px] text-gs-dim font-mono">
+                  <span className="text-green-500 font-bold">${stats.totalValue.toFixed(0)}</span> listed for sale
+                </div>
+              )}
+              <div className="text-[9px] text-gs-faint font-mono">
+                Est. values based on condition + year. Not actual market data.
+              </div>
+            </div>
+            {stats.unlistedCount > 0 && (
+              <button
+                onClick={onAddRecord}
+                className="text-[10px] font-semibold px-3 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-400 cursor-pointer hover:bg-amber-500/20 transition-colors whitespace-nowrap"
+              >
+                List {stats.unlistedCount} unlisted for sale
+              </button>
+            )}
           </div>
-          <div className="bg-gs-card border border-gs-border rounded-xl py-3 px-3 text-center">
-            <div className="text-lg font-extrabold tracking-tight text-violet-500">{stats.genres.length}</div>
-            <div className="text-[10px] text-gs-dim font-mono mt-0.5">Genres</div>
-          </div>
-          <div className="bg-gs-card border border-gs-border rounded-xl py-3 px-3 text-center">
-            <div className="text-lg font-extrabold tracking-tight text-amber-500">{stats.avgCondition}</div>
-            <div className="text-[10px] text-gs-dim font-mono mt-0.5">Avg Cond.</div>
-          </div>
-        </div>
+        </>
       )}
 
       {/* Condition distribution chart — Improvement 8 */}

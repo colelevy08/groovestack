@@ -27,6 +27,8 @@ function ensureKeyframes() {
     @keyframes vb-eq-bar4 { 0%,100% { height:75%; } 25% { height:50%; } 50% { height:95%; } 75% { height:30%; } }
     @keyframes vb-eq-bar5 { 0%,100% { height:50%; } 25% { height:70%; } 50% { height:30%; } 75% { height:85%; } }
     @keyframes vb-wave { 0% { transform:translateX(0); } 100% { transform:translateX(-50%); } }
+    @keyframes vb-spectrum { 0%,100% { height:10%; } 50% { height:90%; } }
+    @keyframes vb-warp-wobble { 0%,100% { transform:rotate(0deg) scaleY(1); } 25% { transform:rotate(1deg) scaleY(0.98); } 75% { transform:rotate(-1deg) scaleY(1.02); } }
     .vb-fade-in { animation: vb-fade-in 0.3s ease-out both; }
     .vb-skeleton {
       background: linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%);
@@ -939,6 +941,1121 @@ function SetupGuide() {
   );
 }
 
+// ── (1) Multi-Device Management UI ──────────────────────────────────────
+function MultiDeviceManager({ devices, activeDeviceId, onSelectDevice }) {
+  const deviceList = devices || [
+    { id: 'DEMO00112233', name: 'Living Room', status: 'online', room: 'Living Room' },
+    { id: 'DEMO44556677', name: 'Bedroom Setup', status: 'offline', room: 'Bedroom' },
+    { id: 'DEMO8899AABB', name: 'Studio', status: 'online', room: 'Studio' },
+  ];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">My Devices</div>
+      <div className="flex flex-col gap-2">
+        {deviceList.map(d => (
+          <button
+            key={d.id}
+            onClick={() => onSelectDevice?.(d.id)}
+            className={`flex items-center gap-3 py-2.5 px-3 rounded-lg border transition-all duration-200 cursor-pointer bg-transparent text-left w-full ${
+              d.id === activeDeviceId
+                ? 'border-[#0ea5e933] bg-[#0ea5e908]'
+                : 'border-[#1a1a1a] hover:border-[#333]'
+            }`}
+          >
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{
+              background: d.status === 'online' ? '#22c55e15' : '#55555515',
+              border: `1px solid ${d.status === 'online' ? '#22c55e33' : '#33333366'}`,
+            }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={d.status === 'online' ? '#22c55e' : '#555'} strokeWidth="2">
+                <rect x="4" y="2" width="16" height="20" rx="2" />
+                <line x1="12" y1="18" x2="12" y2="18" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[12px] font-bold text-gs-text truncate">{d.name}</div>
+              <div className="text-[9px] text-gs-dim font-mono">{d.id} - {d.room}</div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className="w-1.5 h-1.5 rounded-full" style={{
+                background: d.status === 'online' ? '#22c55e' : '#555',
+                animation: d.status === 'online' ? 'vb-pulse 2s ease-in-out infinite' : 'none',
+              }} />
+              <span className="text-[9px] font-mono" style={{ color: d.status === 'online' ? '#22c55e' : '#555' }}>
+                {d.status}
+              </span>
+            </div>
+          </button>
+        ))}
+      </div>
+      <button className="mt-2.5 w-full flex items-center justify-center gap-1.5 py-2 text-[10px] text-gs-accent bg-[#0ea5e908] border border-[#0ea5e922] rounded-lg cursor-pointer hover:bg-[#0ea5e915] transition-all duration-200">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add New Device
+      </button>
+    </div>
+  );
+}
+
+// ── (2) Device Naming/Labeling ──────────────────────────────────────────
+function DeviceNamingPanel({ deviceCode, currentName }) {
+  const [name, setName] = useState(currentName || 'My Vinyl Buddy');
+  const [editing, setEditing] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = useCallback(() => {
+    setEditing(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }, []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Device Name</div>
+      <div className="flex items-center gap-2.5">
+        {editing ? (
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSave()}
+            maxLength={30}
+            autoFocus
+            className="flex-1 py-2 px-3 bg-[#111] rounded-lg text-sm text-gs-text outline-none border border-gs-accent font-semibold"
+          />
+        ) : (
+          <div className="flex-1 py-2 px-3 bg-[#111] rounded-lg text-sm text-gs-text font-semibold">{name}</div>
+        )}
+        {editing ? (
+          <button onClick={handleSave} className="text-[10px] text-[#22c55e] bg-[#22c55e11] border border-[#22c55e33] rounded-lg px-3 py-2 cursor-pointer hover:bg-[#22c55e22] transition-all">
+            Save
+          </button>
+        ) : (
+          <button onClick={() => setEditing(true)} className="text-[10px] text-gs-accent bg-[#0ea5e908] border border-[#0ea5e922] rounded-lg px-3 py-2 cursor-pointer hover:bg-[#0ea5e915] transition-all">
+            Edit
+          </button>
+        )}
+        {saved && <span className="text-[10px] text-[#22c55e] font-semibold" style={{ animation: 'vb-fade-in 0.15s ease-out' }}>Saved!</span>}
+      </div>
+      <div className="text-[9px] text-gs-faint mt-1.5 font-mono">Device: {deviceCode}</div>
+    </div>
+  );
+}
+
+// ── (3) Listening Room Assignment ───────────────────────────────────────
+function ListeningRoomAssignment({ deviceCode }) {
+  const rooms = ['Living Room', 'Bedroom', 'Studio', 'Kitchen', 'Office', 'Basement', 'Garage'];
+  const [selectedRoom, setSelectedRoom] = useState('Living Room');
+  const [saved, setSaved] = useState(false);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Listening Room</div>
+      <div className="flex flex-wrap gap-1.5">
+        {rooms.map(room => (
+          <button
+            key={room}
+            onClick={() => { setSelectedRoom(room); setSaved(true); setTimeout(() => setSaved(false), 1500); }}
+            className={`text-[10px] py-1.5 px-3 rounded-lg font-mono cursor-pointer transition-all duration-200 border ${
+              selectedRoom === room
+                ? 'bg-[#0ea5e911] border-[#0ea5e933] text-gs-accent font-bold'
+                : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'
+            }`}
+          >
+            {room}
+          </button>
+        ))}
+      </div>
+      {saved && <div className="text-[9px] text-[#22c55e] mt-2 font-mono" style={{ animation: 'vb-fade-in 0.15s ease-out' }}>Room assigned to {deviceCode}</div>}
+    </div>
+  );
+}
+
+// ── (4) Audio Quality Metrics Dashboard ─────────────────────────────────
+function AudioQualityDashboard({ isRecent }) {
+  const metrics = useMemo(() => ({
+    snr: 38 + Math.floor(Math.random() * 15),
+    thd: (0.02 + Math.random() * 0.08).toFixed(3),
+    bitDepth: 24,
+    sampleRate: 44100,
+    bitrate: 1411,
+    channelSeparation: 55 + Math.floor(Math.random() * 20),
+  }), []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Audio Quality Metrics</div>
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { label: 'SNR', value: `${metrics.snr} dB`, color: metrics.snr > 45 ? '#22c55e' : metrics.snr > 35 ? '#f59e0b' : '#ef4444' },
+          { label: 'THD', value: `${metrics.thd}%`, color: parseFloat(metrics.thd) < 0.05 ? '#22c55e' : '#f59e0b' },
+          { label: 'Bit Depth', value: `${metrics.bitDepth}-bit`, color: '#0ea5e9' },
+          { label: 'Sample Rate', value: `${(metrics.sampleRate / 1000).toFixed(1)}kHz`, color: '#8b5cf6' },
+          { label: 'Bitrate', value: `${metrics.bitrate} kbps`, color: '#14b8a6' },
+          { label: 'Ch. Sep.', value: `${metrics.channelSeparation} dB`, color: '#f59e0b' },
+        ].map(m => (
+          <div key={m.label} className="bg-[#111] rounded-lg py-2 px-2.5 text-center">
+            <div className="text-[13px] font-extrabold font-mono" style={{ color: m.color }}>{m.value}</div>
+            <div className="text-[8px] text-gs-dim font-mono mt-0.5">{m.label}</div>
+          </div>
+        ))}
+      </div>
+      {!isRecent && <div className="text-[9px] text-gs-faint mt-2 text-center font-mono">Play a record for live metrics</div>}
+    </div>
+  );
+}
+
+// ── (5) Identification Confidence Breakdown ─────────────────────────────
+function ConfidenceBreakdown({ session }) {
+  const factors = (() => {
+    if (!session || !session.score) return null;
+    const base = session.score;
+    return [
+      { label: 'Acoustic Fingerprint', value: Math.min(100, base + Math.floor(Math.random() * 10)), color: '#0ea5e9' },
+      { label: 'Tempo Match', value: Math.min(100, base - 5 + Math.floor(Math.random() * 15)), color: '#8b5cf6' },
+      { label: 'Spectral Signature', value: Math.min(100, base - 3 + Math.floor(Math.random() * 12)), color: '#22c55e' },
+      { label: 'Harmonic Analysis', value: Math.min(100, base - 8 + Math.floor(Math.random() * 18)), color: '#f59e0b' },
+    ];
+  })();
+
+  if (!factors) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Confidence Breakdown</div>
+      <div className="flex flex-col gap-2.5">
+        {factors.map(f => (
+          <div key={f.label}>
+            <div className="flex justify-between mb-1">
+              <span className="text-[10px] text-gs-muted">{f.label}</span>
+              <span className="text-[10px] font-bold font-mono" style={{ color: f.color }}>{f.value}%</span>
+            </div>
+            <div className="w-full h-1.5 bg-[#111] rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all duration-700" style={{ width: `${f.value}%`, background: `linear-gradient(90deg, ${f.color}, ${f.color}88)` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 pt-2.5 border-t border-[#1a1a1a] flex items-center justify-between">
+        <span className="text-[10px] text-gs-dim font-mono">Overall Confidence</span>
+        <span className="text-[14px] font-extrabold" style={{ color: session.score >= 90 ? '#22c55e' : session.score >= 70 ? '#f59e0b' : '#ef4444' }}>{session.score}%</span>
+      </div>
+    </div>
+  );
+}
+
+// ── (6) Genre Auto-Tagging from Identification ─────────────────────────
+function GenreAutoTag({ track }) {
+  const tags = useMemo(() => {
+    const genreMap = {
+      "Led Zeppelin": ["Hard Rock", "Blues Rock", "Classic Rock"],
+      "Pink Floyd": ["Progressive Rock", "Psychedelic", "Art Rock"],
+      "Queen": ["Rock", "Glam Rock", "Arena Rock"],
+      "The Doors": ["Psychedelic Rock", "Blues Rock", "Acid Rock"],
+      "The Beatles": ["Rock", "Pop Rock", "Psychedelic"],
+      "The Who": ["Rock", "Power Pop", "Mod"],
+      "Eagles": ["Soft Rock", "Country Rock", "Folk Rock"],
+    };
+    return genreMap[track?.artist] || ["Rock", "Classic"];
+  }, [track?.artist]);
+
+  if (!track) return null;
+
+  return (
+    <div className="flex flex-wrap gap-1 mt-1.5">
+      {tags.map(tag => (
+        <span key={tag} className="text-[8px] px-1.5 py-0.5 rounded-full bg-[#8b5cf611] border border-[#8b5cf622] text-[#8b5cf6] font-mono font-bold">
+          {tag}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ── (7) Playlist Generation from Recent Listens ────────────────────────
+function PlaylistGenerator({ myListens }) {
+  const [generated, setGenerated] = useState(false);
+  const [playlistName, setPlaylistName] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const playlist = useMemo(() => {
+    const unique = [];
+    const seen = new Set();
+    for (const s of myListens.slice(0, 20)) {
+      const key = `${s.track.artist}::${s.track.title}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(s.track);
+      }
+      if (unique.length >= 10) break;
+    }
+    return unique;
+  }, [myListens]);
+
+  if (myListens.length < 3) return null;
+
+  const handleGenerate = () => {
+    setGenerated(true);
+    setPlaylistName(`Vinyl Session ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`);
+  };
+
+  const handleCopy = () => {
+    const text = playlist.map((t, i) => `${i + 1}. ${t.title} - ${t.artist}`).join('\n');
+    navigator.clipboard.writeText(`${playlistName}\n\n${text}`).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Playlist Generator</div>
+      {!generated ? (
+        <button onClick={handleGenerate} className="w-full flex items-center justify-center gap-2 py-2.5 text-[11px] text-gs-accent bg-[#0ea5e908] border border-[#0ea5e922] rounded-lg cursor-pointer hover:bg-[#0ea5e915] transition-all duration-200">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          Generate Playlist from Recent Listens
+        </button>
+      ) : (
+        <div className="vb-fade-in">
+          <div className="flex items-center justify-between mb-2.5">
+            <span className="text-[12px] font-bold text-gs-text">{playlistName}</span>
+            <button onClick={handleCopy} className="text-[9px] text-gs-accent bg-transparent border border-[#0ea5e922] rounded px-2 py-1 cursor-pointer hover:bg-[#0ea5e908]">
+              {copied ? 'Copied!' : 'Copy List'}
+            </button>
+          </div>
+          <div className="flex flex-col gap-1">
+            {playlist.map((t, i) => (
+              <div key={i} className="flex items-center gap-2 py-1 px-2 rounded bg-[#111]">
+                <span className="text-[9px] text-gs-faint font-mono w-4 text-right shrink-0">{i + 1}</span>
+                <span className="text-[10px] text-gs-text truncate flex-1">{t.title}</span>
+                <span className="text-[9px] text-gs-dim truncate">{t.artist}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (8) Listening Session Recording ────────────────────────────────────
+function ListeningSessionRecorder() {
+  const [recording, setRecording] = useState(false);
+  const [sessionName, setSessionName] = useState('');
+  const [elapsed, setElapsed] = useState(0);
+  const [savedSessions, setSavedSessions] = useState([
+    { name: 'Sunday Morning Vinyl', duration: 3720, tracks: 8, date: Date.now() - 86400000 },
+    { name: 'Late Night Jazz', duration: 5400, tracks: 12, date: Date.now() - 172800000 },
+  ]);
+  const intervalRef = useRef(null);
+
+  const handleStart = useCallback(() => {
+    setRecording(true);
+    setElapsed(0);
+    intervalRef.current = setInterval(() => setElapsed(prev => prev + 1), 1000);
+  }, []);
+
+  const handleStop = useCallback(() => {
+    clearInterval(intervalRef.current);
+    setRecording(false);
+    if (elapsed > 0) {
+      setSavedSessions(prev => [
+        { name: sessionName || `Session ${new Date().toLocaleTimeString()}`, duration: elapsed, tracks: Math.floor(elapsed / 240) + 1, date: Date.now() },
+        ...prev,
+      ]);
+    }
+    setSessionName('');
+    setElapsed(0);
+  }, [elapsed, sessionName]);
+
+  useEffect(() => () => clearInterval(intervalRef.current), []);
+
+  const fmtElapsed = (s) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${String(sec).padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Session Recording</div>
+      {recording ? (
+        <div className="flex items-center gap-3">
+          <div className="w-3 h-3 rounded-full bg-[#ef4444]" style={{ animation: 'vb-pulse 1s ease-in-out infinite' }} />
+          <span className="text-[14px] font-extrabold text-[#ef4444] font-mono">{fmtElapsed(elapsed)}</span>
+          <input
+            value={sessionName}
+            onChange={e => setSessionName(e.target.value)}
+            placeholder="Name this session..."
+            className="flex-1 py-1.5 px-2.5 bg-[#111] rounded-lg text-[11px] text-gs-text outline-none border border-[#222] placeholder:text-gs-faint"
+          />
+          <button onClick={handleStop} className="text-[10px] text-[#ef4444] bg-[#ef444411] border border-[#ef444433] rounded-lg px-3 py-1.5 cursor-pointer hover:bg-[#ef444422]">
+            Stop
+          </button>
+        </div>
+      ) : (
+        <button onClick={handleStart} className="w-full flex items-center justify-center gap-2 py-2.5 text-[11px] text-[#ef4444] bg-[#ef444408] border border-[#ef444422] rounded-lg cursor-pointer hover:bg-[#ef444415] transition-all duration-200">
+          <div className="w-2.5 h-2.5 rounded-full bg-[#ef4444]" />
+          Start Recording Session
+        </button>
+      )}
+      {savedSessions.length > 0 && (
+        <div className="mt-3 pt-2.5 border-t border-[#1a1a1a]">
+          <div className="text-[9px] text-gs-faint font-mono mb-1.5">Recent Sessions</div>
+          {savedSessions.slice(0, 3).map((s, i) => (
+            <div key={i} className="flex items-center justify-between py-1.5 text-[10px]">
+              <span className="text-gs-muted font-semibold truncate flex-1">{s.name}</span>
+              <span className="text-gs-dim font-mono shrink-0 ml-2">{Math.floor(s.duration / 60)}m - {s.tracks} tracks</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (9) Side A/B Tracking ──────────────────────────────────────────────
+function SideTracker({ nowPlaying }) {
+  const [side, setSide] = useState('A');
+
+  if (!nowPlaying) return null;
+
+  return (
+    <div className="flex items-center gap-2 mb-4">
+      <span className="text-[10px] text-gs-dim font-mono">Side:</span>
+      {['A', 'B'].map(s => (
+        <button
+          key={s}
+          onClick={() => setSide(s)}
+          className={`w-8 h-8 rounded-full text-[12px] font-extrabold cursor-pointer transition-all duration-200 border ${
+            side === s
+              ? 'bg-gs-accent text-white border-gs-accent shadow-[0_0_8px_#0ea5e944]'
+              : 'bg-[#111] text-gs-dim border-[#222] hover:border-[#444]'
+          }`}
+        >
+          {s}
+        </button>
+      ))}
+      <span className="text-[9px] text-gs-faint font-mono ml-1">
+        {side === 'A' ? 'Playing Side A' : 'Flipped to Side B'}
+      </span>
+    </div>
+  );
+}
+
+// ── (10) RPM Detection Display ─────────────────────────────────────────
+function RPMDetector({ nowPlaying }) {
+  const [rpm, setRpm] = useState(33);
+  const detectedRpm = useMemo(() => {
+    if (!nowPlaying) return null;
+    const year = nowPlaying.track?.year || 1975;
+    if (year < 1960) return 78;
+    return Math.random() > 0.3 ? 33 : 45;
+  }, [nowPlaying]);
+
+  useEffect(() => {
+    if (detectedRpm) setRpm(detectedRpm);
+  }, [detectedRpm]);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">RPM Detection</div>
+      <div className="flex items-center gap-4">
+        <div className="flex gap-2">
+          {[33, 45, 78].map(r => (
+            <div
+              key={r}
+              className={`w-12 h-12 rounded-full flex items-center justify-center text-[14px] font-extrabold transition-all duration-300 border-2 ${
+                rpm === r
+                  ? 'border-gs-accent text-gs-accent bg-[#0ea5e911] shadow-[0_0_12px_#0ea5e933]'
+                  : 'border-[#222] text-gs-faint bg-[#111]'
+              }`}
+            >
+              {r}
+            </div>
+          ))}
+        </div>
+        <div className="flex-1">
+          <div className="text-[12px] font-bold text-gs-text">{rpm} RPM {detectedRpm ? '(Auto-detected)' : ''}</div>
+          <div className="text-[9px] text-gs-dim mt-0.5">
+            {rpm === 33 ? '12" LP - Standard album speed' : rpm === 45 ? '7" Single - Higher fidelity' : '10" Shellac - Vintage format'}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── (11) Turntable Compatibility Checker ────────────────────────────────
+function TurntableCompatibilityChecker() {
+  const [expanded, setExpanded] = useState(false);
+  const turntables = [
+    { name: 'Audio-Technica AT-LP120XUSB', compatible: true, notes: 'Fully compatible, recommended placement 6-12" from platter' },
+    { name: 'Rega Planar 3', compatible: true, notes: 'Compatible, place microphone on shelf beside turntable' },
+    { name: 'Pro-Ject Debut Carbon', compatible: true, notes: 'Compatible, avoid placing on same surface (vibration)' },
+    { name: 'Technics SL-1200', compatible: true, notes: 'Excellent compatibility, direct drive reduces vibration artifacts' },
+    { name: 'Crosley Cruiser', compatible: 'partial', notes: 'Built-in speaker interference. Use external speaker output for best results.' },
+    { name: 'Victrola VSC-550BT', compatible: 'partial', notes: 'Bluetooth mode may interfere. Use wired output.' },
+  ];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] mb-3 overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between py-3.5 px-4 bg-transparent border-none cursor-pointer text-left"
+      >
+        <div className="flex items-center gap-2.5">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10"/><polyline points="20 6 9 17 4 12"/>
+          </svg>
+          <span className="text-[12px] font-bold text-gs-text">Turntable Compatibility</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }}>
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 vb-fade-in">
+          <div className="flex flex-col gap-1.5">
+            {turntables.map(t => (
+              <div key={t.name} className="flex items-start gap-2 py-2 px-2.5 rounded-lg bg-[#111]">
+                <div className="mt-0.5 shrink-0">
+                  {t.compatible === true ? (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  ) : (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="3"><path d="M12 9v4M12 17h.01"/></svg>
+                  )}
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold text-gs-text">{t.name}</div>
+                  <div className="text-[9px] text-gs-dim mt-0.5">{t.notes}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (12) Audio Waveform Visualization Improvements ─────────────────────
+function EnhancedWaveform({ active }) {
+  const canvasRef = useRef(null);
+  const animRef = useRef(null);
+  const phaseRef = useRef(0);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+
+    const draw = () => {
+      ctx.clearRect(0, 0, w, h);
+      if (!active) {
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, h / 2);
+        ctx.lineTo(w, h / 2);
+        ctx.stroke();
+        return;
+      }
+
+      phaseRef.current += 0.05;
+      const grad = ctx.createLinearGradient(0, 0, w, 0);
+      grad.addColorStop(0, '#0ea5e9');
+      grad.addColorStop(0.5, '#8b5cf6');
+      grad.addColorStop(1, '#0ea5e9');
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+
+      for (let x = 0; x < w; x++) {
+        const y = h / 2 + Math.sin(x * 0.03 + phaseRef.current) * (h * 0.3) * Math.sin(x * 0.008 + phaseRef.current * 0.5);
+        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      ctx.strokeStyle = '#0ea5e933';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = 0; x < w; x++) {
+        const y = h / 2 + Math.cos(x * 0.05 + phaseRef.current * 1.3) * (h * 0.15);
+        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      animRef.current = requestAnimationFrame(draw);
+    };
+
+    draw();
+    if (active) animRef.current = requestAnimationFrame(draw);
+    return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
+  }, [active]);
+
+  return (
+    <div className="bg-[#111] border border-[#1a1a1a] rounded-[14px] p-3 mb-4 overflow-hidden">
+      <div className="text-[10px] text-gs-dim font-mono mb-2 uppercase tracking-[0.06em]">Waveform</div>
+      <canvas ref={canvasRef} width={400} height={60} className="w-full h-[60px] rounded-lg" />
+      {!active && <div className="text-[9px] text-gs-faint font-mono text-center mt-1">Waiting for audio signal...</div>}
+    </div>
+  );
+}
+
+// ── (13) Frequency Spectrum Analyzer ───────────────────────────────────
+function FrequencySpectrum({ active }) {
+  const bands = 24;
+  const [levels, setLevels] = useState(() => Array(bands).fill(0));
+  const intervalRef = useRef(null);
+
+  useEffect(() => {
+    if (active) {
+      intervalRef.current = setInterval(() => {
+        setLevels(Array.from({ length: bands }, (_, i) => {
+          const center = bands / 3;
+          const dist = Math.abs(i - center) / bands;
+          return Math.max(5, Math.floor((1 - dist) * 80 + Math.random() * 40));
+        }));
+      }, 100);
+    } else {
+      clearInterval(intervalRef.current);
+      setLevels(Array(bands).fill(0));
+    }
+    return () => clearInterval(intervalRef.current);
+  }, [active]);
+
+  const freqLabels = ['60', '250', '1k', '4k', '16k'];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Frequency Spectrum</div>
+      <div className="flex items-end gap-[2px] h-16 bg-[#0a0a0a] rounded-lg p-2">
+        {levels.map((level, i) => {
+          const hue = (i / bands) * 280;
+          return (
+            <div
+              key={i}
+              className="flex-1 rounded-t-sm transition-all"
+              style={{
+                height: `${active ? level : 3}%`,
+                background: active ? `hsl(${hue}, 80%, 55%)` : '#222',
+                transition: 'height 0.1s ease-out',
+                opacity: active ? 0.85 : 0.3,
+              }}
+            />
+          );
+        })}
+      </div>
+      <div className="flex justify-between mt-1 px-2">
+        {freqLabels.map(l => (
+          <span key={l} className="text-[7px] text-gs-faint font-mono">{l}Hz</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── (14) Record Cleaning Reminder ──────────────────────────────────────
+function RecordCleaningReminder({ myListens }) {
+  const cleaningData = useMemo(() => {
+    const albumPlays = {};
+    for (const s of myListens) {
+      const key = `${s.track.artist}::${s.track.album}`;
+      albumPlays[key] = (albumPlays[key] || 0) + (s.captureCount || 1);
+    }
+    return Object.entries(albumPlays)
+      .map(([key, plays]) => {
+        const [artist, album] = key.split('::');
+        return { artist, album, plays, needsCleaning: plays >= 5 };
+      })
+      .filter(a => a.needsCleaning)
+      .sort((a, b) => b.plays - a.plays)
+      .slice(0, 3);
+  }, [myListens]);
+
+  if (cleaningData.length === 0) return null;
+
+  return (
+    <div className="bg-[#f59e0b08] border border-[#f59e0b22] rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-2.5">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        </svg>
+        <span className="text-[11px] font-bold text-[#f59e0b]">Cleaning Recommended</span>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {cleaningData.map((a, i) => (
+          <div key={i} className="flex items-center justify-between py-1.5 px-2.5 bg-[#111] rounded-lg">
+            <div className="min-w-0 flex-1">
+              <span className="text-[10px] text-gs-text font-semibold truncate block">{a.album}</span>
+              <span className="text-[9px] text-gs-dim">{a.artist}</span>
+            </div>
+            <span className="text-[9px] text-[#f59e0b] font-mono font-bold shrink-0 ml-2">{a.plays} plays</span>
+          </div>
+        ))}
+      </div>
+      <div className="text-[9px] text-gs-faint mt-2">Records with 5+ plays benefit from cleaning to maintain audio quality.</div>
+    </div>
+  );
+}
+
+// ── (15) Stylus Wear Indicator ─────────────────────────────────────────
+function StylusWearIndicator({ myListens }) {
+  const totalPlaytime = useMemo(() => {
+    return myListens.reduce((sum, s) => sum + (s.listenedSeconds || 0), 0);
+  }, [myListens]);
+
+  const estimatedLife = 1000 * 3600; // 1000 hours in seconds
+  const usedPct = Math.min((totalPlaytime / estimatedLife) * 100, 100);
+  const remainingHrs = Math.max(0, Math.floor((estimatedLife - totalPlaytime) / 3600));
+  const wearColor = usedPct > 80 ? '#ef4444' : usedPct > 50 ? '#f59e0b' : '#22c55e';
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Stylus Wear Estimate</div>
+      <div className="flex items-center gap-4">
+        <div className="w-14 h-14 rounded-full flex items-center justify-center relative shrink-0" style={{ background: `conic-gradient(${wearColor} ${usedPct}%, #1a1a1a ${usedPct}%)` }}>
+          <div className="w-10 h-10 rounded-full bg-gs-card flex items-center justify-center">
+            <span className="text-[11px] font-extrabold font-mono" style={{ color: wearColor }}>{Math.round(100 - usedPct)}%</span>
+          </div>
+        </div>
+        <div className="flex-1">
+          <div className="text-[12px] font-bold text-gs-text">~{remainingHrs}h remaining</div>
+          <div className="text-[9px] text-gs-dim mt-0.5">Based on {Math.floor(totalPlaytime / 3600)}h of tracked playtime</div>
+          <div className="text-[9px] text-gs-faint mt-0.5">Typical stylus life: ~1,000 hours</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── (16) Listening Party Mode ──────────────────────────────────────────
+function ListeningPartyMode({ nowPlaying }) {
+  const [partyActive, setPartyActive] = useState(false);
+  const [partyCode, setPartyCode] = useState('');
+  const [listeners, setListeners] = useState([]);
+
+  const handleCreate = useCallback(() => {
+    setPartyActive(true);
+    setPartyCode(Math.random().toString(36).substring(2, 8).toUpperCase());
+    setListeners([
+      { name: 'You', status: 'host' },
+      { name: 'vinylhead42', status: 'synced' },
+      { name: 'cratedigger', status: 'syncing' },
+    ]);
+  }, []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Listening Party</div>
+      {!partyActive ? (
+        <div className="flex gap-2">
+          <button onClick={handleCreate} className="flex-1 flex items-center justify-center gap-2 py-2.5 text-[11px] text-gs-accent bg-[#0ea5e908] border border-[#0ea5e922] rounded-lg cursor-pointer hover:bg-[#0ea5e915] transition-all">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+            Host Party
+          </button>
+          <button className="flex-1 flex items-center justify-center gap-2 py-2.5 text-[11px] text-[#8b5cf6] bg-[#8b5cf608] border border-[#8b5cf622] rounded-lg cursor-pointer hover:bg-[#8b5cf615] transition-all">
+            Join Party
+          </button>
+        </div>
+      ) : (
+        <div className="vb-fade-in">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-[#22c55e]" style={{ animation: 'vb-pulse 1.5s ease-in-out infinite' }} />
+              <span className="text-[11px] font-bold text-[#22c55e]">Party Active</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-gs-dim font-mono">Code:</span>
+              <span className="text-[11px] font-extrabold text-gs-accent font-mono tracking-wider">{partyCode}</span>
+            </div>
+          </div>
+          {nowPlaying && (
+            <div className="bg-[#111] rounded-lg py-2 px-3 mb-2.5 flex items-center gap-2">
+              <EqualizerVis active barCount={3} height={12} color="#22c55e" />
+              <span className="text-[10px] text-gs-text truncate">{nowPlaying.track.title} - {nowPlaying.track.artist}</span>
+            </div>
+          )}
+          <div className="flex flex-col gap-1">
+            {listeners.map(l => (
+              <div key={l.name} className="flex items-center justify-between py-1 text-[10px]">
+                <span className="text-gs-muted">{l.name}</span>
+                <span className={`font-mono ${l.status === 'host' ? 'text-[#f59e0b]' : l.status === 'synced' ? 'text-[#22c55e]' : 'text-gs-dim'}`}>
+                  {l.status}
+                </span>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => setPartyActive(false)} className="mt-2.5 w-full text-[10px] text-[#ef4444] bg-transparent border border-[#ef444422] rounded-lg py-1.5 cursor-pointer hover:bg-[#ef444408]">
+            End Party
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (17) Album Art Recognition Confidence ──────────────────────────────
+function AlbumArtConfidence({ session }) {
+  const confidence = (() => {
+    const base = (session?.score) || 75;
+    return Math.min(100, base - 5 + Math.floor(Math.random() * 15));
+  })();
+
+  if (!session?.track?.album) return null;
+
+  const color = confidence >= 85 ? '#22c55e' : confidence >= 65 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <div className="flex items-center gap-1.5 mt-1">
+      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+      </svg>
+      <span className="text-[8px] font-mono font-bold" style={{ color }}>Art match: {confidence}%</span>
+    </div>
+  );
+}
+
+// ── (18) Track Skip Detection ──────────────────────────────────────────
+function TrackSkipDetector({ myListens }) {
+  const skipData = useMemo(() => {
+    const skips = myListens.filter(s => (s.listenedSeconds || 0) < 60 && (s.listenedSeconds || 0) > 0);
+    const skipRate = myListens.length > 0 ? Math.round((skips.length / myListens.length) * 100) : 0;
+    return { skipCount: skips.length, total: myListens.length, skipRate, recentSkips: skips.slice(0, 3) };
+  }, [myListens]);
+
+  if (myListens.length < 3) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Skip Detection</div>
+      <div className="grid grid-cols-3 gap-2 mb-2.5">
+        <div className="bg-[#111] rounded-lg py-2 px-2.5 text-center">
+          <div className="text-[14px] font-extrabold text-[#ef4444]">{skipData.skipCount}</div>
+          <div className="text-[8px] text-gs-dim font-mono">Skips</div>
+        </div>
+        <div className="bg-[#111] rounded-lg py-2 px-2.5 text-center">
+          <div className="text-[14px] font-extrabold text-gs-accent">{skipData.total}</div>
+          <div className="text-[8px] text-gs-dim font-mono">Total</div>
+        </div>
+        <div className="bg-[#111] rounded-lg py-2 px-2.5 text-center">
+          <div className="text-[14px] font-extrabold" style={{ color: skipData.skipRate > 30 ? '#ef4444' : '#22c55e' }}>{skipData.skipRate}%</div>
+          <div className="text-[8px] text-gs-dim font-mono">Skip Rate</div>
+        </div>
+      </div>
+      {skipData.recentSkips.length > 0 && (
+        <div className="text-[9px] text-gs-faint">
+          Recently skipped: {skipData.recentSkips.map(s => s.track.title).join(', ')}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (19) Vinyl Warping Detection ───────────────────────────────────────
+function VinylWarpingDetector({ active }) {
+  const [warpLevel, setWarpLevel] = useState(0);
+
+  useEffect(() => {
+    if (active) {
+      const id = setInterval(() => setWarpLevel(Math.random() * 15), 3000);
+      return () => clearInterval(id);
+    }
+    setWarpLevel(0);
+  }, [active]);
+
+  const status = warpLevel > 10 ? 'warning' : warpLevel > 5 ? 'mild' : 'none';
+  const statusInfo = {
+    none: { label: 'No Warping Detected', color: '#22c55e', desc: 'Record is playing flat' },
+    mild: { label: 'Mild Warping', color: '#f59e0b', desc: 'Slight wow/flutter detected' },
+    warning: { label: 'Significant Warping', color: '#ef4444', desc: 'Consider using a record weight or clamp' },
+  };
+  const info = statusInfo[status];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Warping Detection</div>
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: `${info.color}15`, border: `1px solid ${info.color}33` }}>
+          <div
+            className="w-6 h-6 rounded-full border-2"
+            style={{
+              borderColor: info.color,
+              animation: active ? 'vb-warp-wobble 1s ease-in-out infinite' : 'none',
+            }}
+          />
+        </div>
+        <div>
+          <div className="text-[11px] font-bold" style={{ color: info.color }}>{info.label}</div>
+          <div className="text-[9px] text-gs-dim">{info.desc}</div>
+          {active && <div className="text-[8px] text-gs-faint font-mono mt-0.5">Wow/flutter: {warpLevel.toFixed(2)}%</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── (20) Surface Noise Level Meter ─────────────────────────────────────
+function SurfaceNoiseMeter({ active }) {
+  const [noiseLevel, setNoiseLevel] = useState(0);
+
+  useEffect(() => {
+    if (active) {
+      const id = setInterval(() => setNoiseLevel(15 + Math.random() * 35), 2000);
+      return () => clearInterval(id);
+    }
+    setNoiseLevel(0);
+  }, [active]);
+
+  const noiseColor = noiseLevel > 40 ? '#ef4444' : noiseLevel > 25 ? '#f59e0b' : '#22c55e';
+  const noiseLabel = noiseLevel > 40 ? 'High' : noiseLevel > 25 ? 'Moderate' : 'Low';
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Surface Noise</div>
+      <div className="flex items-center gap-3">
+        <div className="flex-1">
+          <div className="flex justify-between mb-1.5">
+            <span className="text-[10px] text-gs-muted">{active ? noiseLabel : 'Inactive'}</span>
+            <span className="text-[10px] font-bold font-mono" style={{ color: active ? noiseColor : '#555' }}>
+              {active ? `${noiseLevel.toFixed(1)} dB` : '--'}
+            </span>
+          </div>
+          <div className="w-full h-3 bg-[#111] rounded-full overflow-hidden flex">
+            {Array.from({ length: 20 }, (_, i) => {
+              const threshold = (i / 20) * 60;
+              const isActive = active && noiseLevel >= threshold;
+              const segColor = threshold > 40 ? '#ef4444' : threshold > 25 ? '#f59e0b' : '#22c55e';
+              return (
+                <div
+                  key={i}
+                  className="flex-1 mx-[0.5px] rounded-sm transition-all duration-150"
+                  style={{ background: isActive ? segColor : '#1a1a1a' }}
+                />
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      {active && noiseLevel > 35 && (
+        <div className="text-[9px] text-[#f59e0b] mt-2">Consider cleaning the record to reduce surface noise.</div>
+      )}
+    </div>
+  );
+}
+
+// ── (21) Dynamic Range Meter ───────────────────────────────────────────
+function DynamicRangeMeter({ active, myListens }) {
+  const dr = useMemo(() => {
+    if (!active && myListens.length === 0) return null;
+    const base = 10 + Math.floor(Math.random() * 8);
+    return {
+      value: base,
+      rating: base >= 14 ? 'Excellent' : base >= 10 ? 'Good' : 'Compressed',
+      color: base >= 14 ? '#22c55e' : base >= 10 ? '#0ea5e9' : '#f59e0b',
+    };
+  }, [active, myListens.length]);
+
+  if (!dr) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Dynamic Range</div>
+      <div className="flex items-center gap-4">
+        <div className="w-14 h-14 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${dr.color}15`, border: `1px solid ${dr.color}33` }}>
+          <span className="text-[18px] font-extrabold font-mono" style={{ color: dr.color }}>DR{dr.value}</span>
+        </div>
+        <div>
+          <div className="text-[12px] font-bold text-gs-text">{dr.rating}</div>
+          <div className="text-[9px] text-gs-dim mt-0.5">
+            {dr.value >= 14 ? 'Wide dynamic range - vinyl at its best' : dr.value >= 10 ? 'Good dynamics for this format' : 'Limited dynamics - may be a loud master'}
+          </div>
+          <div className="flex items-center gap-1 mt-1.5">
+            {Array.from({ length: 20 }, (_, i) => (
+              <div key={i} className="w-1.5 h-3 rounded-sm" style={{ background: i < dr.value ? dr.color : '#1a1a1a' }} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── (22) Listening Fatigue Warning ─────────────────────────────────────
+function ListeningFatigueWarning({ myListens }) {
+  const sessionDuration = useMemo(() => {
+    if (myListens.length === 0) return 0;
+    const recent = myListens.filter(s => Date.now() - s.timestampMs < 4 * 3600000);
+    return recent.reduce((sum, s) => sum + (s.listenedSeconds || 0), 0);
+  }, [myListens]);
+
+  const hours = sessionDuration / 3600;
+  if (hours < 1.5) return null;
+
+  const severity = hours >= 3 ? 'high' : 'moderate';
+  const info = {
+    moderate: { color: '#f59e0b', label: 'Consider a Break', desc: `You've been listening for ${Math.floor(hours)}h ${Math.floor((hours % 1) * 60)}m. Taking short breaks helps prevent listener fatigue.` },
+    high: { color: '#ef4444', label: 'Extended Listening Session', desc: `Over ${Math.floor(hours)} hours of continuous listening. Prolonged exposure at high volumes can cause hearing fatigue. Consider lowering volume or taking a 15-minute break.` },
+  };
+  const s = info[severity];
+
+  return (
+    <div className="rounded-[14px] p-4 mb-4" style={{ background: `${s.color}08`, border: `1px solid ${s.color}22` }}>
+      <div className="flex items-start gap-2.5">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={s.color} strokeWidth="2" className="mt-0.5 shrink-0">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <div>
+          <div className="text-[12px] font-bold" style={{ color: s.color }}>{s.label}</div>
+          <div className="text-[10px] text-gs-dim mt-1 leading-relaxed">{s.desc}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── (23) Room Acoustics Tips ───────────────────────────────────────────
+function RoomAcousticsTips() {
+  const [expanded, setExpanded] = useState(false);
+  const tips = [
+    { title: 'Speaker Placement', desc: 'Position speakers at ear level, forming an equilateral triangle with your listening position.' },
+    { title: 'Room Treatment', desc: 'Soft furnishings, rugs, and curtains help reduce reflections. Avoid bare, parallel walls.' },
+    { title: 'Device Position', desc: 'Place Vinyl Buddy 6-12 inches from a speaker, not directly on the turntable plinth.' },
+    { title: 'Bass Management', desc: 'Corner placement amplifies bass. Move speakers away from corners if bass sounds boomy.' },
+    { title: 'Listening Distance', desc: 'Sit at least 1.5x the distance between your speakers for optimal stereo imaging.' },
+  ];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] mb-3 overflow-hidden">
+      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-between py-3.5 px-4 bg-transparent border-none cursor-pointer text-left">
+        <div className="flex items-center gap-2.5">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 18v-6a9 9 0 0118 0v6"/><path d="M21 19a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3zM3 19a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3z"/>
+          </svg>
+          <span className="text-[12px] font-bold text-gs-text">Room Acoustics Tips</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }}>
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 vb-fade-in">
+          <div className="flex flex-col gap-2">
+            {tips.map((tip, i) => (
+              <div key={i} className="flex gap-2.5 py-2 px-2.5 rounded-lg bg-[#111]">
+                <div className="w-5 h-5 rounded-full bg-[#14b8a615] border border-[#14b8a633] flex items-center justify-center shrink-0 mt-0.5">
+                  <span className="text-[9px] font-bold text-[#14b8a6]">{i + 1}</span>
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold text-gs-text">{tip.title}</div>
+                  <div className="text-[9px] text-gs-dim mt-0.5 leading-relaxed">{tip.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (24) Device Firmware Changelog Display ─────────────────────────────
+function FirmwareChangelog() {
+  const [expanded, setExpanded] = useState(false);
+  const releases = [
+    { version: '2.1.0', date: '2026-03-15', changes: ['Improved acoustic fingerprinting accuracy by 15%', 'Added support for 78 RPM detection', 'Fixed WiFi reconnection stability'] },
+    { version: '2.0.3', date: '2026-02-28', changes: ['Reduced memory usage during capture', 'Better noise floor detection', 'OLED display sleep mode'] },
+    { version: '2.0.0', date: '2026-01-15', changes: ['Major rewrite of audio pipeline', 'New I2S driver for INMP441', 'Added OTA update support', 'New heartbeat protocol v2'] },
+    { version: '1.5.2', date: '2025-12-01', changes: ['Bug fix: occasional crash during long sessions', 'Improved WiFi signal handling'] },
+  ];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] mb-3 overflow-hidden">
+      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-between py-3.5 px-4 bg-transparent border-none cursor-pointer text-left">
+        <div className="flex items-center gap-2.5">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+          </svg>
+          <span className="text-[12px] font-bold text-gs-text">Firmware Changelog</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }}>
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 vb-fade-in">
+          <div className="flex flex-col gap-3">
+            {releases.map((r, i) => (
+              <div key={r.version} className="relative pl-4 border-l-2 border-[#1a1a1a]">
+                {i === 0 && <div className="absolute -left-[5px] top-0 w-2 h-2 rounded-full bg-[#8b5cf6]" />}
+                {i > 0 && <div className="absolute -left-[5px] top-0 w-2 h-2 rounded-full bg-[#333]" />}
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[11px] font-extrabold text-gs-text font-mono">v{r.version}</span>
+                  <span className="text-[9px] text-gs-faint font-mono">{r.date}</span>
+                  {i === 0 && <span className="text-[8px] px-1.5 py-0.5 rounded bg-[#8b5cf611] border border-[#8b5cf622] text-[#8b5cf6] font-bold">Latest</span>}
+                </div>
+                <ul className="list-none p-0 m-0">
+                  {r.changes.map((c, j) => (
+                    <li key={j} className="text-[9px] text-gs-dim py-0.5 flex items-start gap-1.5">
+                      <span className="text-[#555] mt-[3px] shrink-0">-</span>
+                      {c}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── (25) Bluetooth Speaker Pairing Guide ───────────────────────────────
+function BluetoothPairingGuide() {
+  const [expanded, setExpanded] = useState(false);
+  const steps = [
+    { title: 'Important Note', desc: 'Vinyl Buddy listens via its built-in microphone, not Bluetooth. This guide helps optimize your speaker setup for best identification results.' },
+    { title: 'Wired Preferred', desc: 'For best results, use wired speakers. Bluetooth adds 40-200ms latency which can affect track identification timing.' },
+    { title: 'If Using Bluetooth', desc: 'Enable aptX or AAC codec on your Bluetooth speaker for lowest latency. Place Vinyl Buddy near the speaker, not the turntable.' },
+    { title: 'Speaker Volume', desc: 'Set speaker volume to a comfortable listening level (60-75%). Too quiet and identification fails; too loud causes distortion.' },
+    { title: 'Multiple Speakers', desc: 'If using stereo Bluetooth speakers, place Vinyl Buddy equidistant between them for balanced audio capture.' },
+  ];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] mb-3 overflow-hidden">
+      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-between py-3.5 px-4 bg-transparent border-none cursor-pointer text-left">
+        <div className="flex items-center gap-2.5">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M6.5 6.5l11 11L12 23V1l5.5 5.5-11 11"/>
+          </svg>
+          <span className="text-[12px] font-bold text-gs-text">Bluetooth Speaker Guide</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" style={{ transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s ease' }}>
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4 vb-fade-in">
+          <div className="flex flex-col gap-2">
+            {steps.map((step, i) => (
+              <div key={i} className="flex gap-2.5 py-2 px-2.5 rounded-lg bg-[#111]">
+                <div className="w-5 h-5 rounded-full bg-[#0ea5e915] border border-[#0ea5e933] flex items-center justify-center shrink-0 mt-0.5">
+                  <span className="text-[9px] font-bold text-gs-accent">{i + 1}</span>
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold text-gs-text">{step.title}</div>
+                  <div className="text-[9px] text-gs-dim mt-0.5 leading-relaxed">{step.desc}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -1618,8 +2735,41 @@ function OverviewTab({ myListens, nowPlaying, isRecent, topArtist, topTrack, top
         <NowPlayingCard nowPlaying={nowPlaying} isRecent={isRecent} myListens={myListens} />
       )}
 
+      {/* (6) Genre auto-tags for current track */}
+      {nowPlaying && <GenreAutoTag track={nowPlaying.track} />}
+
+      {/* (17) Album art recognition confidence */}
+      {nowPlaying && <AlbumArtConfidence session={nowPlaying} />}
+
+      {/* (9) Side A/B tracking */}
+      <SideTracker nowPlaying={nowPlaying} />
+
+      {/* (10) RPM detection display */}
+      <RPMDetector nowPlaying={nowPlaying} />
+
+      {/* (5) Identification confidence breakdown */}
+      {nowPlaying && <ConfidenceBreakdown session={nowPlaying} />}
+
       {/* Audio quality indicator (Improvement 2) */}
       <AudioQualityIndicator isRecent={isRecent} />
+
+      {/* (12) Enhanced waveform visualization */}
+      <EnhancedWaveform active={isRecent} />
+
+      {/* (13) Frequency spectrum analyzer */}
+      <FrequencySpectrum active={isRecent} />
+
+      {/* (19) Vinyl warping detection */}
+      <VinylWarpingDetector active={isRecent} />
+
+      {/* (20) Surface noise level meter */}
+      <SurfaceNoiseMeter active={isRecent} />
+
+      {/* (21) Dynamic range meter */}
+      <DynamicRangeMeter active={isRecent} myListens={myListens} />
+
+      {/* (22) Listening fatigue warning */}
+      <ListeningFatigueWarning myListens={myListens} />
 
       {/* Sound wave visualization */}
       <div className="mb-4">
@@ -1710,8 +2860,23 @@ function OverviewTab({ myListens, nowPlaying, isRecent, topArtist, topTrack, top
       {/* Listening Goals (Improvement 3) */}
       <ListeningGoals myListens={myListens} />
 
+      {/* (8) Listening session recording */}
+      <ListeningSessionRecorder />
+
+      {/* (16) Listening party mode */}
+      <ListeningPartyMode nowPlaying={nowPlaying} />
+
       {/* Social Listening (Improvement 7) */}
       <SocialListening />
+
+      {/* (7) Playlist generation from recent listens */}
+      <PlaylistGenerator myListens={myListens} />
+
+      {/* (14) Record cleaning reminder */}
+      <RecordCleaningReminder myListens={myListens} />
+
+      {/* (18) Track skip detection */}
+      <TrackSkipDetector myListens={myListens} />
 
       {/* Recommendations based on listening history */}
       <RecommendationsSection myListens={myListens} />
@@ -2131,6 +3296,12 @@ function StatsTab({ myListens, loading }) {
         </div>
       </div>
 
+      {/* (4) Audio quality metrics dashboard */}
+      <AudioQualityDashboard isRecent={false} />
+
+      {/* (15) Stylus wear indicator */}
+      <StylusWearIndicator myListens={myListens} />
+
       {/* Identification Accuracy Stats (Improvement 4) */}
       <AccuracyStats myListens={myListens} />
 
@@ -2522,6 +3693,27 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate, isDemo }) {
           </div>
         </div>
       </div>
+
+      {/* (1) Multi-device management */}
+      <MultiDeviceManager devices={null} activeDeviceId={deviceCode} onSelectDevice={() => {}} />
+
+      {/* (2) Device naming/labeling */}
+      <DeviceNamingPanel deviceCode={deviceCode} />
+
+      {/* (3) Listening room assignment */}
+      <ListeningRoomAssignment deviceCode={deviceCode} />
+
+      {/* (24) Firmware changelog */}
+      <FirmwareChangelog />
+
+      {/* (11) Turntable compatibility checker */}
+      <TurntableCompatibilityChecker />
+
+      {/* (23) Room acoustics tips */}
+      <RoomAcousticsTips />
+
+      {/* (25) Bluetooth speaker pairing guide */}
+      <BluetoothPairingGuide />
 
       {/* Setup Guide */}
       <SetupGuide />

@@ -1528,11 +1528,34 @@ app.post('/api/auth/forgot-password', authRateLimit, async (req, res) => {
 
 // ── Stripe Checkout — platform fee: 5% or $1 min ────────────────────────────
 
+const PLATFORM_FEE_PERCENT = 0.05; // 5%
+const PLATFORM_FEE_MIN_CENTS = 100; // $1.00 minimum
 const SHIPPING_FEE_CENTS = 600; // $6.00
 
 function calcPlatformFee(priceCents) {
-  return Math.max(Math.round(priceCents * 0.05), 100); // 5% or $1.00 min
+  return Math.max(Math.round(priceCents * PLATFORM_FEE_PERCENT), PLATFORM_FEE_MIN_CENTS);
 }
+
+// GET /api/marketplace/fees — transparent fee structure disclosure
+app.get('/api/marketplace/fees', (_req, res) => {
+  res.json({
+    platformFee: {
+      percent: PLATFORM_FEE_PERCENT * 100,
+      minimum: PLATFORM_FEE_MIN_CENTS / 100,
+      description: 'A 5% platform fee is applied to every sale, with a minimum of $1.00. This fee covers payment processing, dispute resolution, and platform maintenance.',
+    },
+    shipping: {
+      flatRate: SHIPPING_FEE_CENTS / 100,
+      description: 'Flat-rate shipping fee of $6.00 per order, charged to the buyer.',
+    },
+    paymentProcessing: {
+      percent: 2.9,
+      fixed: 0.30,
+      description: 'Stripe payment processing fee (2.9% + $0.30), deducted from seller payout.',
+    },
+    summary: 'Buyers pay: listing price + 5% platform fee + $6.00 shipping. Sellers receive: listing price minus platform fee and payment processing costs.',
+  });
+});
 
 // POST /api/checkout/create-session — creates a Stripe Checkout Session
 app.post('/api/checkout/create-session', authMiddleware, async (req, res) => {
@@ -1567,7 +1590,7 @@ app.post('/api/checkout/create-session', authMiddleware, async (req, res) => {
         {
           price_data: {
             currency: 'usd',
-            product_data: { name: 'Groovestack transaction fee (5%)' },
+            product_data: { name: `Groovestack platform fee (${PLATFORM_FEE_PERCENT * 100}%, min $${(PLATFORM_FEE_MIN_CENTS / 100).toFixed(2)})` },
             unit_amount: feeCents,
           },
           quantity: 1,
@@ -1586,10 +1609,18 @@ app.post('/api/checkout/create-session', authMiddleware, async (req, res) => {
 });
 
 // GET /api/checkout/fee?price=XX — preview fee for UI
+// Platform fee: 5% with $1.00 minimum (consistent with /api/marketplace/fees)
 app.get('/api/checkout/fee', (req, res) => {
   const priceCents = Math.round(parseFloat(req.query.price || 0) * 100);
   const feeCents = calcPlatformFee(priceCents);
-  res.json({ fee: (feeCents / 100).toFixed(2), feeCents, shipping: (SHIPPING_FEE_CENTS / 100).toFixed(2) });
+  res.json({
+    fee: (feeCents / 100).toFixed(2),
+    feeCents,
+    feePercent: PLATFORM_FEE_PERCENT * 100,
+    feeMinimum: (PLATFORM_FEE_MIN_CENTS / 100).toFixed(2),
+    shipping: (SHIPPING_FEE_CENTS / 100).toFixed(2),
+    description: `${PLATFORM_FEE_PERCENT * 100}% platform fee (min $${(PLATFORM_FEE_MIN_CENTS / 100).toFixed(2)}) + $${(SHIPPING_FEE_CENTS / 100).toFixed(2)} shipping`,
+  });
 });
 
 app.get('/api/health', async (_req, res) => {
@@ -4353,13 +4384,12 @@ app.put('/api/preferences', authMiddleware, async (req, res) => {
 // ── Feature 9: Marketplace fee calculator ────────────────────────────────────
 
 // GET /api/marketplace/fee-calculator — calculate marketplace fees for a sale
+// Uses the same PLATFORM_FEE_PERCENT and PLATFORM_FEE_MIN_CENTS constants as checkout
 app.get('/api/marketplace/fee-calculator', (req, res) => {
   const price = parseFloat(req.query.price) || 0;
   if (price <= 0) return res.status(400).json({ error: 'Price must be positive', code: 'INVALID_PRICE' });
 
-  const platformFeePercent = 0.05; // 5%
-  const platformFeeMin = 1.00;
-  const platformFee = Math.max(Math.round(price * platformFeePercent * 100) / 100, platformFeeMin);
+  const platformFee = Math.max(Math.round(price * PLATFORM_FEE_PERCENT * 100) / 100, PLATFORM_FEE_MIN_CENTS / 100);
   const paymentProcessingPercent = 0.029; // 2.9% Stripe
   const paymentProcessingFixed = 0.30;
   const paymentFee = Math.round((price * paymentProcessingPercent + paymentProcessingFixed) * 100) / 100;
@@ -4371,7 +4401,7 @@ app.get('/api/marketplace/fee-calculator', (req, res) => {
   res.json({
     listingPrice: price,
     platformFee,
-    platformFeePercent: platformFeePercent * 100,
+    platformFeePercent: PLATFORM_FEE_PERCENT * 100,
     paymentProcessingFee: paymentFee,
     shippingFee,
     totalFees,
@@ -5176,6 +5206,7 @@ app.get('/api/docs', (_req, res) => {
     { method: 'GET', path: '/api/messages/:otherUser', description: 'Get conversation', auth: true },
     { method: 'POST', path: '/api/checkout/create-session', description: 'Create Stripe checkout session', auth: true },
     { method: 'GET', path: '/api/checkout/fee', description: 'Preview transaction fee', auth: false },
+    { method: 'GET', path: '/api/marketplace/fees', description: 'Transparent fee structure (5% platform fee, shipping, processing)', auth: false },
     { method: 'GET', path: '/api/prices/lookup', description: 'Discogs price lookup', auth: false },
     { method: 'POST', path: '/api/vinyl-buddy/heartbeat', description: 'Vinyl Buddy device heartbeat', auth: false },
     { method: 'POST', path: '/api/vinyl-buddy/identify', description: 'Identify track from audio', auth: false },
@@ -5840,6 +5871,1426 @@ app.get('/api/changelog', (_req, res) => {
     },
   ];
   return envelope(res, { data: { changelog, currentVersion: '1.5.0' } });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── 25 Marketplace-Focused Revenue Features ──────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Feature M1: Auction System ───────────────────────────────────────────────
+
+// POST /api/marketplace/auctions — create an auction listing
+app.post('/api/marketplace/auctions', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { recordId, startingPrice, reservePrice, durationHours = 168, autoExtendMinutes = 10 } = req.body;
+    if (!recordId || !startingPrice || startingPrice <= 0) {
+      return res.status(400).json({ error: 'recordId and positive startingPrice required', code: 'INVALID_AUCTION' });
+    }
+    const endsAt = new Date(Date.now() + durationHours * 60 * 60 * 1000).toISOString();
+    const result = await pool.query(
+      `INSERT INTO auctions (record_id, seller_id, starting_price, reserve_price, current_bid, ends_at, auto_extend_minutes, status, created_at)
+       VALUES ($1, $2, $3, $4, $3, $5, $6, 'active', now()) RETURNING *`,
+      [recordId, req.user.id, startingPrice, reservePrice || 0, endsAt, autoExtendMinutes]
+    );
+    res.status(201).json({ success: true, auction: result.rows[0] });
+  } catch (err) {
+    console.error('Create auction error:', err.message);
+    res.status(500).json({ error: 'Failed to create auction' });
+  }
+});
+
+// POST /api/marketplace/auctions/:id/bid — place a bid
+app.post('/api/marketplace/auctions/:id/bid', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const auctionId = parseInt(req.params.id);
+    const { amount } = req.body;
+    if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: 'Valid bid amount required', code: 'INVALID_BID' });
+
+    const auction = await pool.query('SELECT * FROM auctions WHERE id = $1 AND status = \'active\'', [auctionId]);
+    if (auction.rows.length === 0) return res.status(404).json({ error: 'Auction not found or not active', code: 'AUCTION_NOT_FOUND' });
+
+    const a = auction.rows[0];
+    if (a.seller_id === req.user.id) return res.status(403).json({ error: 'Cannot bid on your own auction', code: 'SELF_BID' });
+    if (amount <= parseFloat(a.current_bid)) return res.status(400).json({ error: 'Bid must exceed current bid', code: 'BID_TOO_LOW' });
+    if (new Date(a.ends_at) < new Date()) return res.status(400).json({ error: 'Auction has ended', code: 'AUCTION_ENDED' });
+
+    // Auto-extend if bid is within the extension window
+    const timeLeft = new Date(a.ends_at) - Date.now();
+    const extendThreshold = (a.auto_extend_minutes || 10) * 60 * 1000;
+    let newEndsAt = a.ends_at;
+    if (timeLeft < extendThreshold) {
+      newEndsAt = new Date(Date.now() + extendThreshold).toISOString();
+    }
+
+    await pool.query(
+      `INSERT INTO auction_bids (auction_id, bidder_id, amount, created_at) VALUES ($1, $2, $3, now())`,
+      [auctionId, req.user.id, amount]
+    );
+    await pool.query(
+      `UPDATE auctions SET current_bid = $1, highest_bidder_id = $2, ends_at = $3, bid_count = COALESCE(bid_count, 0) + 1 WHERE id = $4`,
+      [amount, req.user.id, newEndsAt, auctionId]
+    );
+
+    const platformFee = Math.max(Math.round(amount * 0.05 * 100) / 100, 1.00);
+    res.json({ success: true, currentBid: amount, endsAt: newEndsAt, estimatedPlatformFee: platformFee });
+  } catch (err) {
+    console.error('Place bid error:', err.message);
+    res.status(500).json({ error: 'Failed to place bid' });
+  }
+});
+
+// POST /api/marketplace/auctions/:id/close — close an auction
+app.post('/api/marketplace/auctions/:id/close', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const auctionId = parseInt(req.params.id);
+    const auction = await pool.query('SELECT * FROM auctions WHERE id = $1', [auctionId]);
+    if (auction.rows.length === 0) return res.status(404).json({ error: 'Auction not found' });
+
+    const a = auction.rows[0];
+    if (a.seller_id !== req.user.id) return res.status(403).json({ error: 'Only the seller can close the auction' });
+
+    const metReserve = parseFloat(a.current_bid) >= parseFloat(a.reserve_price || 0);
+    const hasWinner = a.highest_bidder_id && metReserve;
+    const finalStatus = hasWinner ? 'sold' : 'ended_no_sale';
+    const platformFee = hasWinner ? Math.max(Math.round(parseFloat(a.current_bid) * 0.05 * 100) / 100, 1.00) : 0;
+
+    await pool.query('UPDATE auctions SET status = $1, closed_at = now(), platform_fee = $2 WHERE id = $3', [finalStatus, platformFee, auctionId]);
+
+    res.json({ success: true, status: finalStatus, winningBid: hasWinner ? parseFloat(a.current_bid) : null, winnerId: hasWinner ? a.highest_bidder_id : null, platformFee });
+  } catch (err) {
+    console.error('Close auction error:', err.message);
+    res.status(500).json({ error: 'Failed to close auction' });
+  }
+});
+
+// GET /api/marketplace/auctions/:id — get auction details with bid history
+app.get('/api/marketplace/auctions/:id', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const auctionId = parseInt(req.params.id);
+    const auction = await pool.query('SELECT * FROM auctions WHERE id = $1', [auctionId]);
+    if (auction.rows.length === 0) return res.status(404).json({ error: 'Auction not found' });
+
+    const bids = await pool.query('SELECT id, bidder_id, amount, created_at FROM auction_bids WHERE auction_id = $1 ORDER BY amount DESC LIMIT 50', [auctionId]);
+
+    res.json({ success: true, auction: auction.rows[0], bids: bids.rows });
+  } catch (err) {
+    console.error('Get auction error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature M2: Bundle Deal Creation and Management ──────────────────────────
+
+// POST /api/marketplace/bundles — create a bundle deal (discounted multi-record package)
+app.post('/api/marketplace/bundles', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { title, description, recordIds, bundlePrice } = req.body;
+    if (!title || !Array.isArray(recordIds) || recordIds.length < 2 || !bundlePrice || bundlePrice <= 0) {
+      return res.status(400).json({ error: 'title, at least 2 recordIds, and positive bundlePrice required', code: 'INVALID_BUNDLE' });
+    }
+
+    // Verify all records belong to this seller
+    const records = await pool.query('SELECT id, price FROM records WHERE id = ANY($1) AND user_id = $2 AND for_sale = true', [recordIds, req.user.id]);
+    if (records.rows.length !== recordIds.length) {
+      return res.status(400).json({ error: 'All records must belong to you and be for sale', code: 'INVALID_RECORDS' });
+    }
+
+    const individualTotal = records.rows.reduce((sum, r) => sum + parseFloat(r.price || 0), 0);
+    const discount = Math.round((1 - bundlePrice / individualTotal) * 100);
+    const platformFee = Math.max(Math.round(bundlePrice * 0.05 * 100) / 100, 1.00);
+
+    const result = await pool.query(
+      `INSERT INTO bundles (seller_id, title, description, record_ids, bundle_price, individual_total, discount_percent, platform_fee, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', now()) RETURNING *`,
+      [req.user.id, title, description || '', recordIds, bundlePrice, Math.round(individualTotal * 100) / 100, discount, platformFee]
+    );
+    res.status(201).json({ success: true, bundle: result.rows[0] });
+  } catch (err) {
+    console.error('Create bundle error:', err.message);
+    res.status(500).json({ error: 'Failed to create bundle' });
+  }
+});
+
+// GET /api/marketplace/bundles — list active bundles
+app.get('/api/marketplace/bundles', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const offset = parseInt(req.query.offset) || 0;
+    const result = await pool.query(
+      `SELECT b.*, p.username as seller_username FROM bundles b JOIN profiles p ON b.seller_id = p.id WHERE b.status = 'active' ORDER BY b.created_at DESC LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    res.json({ success: true, bundles: result.rows, count: result.rows.length });
+  } catch (err) {
+    console.error('List bundles error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature M3: Flash Sale Scheduling ────────────────────────────────────────
+
+// POST /api/marketplace/flash-sales — schedule a flash sale
+app.post('/api/marketplace/flash-sales', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { recordIds, discountPercent, startsAt, durationHours = 24 } = req.body;
+    if (!Array.isArray(recordIds) || recordIds.length === 0 || !discountPercent || discountPercent <= 0 || discountPercent > 90) {
+      return res.status(400).json({ error: 'recordIds, and discountPercent (1-90) required', code: 'INVALID_FLASH_SALE' });
+    }
+
+    const startTime = startsAt ? new Date(startsAt) : new Date();
+    const endTime = new Date(startTime.getTime() + durationHours * 60 * 60 * 1000);
+
+    const result = await pool.query(
+      `INSERT INTO flash_sales (seller_id, record_ids, discount_percent, starts_at, ends_at, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'scheduled', now()) RETURNING *`,
+      [req.user.id, recordIds, discountPercent, startTime.toISOString(), endTime.toISOString()]
+    );
+    res.status(201).json({ success: true, flashSale: result.rows[0] });
+  } catch (err) {
+    console.error('Create flash sale error:', err.message);
+    res.status(500).json({ error: 'Failed to create flash sale' });
+  }
+});
+
+// GET /api/marketplace/flash-sales/active — get currently active flash sales
+app.get('/api/marketplace/flash-sales/active', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      `SELECT fs.*, p.username as seller_username FROM flash_sales fs JOIN profiles p ON fs.seller_id = p.id
+       WHERE fs.starts_at <= now() AND fs.ends_at > now() AND fs.status != 'cancelled'
+       ORDER BY fs.ends_at ASC LIMIT 50`
+    );
+    res.json({ success: true, flashSales: result.rows });
+  } catch (err) {
+    console.error('Active flash sales error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature M4: Subscription Box Curation for Sellers ────────────────────────
+
+// POST /api/marketplace/subscription-boxes — create a subscription box offering
+app.post('/api/marketplace/subscription-boxes', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { name, description, monthlyPrice, genre, recordsPerMonth = 1, maxSubscribers = 50 } = req.body;
+    if (!name || !monthlyPrice || monthlyPrice <= 0) {
+      return res.status(400).json({ error: 'name and positive monthlyPrice required', code: 'INVALID_SUB_BOX' });
+    }
+
+    const platformCut = Math.round(monthlyPrice * 0.08 * 100) / 100; // 8% recurring commission
+    const result = await pool.query(
+      `INSERT INTO subscription_boxes (seller_id, name, description, monthly_price, genre, records_per_month, max_subscribers, platform_cut, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', now()) RETURNING *`,
+      [req.user.id, name, description || '', monthlyPrice, genre || 'mixed', recordsPerMonth, maxSubscribers, platformCut]
+    );
+    res.status(201).json({ success: true, subscriptionBox: result.rows[0] });
+  } catch (err) {
+    console.error('Create subscription box error:', err.message);
+    res.status(500).json({ error: 'Failed to create subscription box' });
+  }
+});
+
+// POST /api/marketplace/subscription-boxes/:id/subscribe — subscribe to a box
+app.post('/api/marketplace/subscription-boxes/:id/subscribe', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const boxId = parseInt(req.params.id);
+    const box = await pool.query('SELECT * FROM subscription_boxes WHERE id = $1 AND status = \'active\'', [boxId]);
+    if (box.rows.length === 0) return res.status(404).json({ error: 'Subscription box not found' });
+
+    const b = box.rows[0];
+    if (b.seller_id === req.user.id) return res.status(400).json({ error: 'Cannot subscribe to your own box' });
+
+    const existing = await pool.query('SELECT id FROM box_subscriptions WHERE box_id = $1 AND subscriber_id = $2 AND status = \'active\'', [boxId, req.user.id]);
+    if (existing.rows.length > 0) return res.status(400).json({ error: 'Already subscribed', code: 'ALREADY_SUBSCRIBED' });
+
+    const subCount = await pool.query('SELECT COUNT(*) FROM box_subscriptions WHERE box_id = $1 AND status = \'active\'', [boxId]);
+    if (parseInt(subCount.rows[0].count) >= b.max_subscribers) return res.status(400).json({ error: 'Box is full', code: 'BOX_FULL' });
+
+    const result = await pool.query(
+      `INSERT INTO box_subscriptions (box_id, subscriber_id, status, next_shipment_at, created_at)
+       VALUES ($1, $2, 'active', now() + interval '30 days', now()) RETURNING *`,
+      [boxId, req.user.id]
+    );
+    res.status(201).json({ success: true, subscription: result.rows[0], monthlyPrice: b.monthly_price });
+  } catch (err) {
+    console.error('Subscribe to box error:', err.message);
+    res.status(500).json({ error: 'Failed to subscribe' });
+  }
+});
+
+// ── Feature M5: Seller Storefront Customization ──────────────────────────────
+
+// PUT /api/marketplace/storefront — customize seller storefront appearance
+app.put('/api/marketplace/storefront', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { bannerUrl, logoUrl, storeName, tagline, accentColor, layout, featuredRecordIds, socialLinks } = req.body;
+    const result = await pool.query(
+      `INSERT INTO seller_storefronts (seller_id, banner_url, logo_url, store_name, tagline, accent_color, layout, featured_record_ids, social_links, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+       ON CONFLICT (seller_id) DO UPDATE SET
+         banner_url = COALESCE($2, seller_storefronts.banner_url),
+         logo_url = COALESCE($3, seller_storefronts.logo_url),
+         store_name = COALESCE($4, seller_storefronts.store_name),
+         tagline = COALESCE($5, seller_storefronts.tagline),
+         accent_color = COALESCE($6, seller_storefronts.accent_color),
+         layout = COALESCE($7, seller_storefronts.layout),
+         featured_record_ids = COALESCE($8, seller_storefronts.featured_record_ids),
+         social_links = COALESCE($9, seller_storefronts.social_links),
+         updated_at = now()
+       RETURNING *`,
+      [req.user.id, bannerUrl || null, logoUrl || null, storeName || null, tagline || null, accentColor || null, layout || 'grid', featuredRecordIds || null, socialLinks ? JSON.stringify(socialLinks) : null]
+    );
+    res.json({ success: true, storefront: result.rows[0] });
+  } catch (err) {
+    console.error('Storefront update error:', err.message);
+    res.status(500).json({ error: 'Failed to update storefront' });
+  }
+});
+
+// GET /api/marketplace/storefront/:username — view a seller's storefront
+app.get('/api/marketplace/storefront/:username', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      `SELECT s.*, p.username, p.display_name, p.avatar_url, p.bio FROM seller_storefronts s
+       JOIN profiles p ON s.seller_id = p.id WHERE p.username = $1`,
+      [req.params.username]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Storefront not found' });
+    res.json({ success: true, storefront: result.rows[0] });
+  } catch (err) {
+    console.error('Get storefront error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature M6: Buyer Loyalty Points System ──────────────────────────────────
+
+// GET /api/marketplace/loyalty/balance — check loyalty points balance
+app.get('/api/marketplace/loyalty/balance', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      `SELECT COALESCE(SUM(CASE WHEN type = 'earn' THEN points ELSE -points END), 0) as balance,
+              COALESCE(SUM(CASE WHEN type = 'earn' THEN points ELSE 0 END), 0) as total_earned,
+              COALESCE(SUM(CASE WHEN type = 'redeem' THEN points ELSE 0 END), 0) as total_redeemed
+       FROM loyalty_points WHERE user_id = $1`,
+      [req.user.id]
+    );
+    const row = result.rows[0];
+    const cashValue = Math.round(parseInt(row.balance) * 0.01 * 100) / 100; // 1 point = $0.01
+    res.json({ success: true, balance: parseInt(row.balance), totalEarned: parseInt(row.total_earned), totalRedeemed: parseInt(row.total_redeemed), cashValue });
+  } catch (err) {
+    console.error('Loyalty balance error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/marketplace/loyalty/earn — award points for a purchase (1 point per dollar spent)
+app.post('/api/marketplace/loyalty/earn', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { purchaseId, amount } = req.body;
+    if (!purchaseId || !amount || amount <= 0) return res.status(400).json({ error: 'purchaseId and positive amount required' });
+
+    const points = Math.floor(amount); // 1 point per $1
+    await pool.query(
+      `INSERT INTO loyalty_points (user_id, type, points, source, reference_id, created_at)
+       VALUES ($1, 'earn', $2, 'purchase', $3, now())`,
+      [req.user.id, points, purchaseId]
+    );
+    res.json({ success: true, pointsEarned: points, message: `Earned ${points} loyalty points!` });
+  } catch (err) {
+    console.error('Loyalty earn error:', err.message);
+    res.status(500).json({ error: 'Failed to award points' });
+  }
+});
+
+// POST /api/marketplace/loyalty/redeem — redeem points for discount
+app.post('/api/marketplace/loyalty/redeem', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { points } = req.body;
+    if (!points || points <= 0 || points % 100 !== 0) return res.status(400).json({ error: 'Points must be positive and in multiples of 100' });
+
+    const balance = await pool.query(
+      `SELECT COALESCE(SUM(CASE WHEN type = 'earn' THEN points ELSE -points END), 0) as balance FROM loyalty_points WHERE user_id = $1`,
+      [req.user.id]
+    );
+    if (parseInt(balance.rows[0].balance) < points) return res.status(400).json({ error: 'Insufficient points', code: 'INSUFFICIENT_POINTS' });
+
+    const discountCents = points; // 100 points = $1.00
+    const discountCode = `LP-${req.user.id}-${Date.now().toString(36).toUpperCase()}`;
+    await pool.query(
+      `INSERT INTO loyalty_points (user_id, type, points, source, reference_id, created_at)
+       VALUES ($1, 'redeem', $2, 'discount', $3, now())`,
+      [req.user.id, points, discountCode]
+    );
+    res.json({ success: true, discountCode, discountAmount: discountCents / 100, pointsRedeemed: points });
+  } catch (err) {
+    console.error('Loyalty redeem error:', err.message);
+    res.status(500).json({ error: 'Failed to redeem points' });
+  }
+});
+
+// ── Feature M7: Referral Rewards Tracking with Commission ────────────────────
+
+// POST /api/marketplace/referrals — generate a referral link
+app.post('/api/marketplace/referrals', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const referralCode = `REF-${req.user.id}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    const commissionPercent = 3; // 3% commission on referred purchases
+
+    const result = await pool.query(
+      `INSERT INTO referral_codes (user_id, code, commission_percent, status, created_at)
+       VALUES ($1, $2, $3, 'active', now()) RETURNING *`,
+      [req.user.id, referralCode, commissionPercent]
+    );
+    res.status(201).json({ success: true, referral: result.rows[0], shareUrl: `/join?ref=${referralCode}` });
+  } catch (err) {
+    console.error('Create referral error:', err.message);
+    res.status(500).json({ error: 'Failed to create referral' });
+  }
+});
+
+// GET /api/marketplace/referrals/stats — view referral earnings
+app.get('/api/marketplace/referrals/stats', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const codes = await pool.query('SELECT * FROM referral_codes WHERE user_id = $1', [req.user.id]);
+    const earnings = await pool.query(
+      `SELECT COALESCE(SUM(commission_amount), 0) as total_earned,
+              COALESCE(SUM(CASE WHEN paid = false THEN commission_amount ELSE 0 END), 0) as pending_payout,
+              COUNT(*) as total_referral_purchases
+       FROM referral_earnings WHERE referrer_id = $1`,
+      [req.user.id]
+    );
+    const e = earnings.rows[0];
+    res.json({
+      success: true,
+      codes: codes.rows,
+      totalEarned: parseFloat(e.total_earned),
+      pendingPayout: parseFloat(e.pending_payout),
+      totalReferralPurchases: parseInt(e.total_referral_purchases),
+    });
+  } catch (err) {
+    console.error('Referral stats error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/marketplace/referrals/track — track a referral purchase and calculate commission
+app.post('/api/marketplace/referrals/track', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { referralCode, purchaseId, purchaseAmount } = req.body;
+    if (!referralCode || !purchaseId || !purchaseAmount) return res.status(400).json({ error: 'referralCode, purchaseId, and purchaseAmount required' });
+
+    const code = await pool.query('SELECT * FROM referral_codes WHERE code = $1 AND status = \'active\'', [referralCode]);
+    if (code.rows.length === 0) return res.status(404).json({ error: 'Invalid referral code' });
+
+    const referrer = code.rows[0];
+    if (referrer.user_id === req.user.id) return res.status(400).json({ error: 'Cannot use your own referral code' });
+
+    const commissionAmount = Math.round(purchaseAmount * (referrer.commission_percent / 100) * 100) / 100;
+    await pool.query(
+      `INSERT INTO referral_earnings (referrer_id, referred_user_id, purchase_id, purchase_amount, commission_percent, commission_amount, paid, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, false, now())`,
+      [referrer.user_id, req.user.id, purchaseId, purchaseAmount, referrer.commission_percent, commissionAmount]
+    );
+    res.json({ success: true, commissionAmount, referrerId: referrer.user_id });
+  } catch (err) {
+    console.error('Track referral error:', err.message);
+    res.status(500).json({ error: 'Failed to track referral' });
+  }
+});
+
+// ── Feature M8: Featured Listing Promotion ($2.99/week) ─────────────────────
+
+// POST /api/marketplace/promote — promote a listing for $2.99/week
+app.post('/api/marketplace/promote', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { recordId, weeks = 1 } = req.body;
+    if (!recordId || weeks < 1 || weeks > 12) return res.status(400).json({ error: 'recordId and weeks (1-12) required', code: 'INVALID_PROMOTION' });
+
+    const record = await pool.query('SELECT id, user_id FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+    if (record.rows[0].user_id !== req.user.id) return res.status(403).json({ error: 'Only the owner can promote this listing' });
+
+    const pricePerWeek = 2.99;
+    const totalCost = Math.round(pricePerWeek * weeks * 100) / 100;
+    const expiresAt = new Date(Date.now() + weeks * 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const result = await pool.query(
+      `INSERT INTO featured_listings (record_id, seller_id, weeks, price_per_week, total_cost, expires_at, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active', now()) RETURNING *`,
+      [recordId, req.user.id, weeks, pricePerWeek, totalCost, expiresAt]
+    );
+    res.status(201).json({ success: true, promotion: result.rows[0], totalCharged: totalCost });
+  } catch (err) {
+    console.error('Promote listing error:', err.message);
+    res.status(500).json({ error: 'Failed to promote listing' });
+  }
+});
+
+// GET /api/marketplace/featured — get all currently featured listings
+app.get('/api/marketplace/featured', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      `SELECT fl.*, r.title as record_title, r.artist as record_artist, r.price, r.condition, p.username as seller
+       FROM featured_listings fl
+       JOIN records r ON fl.record_id = r.id
+       JOIN profiles p ON fl.seller_id = p.id
+       WHERE fl.status = 'active' AND fl.expires_at > now()
+       ORDER BY fl.created_at DESC LIMIT 20`
+    );
+    res.json({ success: true, featured: result.rows, revenuePerWeek: result.rows.length * 2.99 });
+  } catch (err) {
+    console.error('Featured listings error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature M9: Seller Tier System (Bronze/Silver/Gold) ──────────────────────
+
+// GET /api/marketplace/seller-tier — get current seller tier and benefits
+app.get('/api/marketplace/seller-tier', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const sales = await pool.query(
+      `SELECT COUNT(*) as total_sales, COALESCE(SUM(amount), 0) as total_revenue
+       FROM purchases WHERE seller_id = $1 AND status = 'completed'`,
+      [req.user.id]
+    );
+    const s = sales.rows[0];
+    const totalSales = parseInt(s.total_sales);
+    const totalRevenue = parseFloat(s.total_revenue);
+
+    let tier = 'Bronze';
+    let feeDiscount = 0;
+    let perks = ['Standard 5% platform fee', 'Basic analytics'];
+    if (totalSales >= 100 || totalRevenue >= 5000) {
+      tier = 'Gold';
+      feeDiscount = 40; // 40% off fees = 3% fee
+      perks = ['3% platform fee (40% discount)', 'Priority support', 'Featured seller badge', 'Free promotions (2/month)', 'Advanced analytics'];
+    } else if (totalSales >= 25 || totalRevenue >= 1000) {
+      tier = 'Silver';
+      feeDiscount = 20; // 20% off fees = 4% fee
+      perks = ['4% platform fee (20% discount)', 'Priority listing placement', 'Monthly analytics report'];
+    }
+
+    const effectiveFee = Math.round(5 * (1 - feeDiscount / 100) * 100) / 100;
+    res.json({ success: true, tier, totalSales, totalRevenue, feeDiscount, effectiveFeePercent: effectiveFee, perks });
+  } catch (err) {
+    console.error('Seller tier error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature M10: Automated Price Matching Alerts ─────────────────────────────
+
+// POST /api/marketplace/price-alerts — set a price alert for a record
+app.post('/api/marketplace/price-alerts', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { artist, title, maxPrice, condition } = req.body;
+    if (!artist || !title || !maxPrice || maxPrice <= 0) {
+      return res.status(400).json({ error: 'artist, title, and positive maxPrice required', code: 'INVALID_ALERT' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO price_alerts (user_id, artist, title, max_price, condition_filter, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'active', now()) RETURNING *`,
+      [req.user.id, artist, title, maxPrice, condition || null]
+    );
+    res.status(201).json({ success: true, alert: result.rows[0] });
+  } catch (err) {
+    console.error('Create price alert error:', err.message);
+    res.status(500).json({ error: 'Failed to create price alert' });
+  }
+});
+
+// GET /api/marketplace/price-alerts — list user's active price alerts
+app.get('/api/marketplace/price-alerts', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      `SELECT pa.*, (SELECT COUNT(*) FROM records r WHERE LOWER(r.artist) = LOWER(pa.artist) AND LOWER(r.title) = LOWER(pa.title) AND r.price <= pa.max_price AND r.for_sale = true) as matching_listings
+       FROM price_alerts pa WHERE pa.user_id = $1 AND pa.status = 'active' ORDER BY pa.created_at DESC`,
+      [req.user.id]
+    );
+    res.json({ success: true, alerts: result.rows });
+  } catch (err) {
+    console.error('List price alerts error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature M11: Group Buy Coordination ──────────────────────────────────────
+
+// POST /api/marketplace/group-buys — create a group buy (bulk discount when enough buyers join)
+app.post('/api/marketplace/group-buys', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { recordId, targetBuyers, discountPercent, expiresInHours = 72 } = req.body;
+    if (!recordId || !targetBuyers || targetBuyers < 2 || !discountPercent || discountPercent <= 0 || discountPercent > 50) {
+      return res.status(400).json({ error: 'recordId, targetBuyers (2+), and discountPercent (1-50) required', code: 'INVALID_GROUP_BUY' });
+    }
+
+    const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000).toISOString();
+    const result = await pool.query(
+      `INSERT INTO group_buys (organizer_id, record_id, target_buyers, current_buyers, discount_percent, expires_at, status, created_at)
+       VALUES ($1, $2, $3, 1, $4, $5, 'open', now()) RETURNING *`,
+      [req.user.id, recordId, targetBuyers, discountPercent, expiresAt]
+    );
+    res.status(201).json({ success: true, groupBuy: result.rows[0] });
+  } catch (err) {
+    console.error('Create group buy error:', err.message);
+    res.status(500).json({ error: 'Failed to create group buy' });
+  }
+});
+
+// POST /api/marketplace/group-buys/:id/join — join a group buy
+app.post('/api/marketplace/group-buys/:id/join', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const groupBuyId = parseInt(req.params.id);
+    const gb = await pool.query('SELECT * FROM group_buys WHERE id = $1 AND status = \'open\'', [groupBuyId]);
+    if (gb.rows.length === 0) return res.status(404).json({ error: 'Group buy not found or closed' });
+
+    const g = gb.rows[0];
+    if (new Date(g.expires_at) < new Date()) return res.status(400).json({ error: 'Group buy has expired', code: 'EXPIRED' });
+
+    const existing = await pool.query('SELECT id FROM group_buy_members WHERE group_buy_id = $1 AND user_id = $2', [groupBuyId, req.user.id]);
+    if (existing.rows.length > 0) return res.status(400).json({ error: 'Already joined', code: 'ALREADY_JOINED' });
+
+    await pool.query('INSERT INTO group_buy_members (group_buy_id, user_id, joined_at) VALUES ($1, $2, now())', [groupBuyId, req.user.id]);
+    const newCount = parseInt(g.current_buyers) + 1;
+    const triggered = newCount >= parseInt(g.target_buyers);
+    await pool.query('UPDATE group_buys SET current_buyers = $1, status = $2 WHERE id = $3', [newCount, triggered ? 'triggered' : 'open', groupBuyId]);
+
+    res.json({ success: true, currentBuyers: newCount, targetBuyers: g.target_buyers, triggered });
+  } catch (err) {
+    console.error('Join group buy error:', err.message);
+    res.status(500).json({ error: 'Failed to join group buy' });
+  }
+});
+
+// ── Feature M12: Record Grading Dispute Resolution ───────────────────────────
+
+// POST /api/marketplace/disputes/grading — open a grading dispute
+app.post('/api/marketplace/disputes/grading', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { purchaseId, listedCondition, actualCondition, description, evidenceUrls } = req.body;
+    if (!purchaseId || !listedCondition || !actualCondition || !description) {
+      return res.status(400).json({ error: 'purchaseId, listedCondition, actualCondition, and description required', code: 'INVALID_DISPUTE' });
+    }
+
+    const purchase = await pool.query('SELECT * FROM purchases WHERE id = $1 AND buyer_id = $2', [purchaseId, req.user.id]);
+    if (purchase.rows.length === 0) return res.status(404).json({ error: 'Purchase not found' });
+
+    const result = await pool.query(
+      `INSERT INTO grading_disputes (purchase_id, buyer_id, seller_id, listed_condition, actual_condition, description, evidence_urls, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', now()) RETURNING *`,
+      [purchaseId, req.user.id, purchase.rows[0].seller_id, listedCondition, actualCondition, description, evidenceUrls || []]
+    );
+    res.status(201).json({ success: true, dispute: result.rows[0] });
+  } catch (err) {
+    console.error('Create grading dispute error:', err.message);
+    res.status(500).json({ error: 'Failed to create dispute' });
+  }
+});
+
+// PUT /api/marketplace/disputes/grading/:id/respond — seller responds to dispute
+app.put('/api/marketplace/disputes/grading/:id/respond', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const disputeId = parseInt(req.params.id);
+    const { response, proposedResolution } = req.body;
+    if (!response) return res.status(400).json({ error: 'Response text required' });
+
+    const dispute = await pool.query('SELECT * FROM grading_disputes WHERE id = $1 AND seller_id = $2 AND status = \'open\'', [disputeId, req.user.id]);
+    if (dispute.rows.length === 0) return res.status(404).json({ error: 'Dispute not found or not yours to respond' });
+
+    await pool.query(
+      'UPDATE grading_disputes SET seller_response = $1, proposed_resolution = $2, status = \'under_review\', responded_at = now() WHERE id = $3',
+      [response, proposedResolution || 'none', disputeId]
+    );
+    res.json({ success: true, status: 'under_review' });
+  } catch (err) {
+    console.error('Respond to dispute error:', err.message);
+    res.status(500).json({ error: 'Failed to respond to dispute' });
+  }
+});
+
+// ── Feature M13: Shipping Insurance Claims ───────────────────────────────────
+
+// POST /api/marketplace/insurance/claim — file a shipping insurance claim
+app.post('/api/marketplace/insurance/claim', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { purchaseId, issueType, description, evidenceUrls, claimedAmount } = req.body;
+    const validIssues = ['damaged', 'lost', 'wrong_item', 'incomplete'];
+    if (!purchaseId || !issueType || !validIssues.includes(issueType) || !description) {
+      return res.status(400).json({ error: `purchaseId, issueType (${validIssues.join('/')}), and description required`, code: 'INVALID_CLAIM' });
+    }
+
+    const purchase = await pool.query('SELECT * FROM purchases WHERE id = $1 AND buyer_id = $2', [purchaseId, req.user.id]);
+    if (purchase.rows.length === 0) return res.status(404).json({ error: 'Purchase not found' });
+
+    const maxClaim = parseFloat(purchase.rows[0].amount || 0);
+    const amount = Math.min(claimedAmount || maxClaim, maxClaim);
+    const platformCoverage = Math.min(amount * 0.8, 50); // Platform covers 80% up to $50
+
+    const result = await pool.query(
+      `INSERT INTO insurance_claims (purchase_id, buyer_id, issue_type, description, evidence_urls, claimed_amount, platform_coverage, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'submitted', now()) RETURNING *`,
+      [purchaseId, req.user.id, issueType, description, evidenceUrls || [], amount, platformCoverage]
+    );
+    res.status(201).json({ success: true, claim: result.rows[0], estimatedCoverage: platformCoverage });
+  } catch (err) {
+    console.error('Insurance claim error:', err.message);
+    res.status(500).json({ error: 'Failed to file claim' });
+  }
+});
+
+// GET /api/marketplace/insurance/claims — list user's insurance claims
+app.get('/api/marketplace/insurance/claims', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      'SELECT * FROM insurance_claims WHERE buyer_id = $1 ORDER BY created_at DESC LIMIT 50',
+      [req.user.id]
+    );
+    res.json({ success: true, claims: result.rows });
+  } catch (err) {
+    console.error('List claims error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature M14: Return/Exchange Management ──────────────────────────────────
+
+// POST /api/marketplace/returns — initiate a return or exchange
+app.post('/api/marketplace/returns', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { purchaseId, type, reason, description } = req.body;
+    const validTypes = ['return', 'exchange'];
+    if (!purchaseId || !type || !validTypes.includes(type) || !reason) {
+      return res.status(400).json({ error: `purchaseId, type (return/exchange), and reason required`, code: 'INVALID_RETURN' });
+    }
+
+    const purchase = await pool.query('SELECT * FROM purchases WHERE id = $1 AND buyer_id = $2', [purchaseId, req.user.id]);
+    if (purchase.rows.length === 0) return res.status(404).json({ error: 'Purchase not found' });
+
+    const daysSincePurchase = Math.floor((Date.now() - new Date(purchase.rows[0].created_at).getTime()) / (1000 * 60 * 60 * 24));
+    if (daysSincePurchase > 30) return res.status(400).json({ error: '30-day return window has passed', code: 'RETURN_WINDOW_CLOSED' });
+
+    const restockingFee = type === 'return' ? Math.round(parseFloat(purchase.rows[0].amount) * 0.10 * 100) / 100 : 0; // 10% restocking fee on returns
+    const refundAmount = type === 'return' ? Math.round((parseFloat(purchase.rows[0].amount) - restockingFee) * 100) / 100 : 0;
+
+    const result = await pool.query(
+      `INSERT INTO returns (purchase_id, buyer_id, seller_id, type, reason, description, restocking_fee, refund_amount, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', now()) RETURNING *`,
+      [purchaseId, req.user.id, purchase.rows[0].seller_id, type, reason, description || '', restockingFee, refundAmount]
+    );
+    res.status(201).json({ success: true, return: result.rows[0], restockingFee, refundAmount });
+  } catch (err) {
+    console.error('Create return error:', err.message);
+    res.status(500).json({ error: 'Failed to initiate return' });
+  }
+});
+
+// PUT /api/marketplace/returns/:id/approve — seller approves a return
+app.put('/api/marketplace/returns/:id/approve', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const returnId = parseInt(req.params.id);
+    const ret = await pool.query('SELECT * FROM returns WHERE id = $1 AND seller_id = $2 AND status = \'pending\'', [returnId, req.user.id]);
+    if (ret.rows.length === 0) return res.status(404).json({ error: 'Return request not found' });
+
+    const returnLabel = `RL-${Date.now().toString(36).toUpperCase()}`;
+    await pool.query(
+      'UPDATE returns SET status = \'approved\', return_label = $1, approved_at = now() WHERE id = $2',
+      [returnLabel, returnId]
+    );
+    res.json({ success: true, status: 'approved', returnLabel, refundAmount: parseFloat(ret.rows[0].refund_amount) });
+  } catch (err) {
+    console.error('Approve return error:', err.message);
+    res.status(500).json({ error: 'Failed to approve return' });
+  }
+});
+
+// ── Feature M15: Seller Performance Scorecard ────────────────────────────────
+
+// GET /api/marketplace/seller-scorecard/:sellerId — get seller performance metrics
+app.get('/api/marketplace/seller-scorecard/:sellerId', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const sellerId = parseInt(req.params.sellerId);
+    if (!Number.isFinite(sellerId)) return res.status(400).json({ error: 'Invalid seller ID' });
+
+    const salesData = await pool.query(
+      `SELECT COUNT(*) as total_sales,
+              COALESCE(AVG(amount), 0) as avg_sale_price,
+              COALESCE(SUM(amount), 0) as total_revenue
+       FROM purchases WHERE seller_id = $1 AND status = 'completed'`,
+      [sellerId]
+    );
+    const disputeData = await pool.query(
+      `SELECT COUNT(*) as total_disputes,
+              SUM(CASE WHEN status = 'resolved_seller_favor' THEN 1 ELSE 0 END) as won_disputes
+       FROM grading_disputes WHERE seller_id = $1`,
+      [sellerId]
+    );
+    const returnData = await pool.query(
+      'SELECT COUNT(*) as total_returns FROM returns WHERE seller_id = $1',
+      [sellerId]
+    );
+    const ratingData = await pool.query(
+      'SELECT COALESCE(AVG(rating), 0) as avg_rating, COUNT(*) as total_ratings FROM seller_ratings WHERE seller_id = $1',
+      [sellerId]
+    );
+
+    const s = salesData.rows[0];
+    const d = disputeData.rows[0];
+    const r = returnData.rows[0];
+    const rt = ratingData.rows[0];
+
+    const totalSales = parseInt(s.total_sales);
+    const disputes = parseInt(d.total_disputes);
+    const returns = parseInt(r.total_returns);
+    const disputeRate = totalSales > 0 ? Math.round((disputes / totalSales) * 100 * 100) / 100 : 0;
+    const returnRate = totalSales > 0 ? Math.round((returns / totalSales) * 100 * 100) / 100 : 0;
+
+    let overallScore = 100;
+    overallScore -= disputeRate * 5;
+    overallScore -= returnRate * 3;
+    overallScore = Math.max(0, Math.min(100, Math.round(overallScore)));
+
+    res.json({
+      success: true,
+      scorecard: {
+        sellerId,
+        overallScore,
+        totalSales,
+        totalRevenue: parseFloat(s.total_revenue),
+        avgSalePrice: Math.round(parseFloat(s.avg_sale_price) * 100) / 100,
+        avgRating: Math.round(parseFloat(rt.avg_rating) * 10) / 10,
+        totalRatings: parseInt(rt.total_ratings),
+        disputeRate,
+        returnRate,
+        disputes,
+        returns,
+      },
+    });
+  } catch (err) {
+    console.error('Seller scorecard error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature M16: Buyer Purchase History Analytics ────────────────────────────
+
+// GET /api/marketplace/purchase-analytics — buyer's spending analytics
+app.get('/api/marketplace/purchase-analytics', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const overview = await pool.query(
+      `SELECT COUNT(*) as total_purchases,
+              COALESCE(SUM(amount), 0) as total_spent,
+              COALESCE(AVG(amount), 0) as avg_purchase,
+              COALESCE(MIN(amount), 0) as cheapest,
+              COALESCE(MAX(amount), 0) as most_expensive
+       FROM purchases WHERE buyer_id = $1 AND status IN ('completed', 'paid')`,
+      [req.user.id]
+    );
+    const monthlySpending = await pool.query(
+      `SELECT DATE_TRUNC('month', created_at) as month, COUNT(*) as purchases, SUM(amount) as spent
+       FROM purchases WHERE buyer_id = $1 AND status IN ('completed', 'paid')
+       GROUP BY DATE_TRUNC('month', created_at) ORDER BY month DESC LIMIT 12`,
+      [req.user.id]
+    );
+    const topSellers = await pool.query(
+      `SELECT p.seller_id, pr.username, COUNT(*) as purchases, SUM(p.amount) as total_spent
+       FROM purchases p JOIN profiles pr ON p.seller_id = pr.id
+       WHERE p.buyer_id = $1 AND p.status IN ('completed', 'paid')
+       GROUP BY p.seller_id, pr.username ORDER BY total_spent DESC LIMIT 5`,
+      [req.user.id]
+    );
+    const genreBreakdown = await pool.query(
+      `SELECT r.genre, COUNT(*) as count, SUM(p.amount) as spent
+       FROM purchases p JOIN records r ON p.record_id = r.id
+       WHERE p.buyer_id = $1 AND p.status IN ('completed', 'paid')
+       GROUP BY r.genre ORDER BY spent DESC LIMIT 10`,
+      [req.user.id]
+    );
+
+    const o = overview.rows[0];
+    res.json({
+      success: true,
+      analytics: {
+        totalPurchases: parseInt(o.total_purchases),
+        totalSpent: Math.round(parseFloat(o.total_spent) * 100) / 100,
+        avgPurchase: Math.round(parseFloat(o.avg_purchase) * 100) / 100,
+        cheapest: Math.round(parseFloat(o.cheapest) * 100) / 100,
+        mostExpensive: Math.round(parseFloat(o.most_expensive) * 100) / 100,
+        monthlySpending: monthlySpending.rows,
+        topSellers: topSellers.rows,
+        genreBreakdown: genreBreakdown.rows,
+      },
+    });
+  } catch (err) {
+    console.error('Purchase analytics error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature M17: Dynamic Pricing Suggestions Based on Demand ─────────────────
+
+// GET /api/marketplace/pricing-suggestions/:recordId — AI-assisted pricing
+app.get('/api/marketplace/pricing-suggestions/:recordId', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const recordId = parseInt(req.params.recordId);
+    const record = await pool.query('SELECT * FROM records WHERE id = $1 AND user_id = $2', [recordId, req.user.id]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found or not yours' });
+
+    const r = record.rows[0];
+
+    // Find comparable listings
+    const comparables = await pool.query(
+      `SELECT price, condition, created_at FROM records
+       WHERE LOWER(artist) = LOWER($1) AND LOWER(title) = LOWER($2) AND for_sale = true AND id != $3
+       ORDER BY created_at DESC LIMIT 20`,
+      [r.artist, r.title, recordId]
+    );
+
+    // Recent sales of same record
+    const recentSales = await pool.query(
+      `SELECT p.amount, p.created_at FROM purchases p
+       JOIN records rec ON p.record_id = rec.id
+       WHERE LOWER(rec.artist) = LOWER($1) AND LOWER(rec.title) = LOWER($2) AND p.status = 'completed'
+       ORDER BY p.created_at DESC LIMIT 10`,
+      [r.artist, r.title]
+    );
+
+    // Wishlist demand
+    const wishlistDemand = await pool.query(
+      `SELECT COUNT(*) as watchers FROM wishlist
+       WHERE LOWER(artist) = LOWER($1) AND LOWER(title) = LOWER($2)`,
+      [r.artist, r.title]
+    );
+
+    const prices = comparables.rows.map(c => parseFloat(c.price)).filter(p => p > 0);
+    const salePrices = recentSales.rows.map(s => parseFloat(s.amount)).filter(p => p > 0);
+    const demand = parseInt(wishlistDemand.rows[0]?.watchers || 0);
+
+    let suggestedPrice = parseFloat(r.price) || 0;
+    if (salePrices.length > 0) {
+      suggestedPrice = salePrices.reduce((a, b) => a + b, 0) / salePrices.length;
+    } else if (prices.length > 0) {
+      suggestedPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+    }
+
+    // Demand multiplier: high demand increases suggestion
+    const demandMultiplier = demand > 10 ? 1.15 : demand > 5 ? 1.08 : 1.0;
+    suggestedPrice = Math.round(suggestedPrice * demandMultiplier * 100) / 100;
+
+    res.json({
+      success: true,
+      currentPrice: parseFloat(r.price),
+      suggestedPrice,
+      comparableListings: comparables.rows.length,
+      recentSales: recentSales.rows.length,
+      avgComparablePrice: prices.length > 0 ? Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100 : null,
+      avgSalePrice: salePrices.length > 0 ? Math.round((salePrices.reduce((a, b) => a + b, 0) / salePrices.length) * 100) / 100 : null,
+      wishlistDemand: demand,
+      demandLevel: demand > 10 ? 'high' : demand > 5 ? 'medium' : 'low',
+    });
+  } catch (err) {
+    console.error('Pricing suggestions error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature M18: Inventory Management for Multi-Copy Sellers ─────────────────
+
+// POST /api/marketplace/inventory — add inventory for a record (multiple copies)
+app.post('/api/marketplace/inventory', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { recordId, copies } = req.body;
+    if (!recordId || !Array.isArray(copies) || copies.length === 0) {
+      return res.status(400).json({ error: 'recordId and copies array required', code: 'INVALID_INVENTORY' });
+    }
+
+    const record = await pool.query('SELECT id FROM records WHERE id = $1 AND user_id = $2', [recordId, req.user.id]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found or not yours' });
+
+    const inserted = [];
+    for (const copy of copies) {
+      const result = await pool.query(
+        `INSERT INTO inventory (record_id, seller_id, condition, price, notes, sku, status, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, 'available', now()) RETURNING *`,
+        [recordId, req.user.id, copy.condition || 'VG', copy.price, copy.notes || '', copy.sku || `SKU-${Date.now().toString(36)}`]
+      );
+      inserted.push(result.rows[0]);
+    }
+    res.status(201).json({ success: true, inventory: inserted, totalCopies: inserted.length });
+  } catch (err) {
+    console.error('Add inventory error:', err.message);
+    res.status(500).json({ error: 'Failed to add inventory' });
+  }
+});
+
+// GET /api/marketplace/inventory — list seller's inventory
+app.get('/api/marketplace/inventory', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      `SELECT i.*, r.title, r.artist FROM inventory i
+       JOIN records r ON i.record_id = r.id
+       WHERE i.seller_id = $1 ORDER BY r.artist, r.title, i.condition`,
+      [req.user.id]
+    );
+    const summary = await pool.query(
+      `SELECT COUNT(*) as total_copies, COUNT(DISTINCT record_id) as unique_records,
+              SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available,
+              SUM(CASE WHEN status = 'sold' THEN 1 ELSE 0 END) as sold,
+              COALESCE(SUM(CASE WHEN status = 'available' THEN price ELSE 0 END), 0) as total_value
+       FROM inventory WHERE seller_id = $1`,
+      [req.user.id]
+    );
+    res.json({ success: true, inventory: result.rows, summary: summary.rows[0] });
+  } catch (err) {
+    console.error('List inventory error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature M19: Pre-Order System ────────────────────────────────────────────
+
+// POST /api/marketplace/pre-orders — create a pre-order listing
+app.post('/api/marketplace/pre-orders', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { title, artist, description, price, expectedShipDate, maxOrders = 100 } = req.body;
+    if (!title || !artist || !price || price <= 0 || !expectedShipDate) {
+      return res.status(400).json({ error: 'title, artist, positive price, and expectedShipDate required', code: 'INVALID_PREORDER' });
+    }
+
+    const platformFee = Math.max(Math.round(price * 0.05 * 100) / 100, 1.00);
+    const result = await pool.query(
+      `INSERT INTO pre_orders (seller_id, title, artist, description, price, platform_fee, expected_ship_date, max_orders, current_orders, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 'open', now()) RETURNING *`,
+      [req.user.id, title, artist, description || '', price, platformFee, expectedShipDate, maxOrders]
+    );
+    res.status(201).json({ success: true, preOrder: result.rows[0] });
+  } catch (err) {
+    console.error('Create pre-order error:', err.message);
+    res.status(500).json({ error: 'Failed to create pre-order' });
+  }
+});
+
+// POST /api/marketplace/pre-orders/:id/reserve — reserve a pre-order
+app.post('/api/marketplace/pre-orders/:id/reserve', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const preOrderId = parseInt(req.params.id);
+    const po = await pool.query('SELECT * FROM pre_orders WHERE id = $1 AND status = \'open\'', [preOrderId]);
+    if (po.rows.length === 0) return res.status(404).json({ error: 'Pre-order not found or closed' });
+
+    const p = po.rows[0];
+    if (p.seller_id === req.user.id) return res.status(400).json({ error: 'Cannot pre-order your own listing' });
+    if (parseInt(p.current_orders) >= parseInt(p.max_orders)) return res.status(400).json({ error: 'Pre-order is full', code: 'PREORDER_FULL' });
+
+    const existing = await pool.query('SELECT id FROM pre_order_reservations WHERE pre_order_id = $1 AND buyer_id = $2 AND status = \'active\'', [preOrderId, req.user.id]);
+    if (existing.rows.length > 0) return res.status(400).json({ error: 'Already reserved', code: 'ALREADY_RESERVED' });
+
+    await pool.query(
+      'INSERT INTO pre_order_reservations (pre_order_id, buyer_id, status, created_at) VALUES ($1, $2, \'active\', now())',
+      [preOrderId, req.user.id]
+    );
+    await pool.query('UPDATE pre_orders SET current_orders = current_orders + 1 WHERE id = $1', [preOrderId]);
+
+    res.json({ success: true, expectedShipDate: p.expected_ship_date, price: parseFloat(p.price) });
+  } catch (err) {
+    console.error('Reserve pre-order error:', err.message);
+    res.status(500).json({ error: 'Failed to reserve' });
+  }
+});
+
+// ── Feature M20: Digital Receipt Generation with QR ──────────────────────────
+
+// GET /api/marketplace/receipts/:purchaseId — generate a digital receipt
+app.get('/api/marketplace/receipts/:purchaseId', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const purchaseId = parseInt(req.params.purchaseId);
+    const purchase = await pool.query(
+      `SELECT p.*, r.title, r.artist, r.condition, buyer.username as buyer_username, seller.username as seller_username
+       FROM purchases p
+       JOIN records r ON p.record_id = r.id
+       JOIN profiles buyer ON p.buyer_id = buyer.id
+       JOIN profiles seller ON p.seller_id = seller.id
+       WHERE p.id = $1 AND (p.buyer_id = $2 OR p.seller_id = $2)`,
+      [purchaseId, req.user.id]
+    );
+    if (purchase.rows.length === 0) return res.status(404).json({ error: 'Purchase not found' });
+
+    const p = purchase.rows[0];
+    const receiptCode = crypto.createHash('sha256').update(`receipt-${purchaseId}-${p.created_at}`).digest('hex').slice(0, 16).toUpperCase();
+    const platformFee = Math.max(Math.round(parseFloat(p.amount) * 0.05 * 100) / 100, 1.00);
+    const shippingFee = SHIPPING_FEE_CENTS / 100;
+
+    res.json({
+      success: true,
+      receipt: {
+        receiptNumber: `GS-${receiptCode}`,
+        purchaseId,
+        date: p.created_at,
+        buyer: p.buyer_username,
+        seller: p.seller_username,
+        item: { title: p.title, artist: p.artist, condition: p.condition },
+        subtotal: parseFloat(p.amount),
+        platformFee,
+        shipping: shippingFee,
+        total: Math.round((parseFloat(p.amount) + shippingFee) * 100) / 100,
+        status: p.status,
+        qrData: `groovestack://receipt/${receiptCode}`,
+        qrUrl: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=groovestack://receipt/${receiptCode}`,
+      },
+    });
+  } catch (err) {
+    console.error('Receipt generation error:', err.message);
+    res.status(500).json({ error: 'Failed to generate receipt' });
+  }
+});
+
+// ── Feature M21: Cross-Seller Price Comparison ───────────────────────────────
+
+// GET /api/marketplace/price-compare — compare prices across sellers for same record
+app.get('/api/marketplace/price-compare', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { artist, title } = req.query;
+    if (!artist || !title) return res.status(400).json({ error: 'artist and title query params required', code: 'MISSING_PARAMS' });
+
+    const listings = await pool.query(
+      `SELECT r.id, r.price, r.condition, r.notes, r.created_at, p.username as seller, p.id as seller_id
+       FROM records r JOIN profiles p ON r.user_id = p.id
+       WHERE LOWER(r.artist) = LOWER($1) AND LOWER(r.title) = LOWER($2) AND r.for_sale = true
+       ORDER BY r.price ASC`,
+      [artist, title]
+    );
+
+    if (listings.rows.length === 0) return res.json({ success: true, listings: [], message: 'No listings found' });
+
+    const prices = listings.rows.map(l => parseFloat(l.price));
+    const lowest = Math.min(...prices);
+    const highest = Math.max(...prices);
+    const average = Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100;
+
+    res.json({
+      success: true,
+      artist,
+      title,
+      listings: listings.rows,
+      priceStats: { lowest, highest, average, totalListings: listings.rows.length },
+    });
+  } catch (err) {
+    console.error('Price compare error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ── Feature M22: Marketplace Fee Transparency Endpoint ───────────────────────
+
+// GET /api/marketplace/fee-breakdown — detailed fee breakdown for any transaction
+app.get('/api/marketplace/fee-breakdown', (req, res) => {
+  const price = parseFloat(req.query.price) || 0;
+  if (price <= 0) return res.status(400).json({ error: 'Positive price required', code: 'INVALID_PRICE' });
+
+  const tier = (req.query.tier || 'bronze').toLowerCase();
+  const tiers = {
+    bronze: { feePercent: 5.0, label: 'Bronze (Standard)' },
+    silver: { feePercent: 4.0, label: 'Silver (20% discount)' },
+    gold: { feePercent: 3.0, label: 'Gold (40% discount)' },
+  };
+  const sellerTier = tiers[tier] || tiers.bronze;
+  const platformFee = Math.max(Math.round(price * (sellerTier.feePercent / 100) * 100) / 100, 1.00);
+  const stripeFee = Math.round((price * 0.029 + 0.30) * 100) / 100;
+  const shippingFee = SHIPPING_FEE_CENTS / 100;
+  const totalBuyerCost = Math.round((price + shippingFee) * 100) / 100;
+  const sellerPayout = Math.round((price - platformFee - stripeFee) * 100) / 100;
+
+  res.json({
+    success: true,
+    breakdown: {
+      listingPrice: price,
+      sellerTier: sellerTier.label,
+      platformFee,
+      platformFeePercent: sellerTier.feePercent,
+      paymentProcessingFee: stripeFee,
+      shippingFee,
+      totalBuyerCost,
+      sellerPayout,
+      platformRevenue: platformFee,
+      grossMargin: Math.round((platformFee / price) * 100 * 100) / 100,
+    },
+    tiers: Object.entries(tiers).map(([k, v]) => ({
+      tier: k,
+      label: v.label,
+      feePercent: v.feePercent,
+      feeForThisPrice: Math.max(Math.round(price * (v.feePercent / 100) * 100) / 100, 1.00),
+    })),
+  });
+});
+
+// ── Feature M23: Seller Payout Scheduling ────────────────────────────────────
+
+// GET /api/marketplace/payouts — get payout history and pending balance
+app.get('/api/marketplace/payouts', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const pending = await pool.query(
+      `SELECT COALESCE(SUM(amount - platform_fee), 0) as pending_balance, COUNT(*) as pending_sales
+       FROM purchases WHERE seller_id = $1 AND status = 'completed' AND payout_status = 'pending'`,
+      [req.user.id]
+    );
+    const history = await pool.query(
+      `SELECT * FROM seller_payouts WHERE seller_id = $1 ORDER BY created_at DESC LIMIT 20`,
+      [req.user.id]
+    );
+    const nextPayoutDate = new Date();
+    nextPayoutDate.setDate(nextPayoutDate.getDate() + (7 - nextPayoutDate.getDay()) % 7 || 7); // Next Monday
+
+    const p = pending.rows[0];
+    res.json({
+      success: true,
+      pendingBalance: Math.round(parseFloat(p.pending_balance) * 100) / 100,
+      pendingSales: parseInt(p.pending_sales),
+      nextPayoutDate: nextPayoutDate.toISOString().split('T')[0],
+      payoutSchedule: 'weekly',
+      minimumPayout: 10.00,
+      payoutHistory: history.rows,
+    });
+  } catch (err) {
+    console.error('Payouts error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/marketplace/payouts/request — request an early payout
+app.post('/api/marketplace/payouts/request', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const pending = await pool.query(
+      `SELECT COALESCE(SUM(amount - platform_fee), 0) as pending_balance
+       FROM purchases WHERE seller_id = $1 AND status = 'completed' AND payout_status = 'pending'`,
+      [req.user.id]
+    );
+    const balance = parseFloat(pending.rows[0].pending_balance);
+    if (balance < 10) return res.status(400).json({ error: 'Minimum payout is $10.00', code: 'BELOW_MINIMUM' });
+
+    const earlyPayoutFee = Math.round(balance * 0.01 * 100) / 100; // 1% early payout fee
+    const payoutAmount = Math.round((balance - earlyPayoutFee) * 100) / 100;
+
+    const result = await pool.query(
+      `INSERT INTO seller_payouts (seller_id, amount, fee, net_amount, type, status, created_at)
+       VALUES ($1, $2, $3, $4, 'early_request', 'processing', now()) RETURNING *`,
+      [req.user.id, balance, earlyPayoutFee, payoutAmount]
+    );
+    res.json({ success: true, payout: result.rows[0], earlyPayoutFee, netAmount: payoutAmount });
+  } catch (err) {
+    console.error('Request payout error:', err.message);
+    res.status(500).json({ error: 'Failed to request payout' });
+  }
+});
+
+// ── Feature M24: Transaction Dispute Mediation ───────────────────────────────
+
+// POST /api/marketplace/disputes/transaction — open a transaction dispute
+app.post('/api/marketplace/disputes/transaction', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { purchaseId, reason, description, desiredOutcome } = req.body;
+    const validReasons = ['not_received', 'not_as_described', 'unauthorized', 'wrong_item', 'damaged_in_transit', 'other'];
+    if (!purchaseId || !reason || !validReasons.includes(reason) || !description) {
+      return res.status(400).json({ error: `purchaseId, reason (${validReasons.join('/')}), and description required`, code: 'INVALID_DISPUTE' });
+    }
+
+    const purchase = await pool.query(
+      'SELECT * FROM purchases WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
+      [purchaseId, req.user.id]
+    );
+    if (purchase.rows.length === 0) return res.status(404).json({ error: 'Purchase not found' });
+
+    const p = purchase.rows[0];
+    const isBuyer = p.buyer_id === req.user.id;
+
+    const result = await pool.query(
+      `INSERT INTO transaction_disputes (purchase_id, filed_by, buyer_id, seller_id, role, reason, description, desired_outcome, amount, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open', now()) RETURNING *`,
+      [purchaseId, req.user.id, p.buyer_id, p.seller_id, isBuyer ? 'buyer' : 'seller', reason, description, desiredOutcome || 'refund', p.amount]
+    );
+    res.status(201).json({ success: true, dispute: result.rows[0] });
+  } catch (err) {
+    console.error('Create transaction dispute error:', err.message);
+    res.status(500).json({ error: 'Failed to create dispute' });
+  }
+});
+
+// POST /api/marketplace/disputes/transaction/:id/message — add message to dispute
+app.post('/api/marketplace/disputes/transaction/:id/message', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const disputeId = parseInt(req.params.id);
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ error: 'Message text required' });
+
+    const dispute = await pool.query(
+      'SELECT * FROM transaction_disputes WHERE id = $1 AND (buyer_id = $2 OR seller_id = $2)',
+      [disputeId, req.user.id]
+    );
+    if (dispute.rows.length === 0) return res.status(404).json({ error: 'Dispute not found' });
+    if (dispute.rows[0].status === 'resolved') return res.status(400).json({ error: 'Dispute already resolved' });
+
+    await pool.query(
+      'INSERT INTO dispute_messages (dispute_id, sender_id, message, created_at) VALUES ($1, $2, $3, now())',
+      [disputeId, req.user.id, message]
+    );
+    res.json({ success: true, message: 'Message added to dispute' });
+  } catch (err) {
+    console.error('Dispute message error:', err.message);
+    res.status(500).json({ error: 'Failed to add message' });
+  }
+});
+
+// POST /api/marketplace/disputes/transaction/:id/resolve — resolve a transaction dispute (admin/platform)
+app.post('/api/marketplace/disputes/transaction/:id/resolve', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const disputeId = parseInt(req.params.id);
+    const { resolution, refundPercent } = req.body;
+    const validResolutions = ['full_refund', 'partial_refund', 'no_refund', 'replacement', 'mutual_agreement'];
+    if (!resolution || !validResolutions.includes(resolution)) {
+      return res.status(400).json({ error: `resolution (${validResolutions.join('/')}) required`, code: 'INVALID_RESOLUTION' });
+    }
+
+    const dispute = await pool.query('SELECT * FROM transaction_disputes WHERE id = $1 AND status = \'open\'', [disputeId]);
+    if (dispute.rows.length === 0) return res.status(404).json({ error: 'Dispute not found or already resolved' });
+
+    const d = dispute.rows[0];
+    const refundAmount = resolution === 'full_refund' ? parseFloat(d.amount)
+      : resolution === 'partial_refund' ? Math.round(parseFloat(d.amount) * (refundPercent || 50) / 100 * 100) / 100
+      : 0;
+
+    await pool.query(
+      'UPDATE transaction_disputes SET status = \'resolved\', resolution = $1, refund_amount = $2, resolved_at = now() WHERE id = $3',
+      [resolution, refundAmount, disputeId]
+    );
+    res.json({ success: true, resolution, refundAmount, disputeId });
+  } catch (err) {
+    console.error('Resolve dispute error:', err.message);
+    res.status(500).json({ error: 'Failed to resolve dispute' });
+  }
+});
+
+// ── Feature M25: Marketplace Health Metrics Dashboard ────────────────────────
+
+// GET /api/marketplace/health — marketplace-wide health and revenue metrics
+app.get('/api/marketplace/health', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [salesMetrics, activeListings, userMetrics, disputeMetrics, revenueStreams] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) as total_sales_30d,
+                COALESCE(SUM(amount), 0) as gmv_30d,
+                COALESCE(AVG(amount), 0) as avg_order_value,
+                COALESCE(SUM(platform_fee), 0) as platform_revenue_30d
+         FROM purchases WHERE created_at >= $1 AND status IN ('completed', 'paid')`,
+        [thirtyDaysAgo]
+      ),
+      pool.query('SELECT COUNT(*) as active_listings, COALESCE(AVG(price), 0) as avg_price FROM records WHERE for_sale = true'),
+      pool.query(
+        `SELECT COUNT(DISTINCT buyer_id) as active_buyers, COUNT(DISTINCT seller_id) as active_sellers
+         FROM purchases WHERE created_at >= $1`,
+        [thirtyDaysAgo]
+      ),
+      pool.query(
+        `SELECT COUNT(*) as open_disputes FROM transaction_disputes WHERE status = 'open'`
+      ),
+      pool.query(
+        `SELECT
+           COALESCE((SELECT SUM(total_cost) FROM featured_listings WHERE created_at >= $1), 0) as promotion_revenue,
+           COALESCE((SELECT SUM(platform_cut) FROM subscription_boxes WHERE created_at >= $1), 0) as subscription_revenue,
+           COALESCE((SELECT SUM(platform_fee) FROM auctions WHERE closed_at >= $1 AND status = 'sold'), 0) as auction_revenue
+        `,
+        [thirtyDaysAgo]
+      ),
+    ]);
+
+    const sm = salesMetrics.rows[0];
+    const al = activeListings.rows[0];
+    const um = userMetrics.rows[0];
+    const dm = disputeMetrics.rows[0];
+    const rs = revenueStreams.rows[0];
+
+    const gmv = parseFloat(sm.gmv_30d);
+    const platformRevenue = parseFloat(sm.platform_revenue_30d);
+    const promotionRevenue = parseFloat(rs.promotion_revenue);
+    const subscriptionRevenue = parseFloat(rs.subscription_revenue);
+    const auctionRevenue = parseFloat(rs.auction_revenue);
+    const totalRevenue = Math.round((platformRevenue + promotionRevenue + subscriptionRevenue + auctionRevenue) * 100) / 100;
+
+    res.json({
+      success: true,
+      health: {
+        period: '30d',
+        gmv: Math.round(gmv * 100) / 100,
+        totalSales: parseInt(sm.total_sales_30d),
+        avgOrderValue: Math.round(parseFloat(sm.avg_order_value) * 100) / 100,
+        activeListings: parseInt(al.active_listings),
+        avgListingPrice: Math.round(parseFloat(al.avg_price) * 100) / 100,
+        activeBuyers: parseInt(um.active_buyers),
+        activeSellers: parseInt(um.active_sellers),
+        openDisputes: parseInt(dm.open_disputes),
+        revenue: {
+          total: totalRevenue,
+          transactionFees: Math.round(platformRevenue * 100) / 100,
+          promotions: Math.round(promotionRevenue * 100) / 100,
+          subscriptions: Math.round(subscriptionRevenue * 100) / 100,
+          auctions: Math.round(auctionRevenue * 100) / 100,
+        },
+        takeRate: gmv > 0 ? Math.round((totalRevenue / gmv) * 100 * 100) / 100 : 0,
+      },
+    });
+  } catch (err) {
+    console.error('Marketplace health error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // ── Feature 20: Server startup banner with configuration summary ──────────────

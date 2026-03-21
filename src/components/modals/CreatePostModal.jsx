@@ -19,6 +19,32 @@ const MENTION_USERS = [
   'beat.collector', 'wax.poetic', 'groove.master', 'needle.drop', 'deep.cuts',
 ];
 
+// Improvement 22 (new): Poll option templates
+const POLL_TEMPLATES = [
+  { label: "Best Album", options: ["Option A", "Option B", "Option C"] },
+  { label: "Genre Vote", options: ["Jazz", "Rock", "Hip-Hop", "Electronic"] },
+  { label: "Yes/No", options: ["Yes", "No"] },
+];
+
+// Improvement 23 (new): Recommendation categories
+const REC_CATEGORIES = [
+  { label: "Must-Own Pressing", icon: "\uD83C\uDFC6" },
+  { label: "Hidden Gem", icon: "\uD83D\uDC8E" },
+  { label: "Perfect for Beginners", icon: "\uD83C\uDF31" },
+  { label: "Audiophile Grade", icon: "\uD83C\uDFA7" },
+  { label: "Underrated Classic", icon: "\u2B50" },
+];
+
+// Improvement 24 (new): Milestone types
+const MILESTONE_TYPES = [
+  { label: "100 Records", threshold: 100, icon: "\uD83D\uDCBF" },
+  { label: "250 Records", threshold: 250, icon: "\uD83C\uDFC5" },
+  { label: "500 Records", threshold: 500, icon: "\uD83C\uDFC6" },
+  { label: "1000 Records", threshold: 1000, icon: "\uD83D\uDC51" },
+  { label: "First Rare Find", threshold: 0, icon: "\uD83D\uDC8E" },
+  { label: "Genre Milestone", threshold: 0, icon: "\uD83C\uDFB5" },
+];
+
 export default function CreatePostModal({ open, onClose, onSubmit, records, currentUser, profile }) {
   const [caption, setCaption] = useState("");
   const [mediaUrl, setMediaUrl] = useState("");
@@ -51,6 +77,26 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
   // #37 — Draft save
   const [draftSaved, setDraftSaved] = useState(false);
 
+  // Improvement 22 (new): Poll creation
+  const [pollMode, setPollMode] = useState(false);
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState(["", ""]);
+  const [pollDuration, setPollDuration] = useState("24");
+
+  // Improvement 23 (new): Record recommendation post
+  const [recMode, setRecMode] = useState(false);
+  const [recCategory, setRecCategory] = useState(null);
+  const [recRating, setRecRating] = useState(0);
+
+  // Improvement 24 (new): Collection milestone auto-post
+  const [milestoneMode, setMilestoneMode] = useState(false);
+  const [selectedMilestone, setSelectedMilestone] = useState(null);
+
+  // Improvement 25 (new): Collaboration post
+  const [collabMode, setCollabMode] = useState(false);
+  const [collabUser, setCollabUser] = useState("");
+  const [collabSearch, setCollabSearch] = useState("");
+
   const captionRef = useRef(null);
   const searchRef = useRef(null);
 
@@ -77,6 +123,10 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
       setUploadedImage(null); setUploadedImagePreview(null);
       setShowPreview(false);
       setHashtagSuggestions([]); setMentionSuggestions([]);
+      setPollMode(false); setPollQuestion(""); setPollOptions(["", ""]); setPollDuration("24");
+      setRecMode(false); setRecCategory(null); setRecRating(0);
+      setMilestoneMode(false); setSelectedMilestone(null);
+      setCollabMode(false); setCollabUser(""); setCollabSearch("");
       setTimeout(() => captionRef.current?.focus(), 100);
     }
   }, [open]);
@@ -103,6 +153,11 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
     ? uniqueRecords
         .filter(r => r.album.toLowerCase().includes(tagSearch.toLowerCase()) || r.artist.toLowerCase().includes(tagSearch.toLowerCase()))
         .slice(0, 6)
+    : [];
+
+  // Improvement 25: Filter collab user suggestions
+  const collabResults = collabSearch.trim()
+    ? MENTION_USERS.filter(u => u.includes(collabSearch.toLowerCase())).slice(0, 5)
     : [];
 
   const canPost = caption.trim().length > 0;
@@ -184,6 +239,17 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
     reader.readAsDataURL(file);
   };
 
+  // Improvement 22: Add/remove poll options
+  const addPollOption = () => {
+    if (pollOptions.length < 6) setPollOptions([...pollOptions, ""]);
+  };
+  const removePollOption = (index) => {
+    if (pollOptions.length > 2) setPollOptions(pollOptions.filter((_, i) => i !== index));
+  };
+  const updatePollOption = (index, value) => {
+    setPollOptions(pollOptions.map((opt, i) => i === index ? value : opt));
+  };
+
   const handlePost = () => {
     if (!canPost || isSubmitting) return;
     setIsSubmitting(true);
@@ -194,6 +260,21 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
       mediaType,
       taggedRecord: tag,
       uploadedImage: uploadedImage || null,
+      // Improvement 22: Poll data
+      poll: pollMode ? {
+        question: pollQuestion.trim(),
+        options: pollOptions.filter(o => o.trim()),
+        duration: parseInt(pollDuration),
+      } : null,
+      // Improvement 23: Recommendation data
+      recommendation: recMode ? {
+        category: recCategory,
+        rating: recRating,
+      } : null,
+      // Improvement 24: Milestone data
+      milestone: milestoneMode ? selectedMilestone : null,
+      // Improvement 25: Collaboration data
+      collaborator: collabMode ? collabUser : null,
     });
     clearDraft();
     onClose();
@@ -212,6 +293,9 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
       setShowTagSearch(false);
     }
   };
+
+  // Active post type for the mode selector
+  const activePostType = pollMode ? "poll" : recMode ? "rec" : milestoneMode ? "milestone" : collabMode ? "collab" : "standard";
 
   return (
     <div
@@ -246,6 +330,35 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
           </div>
         </div>
 
+        {/* Post type selector (new) */}
+        <div className="flex gap-1 px-5 pt-3 pb-1">
+          {[
+            { key: "standard", label: "Post", icon: "\u270D\uFE0F" },
+            { key: "poll", label: "Poll", icon: "\uD83D\uDCCA" },
+            { key: "rec", label: "Recommend", icon: "\u2B50" },
+            { key: "milestone", label: "Milestone", icon: "\uD83C\uDFC6" },
+            { key: "collab", label: "Collab", icon: "\uD83E\uDD1D" },
+          ].map(type => (
+            <button
+              key={type.key}
+              onClick={() => {
+                setPollMode(type.key === "poll");
+                setRecMode(type.key === "rec");
+                setMilestoneMode(type.key === "milestone");
+                setCollabMode(type.key === "collab");
+              }}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-semibold cursor-pointer border transition-colors ${
+                activePostType === type.key
+                  ? 'bg-gs-accent/10 border-gs-accent/30 text-gs-accent'
+                  : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:text-gs-muted'
+              }`}
+            >
+              <span>{type.icon}</span>
+              {type.label}
+            </button>
+          ))}
+        </div>
+
         {/* Body */}
         <div className="overflow-y-auto flex-1 p-5">
           {/* #36 — Post preview mode */}
@@ -255,13 +368,55 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
               <div className="flex items-center gap-2.5 mb-3">
                 <Avatar username={currentUser} size={32} src={profile?.avatarUrl} />
                 <div>
-                  <div className="text-xs font-semibold text-gs-text">@{currentUser}</div>
+                  <div className="text-xs font-semibold text-gs-text">
+                    @{currentUser}
+                    {collabMode && collabUser && <span className="text-gs-accent"> + @{collabUser}</span>}
+                  </div>
                   <div className="text-[10px] text-gs-faint">just now</div>
                 </div>
               </div>
+
+              {/* Milestone badge in preview */}
+              {milestoneMode && selectedMilestone && (
+                <div className="bg-amber-500/[0.06] border border-amber-500/20 rounded-lg px-3 py-2 mb-3 text-center">
+                  <div className="text-2xl mb-1">{selectedMilestone.icon}</div>
+                  <div className="text-[12px] text-amber-400 font-bold">{selectedMilestone.label}</div>
+                  <div className="text-[10px] text-gs-dim">Collection Milestone</div>
+                </div>
+              )}
+
+              {/* Recommendation badge in preview */}
+              {recMode && recCategory && (
+                <div className="bg-gs-accent/[0.05] border border-gs-accent/15 rounded-lg px-3 py-2 mb-3 flex items-center gap-2">
+                  <span className="text-lg">{recCategory.icon}</span>
+                  <div>
+                    <div className="text-[11px] text-gs-accent font-semibold">{recCategory.label}</div>
+                    {recRating > 0 && (
+                      <div className="text-[11px] text-amber-400">
+                        {Array.from({ length: 5 }, (_, i) => i < recRating ? "\u2605" : "\u2606").join("")}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <p className="text-[13px] text-[#ccc] leading-[1.6] whitespace-pre-wrap mb-3">
                 {caption || <span className="text-gs-dim italic">No caption yet...</span>}
               </p>
+
+              {/* Poll preview */}
+              {pollMode && pollQuestion && (
+                <div className="bg-[#0a0a0a] border border-gs-border rounded-lg p-3 mb-3">
+                  <div className="text-[12px] font-bold text-gs-text mb-2">{pollQuestion}</div>
+                  {pollOptions.filter(o => o.trim()).map((opt, i) => (
+                    <div key={i} className="bg-[#1a1a1a] rounded-md px-3 py-2 mb-1.5 text-[12px] text-gs-muted border border-[#222] hover:border-gs-accent/30 cursor-pointer">
+                      {opt}
+                    </div>
+                  ))}
+                  <div className="text-[10px] text-gs-faint mt-1">{pollDuration}h remaining</div>
+                </div>
+              )}
+
               {uploadedImagePreview && (
                 <img src={uploadedImagePreview} alt="Upload" className="w-full max-h-[200px] object-cover rounded-lg mb-3" />
               )}
@@ -285,8 +440,180 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
               {/* User header */}
               <div className="flex items-center gap-2.5 mb-4">
                 <Avatar username={currentUser} size={36} src={profile?.avatarUrl} />
-                <div className="text-[13px] font-semibold text-[#e0e0e0]">@{currentUser}</div>
+                <div className="text-[13px] font-semibold text-[#e0e0e0]">
+                  @{currentUser}
+                  {/* Improvement 25: Collaborator indicator */}
+                  {collabMode && collabUser && (
+                    <span className="text-gs-accent"> + @{collabUser}</span>
+                  )}
+                </div>
               </div>
+
+              {/* Improvement 25 (new): Collaboration user picker */}
+              {collabMode && (
+                <div className="mb-4 bg-purple-500/[0.04] border border-purple-500/15 rounded-xl p-3.5">
+                  <div className="text-[10px] text-purple-400 font-mono mb-2">TAG A COLLABORATOR</div>
+                  <input
+                    value={collabSearch}
+                    onChange={e => setCollabSearch(e.target.value)}
+                    placeholder="Search for a user to collaborate with..."
+                    className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-[12px] text-gs-text outline-none mb-2"
+                  />
+                  {collabResults.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {collabResults.map(user => (
+                        <button
+                          key={user}
+                          onClick={() => { setCollabUser(user); setCollabSearch(""); }}
+                          className={`px-2.5 py-1.5 rounded-lg border text-[11px] cursor-pointer transition-colors ${
+                            collabUser === user
+                              ? 'bg-purple-500/15 border-purple-500/30 text-purple-400'
+                              : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:text-gs-muted'
+                          }`}
+                        >
+                          @{user}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {collabUser && (
+                    <div className="flex items-center gap-2 text-[11px] text-purple-400">
+                      <span>{"\uD83E\uDD1D"}</span>
+                      <span>Collaborating with @{collabUser}</span>
+                      <button onClick={() => setCollabUser("")} className="text-gs-faint bg-transparent border-none cursor-pointer hover:text-gs-muted text-[10px] ml-auto">Remove</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Improvement 24 (new): Collection milestone selector */}
+              {milestoneMode && (
+                <div className="mb-4 bg-amber-500/[0.04] border border-amber-500/15 rounded-xl p-3.5">
+                  <div className="text-[10px] text-amber-400 font-mono mb-2">SELECT A MILESTONE</div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {MILESTONE_TYPES.map(milestone => (
+                      <button
+                        key={milestone.label}
+                        onClick={() => setSelectedMilestone(milestone)}
+                        className={`flex flex-col items-center gap-1 py-2.5 px-2 rounded-lg border cursor-pointer transition-colors ${
+                          selectedMilestone?.label === milestone.label
+                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                            : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:text-gs-muted'
+                        }`}
+                      >
+                        <span className="text-lg">{milestone.icon}</span>
+                        <span className="text-[10px] font-semibold text-center">{milestone.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Improvement 23 (new): Record recommendation section */}
+              {recMode && (
+                <div className="mb-4 bg-gs-accent/[0.03] border border-gs-accent/15 rounded-xl p-3.5">
+                  <div className="text-[10px] text-gs-accent font-mono mb-2">RECOMMENDATION TYPE</div>
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {REC_CATEGORIES.map(cat => (
+                      <button
+                        key={cat.label}
+                        onClick={() => setRecCategory(cat)}
+                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[10px] font-semibold cursor-pointer transition-colors ${
+                          recCategory?.label === cat.label
+                            ? 'bg-gs-accent/10 border-gs-accent/30 text-gs-accent'
+                            : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:text-gs-muted'
+                        }`}
+                      >
+                        <span>{cat.icon}</span>
+                        {cat.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="text-[10px] text-gs-dim font-mono mb-1.5">RATING</div>
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map(star => (
+                      <button
+                        key={star}
+                        onClick={() => setRecRating(star === recRating ? 0 : star)}
+                        className={`text-lg cursor-pointer bg-transparent border-none p-0 transition-transform hover:scale-110 ${
+                          star <= recRating ? 'text-amber-400' : 'text-[#333]'
+                        }`}
+                      >
+                        {star <= recRating ? "\u2605" : "\u2606"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Improvement 22 (new): Poll creation */}
+              {pollMode && (
+                <div className="mb-4 bg-[#0d0d0d] border border-[#1a1a1a] rounded-xl p-3.5">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-[10px] text-gs-dim font-mono">CREATE A POLL</div>
+                    <div className="flex gap-1">
+                      {POLL_TEMPLATES.map(tpl => (
+                        <button
+                          key={tpl.label}
+                          onClick={() => { setPollQuestion(tpl.label + "?"); setPollOptions([...tpl.options]); }}
+                          className="text-[9px] text-gs-faint bg-transparent border border-[#222] rounded px-1.5 py-0.5 cursor-pointer hover:text-gs-muted"
+                        >
+                          {tpl.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <input
+                    value={pollQuestion}
+                    onChange={e => setPollQuestion(e.target.value)}
+                    placeholder="Ask a question..."
+                    className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-[12px] text-gs-text outline-none mb-2"
+                  />
+                  {pollOptions.map((opt, i) => (
+                    <div key={i} className="flex gap-1.5 mb-1.5">
+                      <input
+                        value={opt}
+                        onChange={e => updatePollOption(i, e.target.value)}
+                        placeholder={`Option ${i + 1}`}
+                        className="flex-1 bg-[#111] border border-[#222] rounded-lg px-3 py-1.5 text-[12px] text-gs-text outline-none"
+                      />
+                      {pollOptions.length > 2 && (
+                        <button
+                          onClick={() => removePollOption(i)}
+                          className="bg-[#111] border border-[#222] rounded-md w-7 h-7 text-gs-faint cursor-pointer text-sm flex items-center justify-center hover:text-red-400"
+                        >
+                          x
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between mt-2">
+                    <button
+                      onClick={addPollOption}
+                      disabled={pollOptions.length >= 6}
+                      className={`text-[11px] font-semibold bg-transparent border-none cursor-pointer p-0 ${
+                        pollOptions.length >= 6 ? 'text-gs-faint cursor-default' : 'text-gs-accent'
+                      }`}
+                    >
+                      + Add option {pollOptions.length >= 6 && "(max 6)"}
+                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-gs-dim">Duration:</span>
+                      <select
+                        value={pollDuration}
+                        onChange={e => setPollDuration(e.target.value)}
+                        className="bg-[#111] border border-[#222] rounded-md px-2 py-1 text-[11px] text-gs-text outline-none cursor-pointer"
+                      >
+                        <option value="1">1 hour</option>
+                        <option value="6">6 hours</option>
+                        <option value="24">24 hours</option>
+                        <option value="72">3 days</option>
+                        <option value="168">7 days</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Caption with auto-complete */}
               <div className="relative">
@@ -294,7 +621,13 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
                   ref={captionRef}
                   value={caption}
                   onChange={handleCaptionChange}
-                  placeholder="What's spinning? Share what you're listening to..."
+                  placeholder={
+                    pollMode ? "Add context to your poll..."
+                    : recMode ? "Why do you recommend this record?"
+                    : milestoneMode ? "Share your milestone story..."
+                    : collabMode ? "What are you collaborating on?"
+                    : "What's spinning? Share what you're listening to..."
+                  }
                   rows={4}
                   maxLength={500}
                   className="w-full bg-[#111] border border-gs-border rounded-xl px-4 py-3.5 text-[#e0e0e0] text-sm leading-[1.6] resize-y outline-none font-sans min-h-[100px] focus:border-gs-accent/20"
@@ -522,6 +855,10 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
         <div className="px-5 py-3.5 border-t border-[#1a1a1a] flex justify-between items-center">
           <span className="text-[11px] text-gs-subtle">
             {caption.length > 0 && `${caption.length} characters`}
+            {pollMode && pollOptions.filter(o => o.trim()).length > 0 && ` \u00b7 Poll: ${pollOptions.filter(o => o.trim()).length} options`}
+            {recMode && recCategory && ` \u00b7 ${recCategory.label}`}
+            {milestoneMode && selectedMilestone && ` \u00b7 ${selectedMilestone.icon} ${selectedMilestone.label}`}
+            {collabMode && collabUser && ` \u00b7 with @${collabUser}`}
           </span>
           <div className="flex items-center gap-2">
             {/* #37 — Draft indicator */}
@@ -537,7 +874,7 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
                   : 'bg-[#1a1a1a] text-gs-dim cursor-default'
               }`}
             >
-              {isSubmitting ? 'Posting...' : 'Post'}
+              {isSubmitting ? 'Posting...' : pollMode ? 'Post Poll' : recMode ? 'Post Rec' : milestoneMode ? 'Share Milestone' : 'Post'}
             </button>
           </div>
         </div>

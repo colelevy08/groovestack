@@ -4,6 +4,11 @@
 // Features: Trending section, post type filters, infinite scroll, redesigned cards, engagement metrics.
 // Improvements: Stories, post scheduling, expanded filters, trending hashtags, post analytics,
 // live listening, polls, events, community challenges, saved posts tab, post templates, cross-post.
+// v2 Improvements: Rich formatting toolbar, scheduling UI, per-post analytics, repost/share,
+// post pinning, content warnings, location tagging, collections, drafts, reach indicator,
+// suggested posts, expiration timer, anonymous posting, templates gallery, trending sidebar,
+// guidelines reminder, engagement rewards, auto-hashtags, sentiment indicator, cross-platform share,
+// accessibility alt text, reported content toggle, pull-to-refresh, new posts bar, feed density toggle.
 import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import Avatar from '../ui/Avatar';
 import AlbumArt from '../ui/AlbumArt';
@@ -21,6 +26,13 @@ const POST_TYPE_FILTERS = [
   { id: "events", label: "Events" },
 ];
 
+// Feed density options (Improvement 25)
+const FEED_DENSITIES = [
+  { id: "compact", label: "Compact", gap: "gap-2", padding: "p-3" },
+  { id: "comfortable", label: "Comfortable", gap: "gap-4", padding: "p-5" },
+  { id: "spacious", label: "Spacious", gap: "gap-6", padding: "p-7" },
+];
+
 // Infer post type from content — expanded for new types
 function inferPostType(post) {
   if (post.postType) return post.postType;
@@ -31,6 +43,318 @@ function inferPostType(post) {
   if (post.mediaUrl) return "photos";
   if (post.taggedRecord) return "reviews";
   return "discussions";
+}
+
+// Improvement 19: Analyze sentiment from caption text
+function analyzeSentiment(caption) {
+  if (!caption) return { label: 'neutral', color: '#888', icon: '--' };
+  const lower = caption.toLowerCase();
+  const positiveWords = ['love', 'amazing', 'great', 'awesome', 'beautiful', 'fantastic', 'excellent', 'incredible', 'perfect', 'favorite', 'brilliant', 'masterpiece', 'gem', 'fire', 'best'];
+  const negativeWords = ['hate', 'terrible', 'awful', 'bad', 'worst', 'boring', 'disappointing', 'overrated', 'skip', 'meh', 'mediocre', 'trash'];
+  const posCount = positiveWords.filter(w => lower.includes(w)).length;
+  const negCount = negativeWords.filter(w => lower.includes(w)).length;
+  if (posCount > negCount) return { label: 'positive', color: '#22c55e', icon: '+' };
+  if (negCount > posCount) return { label: 'negative', color: '#ef4444', icon: '-' };
+  return { label: 'neutral', color: '#888', icon: '~' };
+}
+
+// Improvement 18: Generate auto-hashtag suggestions based on post content
+function suggestHashtags(caption, taggedRecord) {
+  const suggestions = [];
+  const lower = (caption || '').toLowerCase();
+  if (taggedRecord) {
+    suggestions.push(`#${taggedRecord.artist.replace(/\s+/g, '').toLowerCase()}`);
+    suggestions.push('#nowplaying');
+  }
+  if (lower.includes('vinyl') || lower.includes('record')) suggestions.push('#vinylcollection');
+  if (lower.includes('spin') || lower.includes('listening')) suggestions.push('#spinning');
+  if (lower.includes('rare') || lower.includes('find')) suggestions.push('#rarefind');
+  if (lower.includes('trade') || lower.includes('swap')) suggestions.push('#vinyltrade');
+  if (lower.includes('review')) suggestions.push('#albumreview');
+  if (lower.includes('crate') || lower.includes('dig')) suggestions.push('#cratedigger');
+  // Deduplicate
+  return [...new Set(suggestions)].slice(0, 5);
+}
+
+// Improvement 1 (enhanced): Rich formatting toolbar for composer
+function RichFormatToolbar({ onInsert }) {
+  const tools = [
+    { icon: 'B', label: 'Bold', action: () => onInsert?.('**', '**') },
+    { icon: 'I', label: 'Italic', action: () => onInsert?.('_', '_') },
+    { icon: '~', label: 'Strikethrough', action: () => onInsert?.('~~', '~~') },
+    { icon: '#', label: 'Heading', action: () => onInsert?.('\n## ', '') },
+    { icon: '"', label: 'Quote', action: () => onInsert?.('\n> ', '') },
+    { icon: '-', label: 'List', action: () => onInsert?.('\n- ', '') },
+    { icon: '@', label: 'Mention', action: () => onInsert?.('@', '') },
+    { icon: '#', label: 'Hashtag', action: () => onInsert?.('#', '') },
+  ];
+  return (
+    <div className="flex gap-1 py-1.5 border-t border-gs-border mt-2">
+      {tools.map((t, i) => (
+        <button
+          key={i}
+          onClick={t.action}
+          title={t.label}
+          className="w-7 h-7 rounded bg-[#111] border border-[#1a1a1a] text-gs-dim text-[11px] font-bold cursor-pointer hover:border-gs-accent/30 hover:text-gs-accent transition-colors flex items-center justify-center"
+        >
+          {t.icon}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Improvement 2: Post scheduling UI
+function SchedulePostUI({ scheduledDate, onScheduleChange, onClear }) {
+  return (
+    <div className="flex items-center gap-2 mt-2 p-2 bg-[#111] rounded-lg border border-gs-border">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
+        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+      </svg>
+      <input
+        type="datetime-local"
+        value={scheduledDate || ''}
+        onChange={e => onScheduleChange(e.target.value)}
+        className="bg-transparent border-none text-[11px] text-gs-muted font-mono outline-none flex-1"
+      />
+      {scheduledDate && (
+        <button onClick={onClear} className="text-[10px] text-red-400 bg-transparent border-none cursor-pointer hover:text-red-300">
+          Clear
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Improvement 9: Drafts management panel
+function DraftsPanel({ drafts, onLoadDraft, onDeleteDraft, onClose }) {
+  if (!drafts || drafts.length === 0) {
+    return (
+      <div className="bg-gs-card border border-gs-border rounded-xl p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-[11px] font-bold font-mono text-gs-dim tracking-wider uppercase">Drafts</span>
+          <button onClick={onClose} className="text-gs-dim text-xs bg-transparent border-none cursor-pointer hover:text-gs-muted">&times;</button>
+        </div>
+        <p className="text-[11px] text-gs-faint">No drafts saved. Start composing and save a draft!</p>
+      </div>
+    );
+  }
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] font-bold font-mono text-gs-dim tracking-wider uppercase">Drafts ({drafts.length})</span>
+        <button onClick={onClose} className="text-gs-dim text-xs bg-transparent border-none cursor-pointer hover:text-gs-muted">&times;</button>
+      </div>
+      <div className="space-y-2 max-h-[200px] overflow-y-auto">
+        {drafts.map((d, i) => (
+          <div key={i} className="flex items-center gap-2 p-2 bg-[#111] rounded-lg border border-[#1a1a1a]">
+            <div className="flex-1 min-w-0">
+              <p className="text-[11px] text-gs-muted truncate">{d.caption || '(empty draft)'}</p>
+              <span className="text-[9px] text-gs-faint font-mono">{new Date(d.savedAt).toLocaleDateString()}</span>
+            </div>
+            <button onClick={() => onLoadDraft(d)} className="text-[10px] text-gs-accent bg-transparent border border-gs-accent/30 rounded px-2 py-0.5 cursor-pointer hover:bg-gs-accent/10">Load</button>
+            <button onClick={() => onDeleteDraft(i)} className="text-[10px] text-red-400 bg-transparent border-none cursor-pointer hover:text-red-300">Del</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Improvement 14: Post templates gallery
+function PostTemplatesGallery({ onSelectTemplate, onClose }) {
+  const templates = [
+    { id: 1, title: "Album Review", icon: "★", body: "Just listened to [album] by [artist]. Here's my take:\n\nFavorite tracks: \nRating: /10\nVibe: " },
+    { id: 2, title: "Trade Offer", icon: "↔", body: "Looking to trade:\n\nOffering: [your record]\nWanting: [desired record]\nCondition: \nLocation: " },
+    { id: 3, title: "Question", icon: "?", body: "Does anyone know... ?\n\nContext: " },
+    { id: 4, title: "Recommendation", icon: "♫", body: "If you like [artist], you should check out:\n\n1. \n2. \n3. " },
+    { id: 5, title: "Collection Update", icon: "📦", body: "New additions to the collection!\n\n🎵 [album] - [artist]\nFormat: \nCondition: \nHow I found it: " },
+    { id: 6, title: "Crate Dig Report", icon: "🔍", body: "Just hit up [store name]!\n\nBest finds:\n- \n- \n\nTotal spent: $\nWorth it? " },
+    { id: 7, title: "Hot Take", icon: "🔥", body: "Hot take: \n\nHear me out..." },
+    { id: 8, title: "Weekly Rotation", icon: "🔄", body: "This week's heavy rotation:\n\n1. \n2. \n3. \n4. \n5. \n\nWhat's on yours?" },
+  ];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] font-bold font-mono text-gs-dim tracking-wider uppercase">Templates Gallery</span>
+        <button onClick={onClose} className="text-gs-dim text-xs bg-transparent border-none cursor-pointer hover:text-gs-muted">&times;</button>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {templates.map(t => (
+          <button
+            key={t.id}
+            onClick={() => onSelectTemplate(t)}
+            className="text-left p-2.5 bg-[#111] border border-[#1a1a1a] rounded-lg cursor-pointer hover:border-gs-accent/30 transition-colors"
+          >
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="text-sm">{t.icon}</span>
+              <span className="text-[11px] font-bold text-gs-text">{t.title}</span>
+            </div>
+            <p className="text-[10px] text-gs-dim line-clamp-2 leading-snug">{t.body.split('\n')[0]}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Improvement 8: Post collections/folders
+function PostCollections({ collections, onSelectCollection, onCreateCollection, onClose }) {
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] font-bold font-mono text-gs-dim tracking-wider uppercase">Collections</span>
+        <div className="flex items-center gap-2">
+          <button onClick={onCreateCollection} className="text-[10px] text-gs-accent bg-transparent border border-gs-accent/30 rounded px-2 py-0.5 cursor-pointer hover:bg-gs-accent/10">+ New</button>
+          <button onClick={onClose} className="text-gs-dim text-xs bg-transparent border-none cursor-pointer hover:text-gs-muted">&times;</button>
+        </div>
+      </div>
+      {collections.length === 0 ? (
+        <p className="text-[11px] text-gs-faint">No collections yet. Create one to organize saved posts!</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {collections.map(c => (
+            <button
+              key={c.id}
+              onClick={() => onSelectCollection(c)}
+              className="text-left p-2.5 bg-[#111] border border-[#1a1a1a] rounded-lg cursor-pointer hover:border-gs-accent/30 transition-colors"
+            >
+              <div className="text-[11px] font-bold text-gs-text">{c.name}</div>
+              <span className="text-[10px] text-gs-faint font-mono">{c.postCount || 0} posts</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Improvement 15: Trending topics sidebar
+function TrendingTopicsSidebar({ posts, onTopicClick }) {
+  const topics = useMemo(() => {
+    const topicMap = {};
+    posts.forEach(p => {
+      const hashtags = (p.caption || '').match(/#\w+/g) || [];
+      hashtags.forEach(tag => {
+        const lower = tag.toLowerCase();
+        if (!topicMap[lower]) topicMap[lower] = { tag: lower, count: 0, recentPost: p };
+        topicMap[lower].count++;
+      });
+      // Also track artist mentions as topics
+      if (p.taggedRecord?.artist) {
+        const artistKey = `artist:${p.taggedRecord.artist.toLowerCase()}`;
+        if (!topicMap[artistKey]) topicMap[artistKey] = { tag: p.taggedRecord.artist, count: 0, isArtist: true, recentPost: p };
+        topicMap[artistKey].count++;
+      }
+    });
+    return Object.values(topicMap)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+  }, [posts]);
+
+  if (topics.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+      <div className="flex items-center gap-1.5 mb-2.5">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></svg>
+        <span className="text-[10px] font-bold font-mono text-gs-dim tracking-wider uppercase">Trending Topics</span>
+      </div>
+      <div className="space-y-1.5">
+        {topics.map((t, i) => (
+          <button
+            key={i}
+            onClick={() => onTopicClick?.(t.tag)}
+            className="w-full text-left flex items-center gap-2 p-1.5 rounded-lg bg-transparent border-none cursor-pointer hover:bg-[#111] transition-colors"
+          >
+            <span className="text-[10px] font-extrabold font-mono text-gs-accent w-4">#{i + 1}</span>
+            <div className="flex-1 min-w-0">
+              <span className={`text-[11px] font-semibold ${t.isArtist ? 'text-gs-muted' : 'text-gs-accent'}`}>
+                {t.isArtist ? t.tag : t.tag}
+              </span>
+            </div>
+            <span className="text-[9px] text-gs-faint font-mono">{t.count} post{t.count !== 1 ? 's' : ''}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Improvement 16: Community guidelines reminder
+function GuidelinesReminder({ onDismiss }) {
+  return (
+    <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-3 mb-4 flex items-start gap-2.5">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" className="shrink-0 mt-0.5">
+        <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+      </svg>
+      <div className="flex-1 min-w-0">
+        <div className="text-[11px] font-bold text-blue-400 mb-0.5">Community Guidelines</div>
+        <p className="text-[10px] text-blue-300/70 leading-relaxed">
+          Be respectful, share your passion for music, and keep discussions constructive. No spam, harassment, or counterfeit sales. Help us keep this community awesome!
+        </p>
+      </div>
+      <button onClick={onDismiss} className="text-blue-400/50 text-xs bg-transparent border-none cursor-pointer hover:text-blue-400 shrink-0">&times;</button>
+    </div>
+  );
+}
+
+// Improvement 11: Suggested posts from non-followed users
+function SuggestedPosts({ posts, following, currentUser, onViewUser, onDetail, records }) {
+  const suggested = useMemo(() => {
+    return posts
+      .filter(p => p.user !== currentUser && !following.includes(p.user) && (p.likes || 0) >= 3)
+      .sort((a, b) => (b.likes || 0) - (a.likes || 0))
+      .slice(0, 3);
+  }, [posts, following, currentUser]);
+
+  if (suggested.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+      <div className="text-[10px] font-bold font-mono text-gs-dim tracking-wider uppercase mb-2.5">Suggested For You</div>
+      <div className="space-y-2.5">
+        {suggested.map(post => {
+          const sp = getProfile(post.user);
+          return (
+            <div key={post.id} className="flex items-start gap-2.5 p-2 bg-[#111] rounded-lg border border-[#1a1a1a]">
+              <div className="cursor-pointer shrink-0" onClick={() => onViewUser(post.user)}>
+                <Avatar username={post.user} size={28} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-[11px] font-bold text-gs-text cursor-pointer hover:text-gs-accent" onClick={() => onViewUser(post.user)}>{sp.displayName}</span>
+                  <span className="text-[9px] text-gs-faint font-mono">@{post.user}</span>
+                </div>
+                <p className="text-[10px] text-gs-dim line-clamp-2 leading-snug">{post.caption}</p>
+                <div className="flex items-center gap-2 mt-1 text-[9px] text-gs-faint">
+                  <span>{post.likes || 0} likes</span>
+                  <span>{(post.comments || []).length} comments</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Improvement 24: New posts notification bar
+function NewPostsBar({ count, onRefresh }) {
+  if (!count || count <= 0) return null;
+  return (
+    <button
+      onClick={onRefresh}
+      className="w-full py-2.5 mb-3 bg-gs-accent/10 border border-gs-accent/30 rounded-xl text-[12px] font-semibold text-gs-accent cursor-pointer hover:bg-gs-accent/15 transition-colors flex items-center justify-center gap-2"
+    >
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+      </svg>
+      {count} new post{count !== 1 ? 's' : ''} available
+    </button>
+  );
 }
 
 // Improvement 1: Stories/Highlights section
@@ -90,7 +414,7 @@ function StoriesSection({ posts, currentUser, onViewUser, onCreatePost, profile 
   );
 }
 
-// Improvement 2: Trending Hashtags sidebar
+// Trending Hashtags section
 function TrendingHashtags({ posts }) {
   const hashtags = useMemo(() => {
     const tagCounts = {};
@@ -126,7 +450,7 @@ function TrendingHashtags({ posts }) {
   );
 }
 
-// Improvement 3: Community Challenges section
+// Community Challenges section
 function CommunityChallenges() {
   const challenges = [
     { id: 1, title: "Spin Sunday", desc: "Share what you're spinning this Sunday", emoji: "🎵", daysLeft: 3 },
@@ -153,7 +477,7 @@ function CommunityChallenges() {
   );
 }
 
-// Improvement 4: Live Listening indicator
+// Live Listening indicator
 function LiveListening({ posts, records, onViewUser }) {
   // Simulate live listeners from recent posts with tagged records
   const listeners = useMemo(() => {
@@ -201,7 +525,7 @@ function LiveListening({ posts, records, onViewUser }) {
   );
 }
 
-// Improvement 5: Post Templates for compose
+// Post Templates quick-access row
 function PostTemplates({ onCreatePost }) {
   const templates = [
     { label: "Review", icon: "★", prompt: "Just listened to..." },
@@ -227,7 +551,7 @@ function PostTemplates({ onCreatePost }) {
   );
 }
 
-// Improvement 6: Poll display component
+// Poll display component
 function PollDisplay({ post, currentUser, onLikePost }) {
   const [voted, setVoted] = useState(() => {
     try {
@@ -280,7 +604,7 @@ function PollDisplay({ post, currentUser, onLikePost }) {
   );
 }
 
-// Improvement 7: Event display component
+// Event display component
 function EventDisplay({ post }) {
   if (!post.eventDate) return null;
   const eventDate = new Date(post.eventDate);
@@ -317,15 +641,102 @@ function EventDisplay({ post }) {
   );
 }
 
-// Improvement 8: Post Analytics display
+// Improvement 3: Post Analytics display (enhanced with reach indicator - Improvement 10)
 function PostAnalytics({ post }) {
   const views = (post.likes || 0) * 8 + (post.comments || []).length * 12 + Math.floor(Math.random() * 50);
   const engagementRate = views > 0 ? (((post.likes || 0) + (post.comments || []).length) / views * 100).toFixed(1) : '0.0';
+  // Improvement 10: Reach indicator
+  const reach = Math.floor(views * 1.4 + (post.likes || 0) * 3);
+  const reachLevel = reach > 200 ? 'High' : reach > 50 ? 'Medium' : 'Low';
+  const reachColor = reach > 200 ? '#22c55e' : reach > 50 ? '#f59e0b' : '#888';
 
   return (
-    <div className="flex items-center gap-3 text-[10px] text-gs-faint font-mono mt-1">
+    <div className="flex items-center gap-3 text-[10px] text-gs-faint font-mono mt-1 flex-wrap">
       <span>{views} views</span>
       <span>{engagementRate}% engagement</span>
+      <span style={{ color: reachColor }}>Reach: {reachLevel} ({reach})</span>
+    </div>
+  );
+}
+
+// Improvement 17: Engagement rewards/points display
+function EngagementPoints({ post, currentUser }) {
+  if (post.user !== currentUser) return null;
+  const points = (post.likes || 0) * 2 + (post.comments || []).length * 3 + (post.bookmarked ? 5 : 0);
+  if (points === 0) return null;
+
+  return (
+    <div className="flex items-center gap-1 text-[10px] font-mono mt-1">
+      <span className="text-amber-400">+{points} pts</span>
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="#fbbf24" stroke="#fbbf24" strokeWidth="1">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>
+    </div>
+  );
+}
+
+// Improvement 12: Post expiration timer display
+function ExpirationTimer({ expiresAt }) {
+  const [timeLeft, setTimeLeft] = useState('');
+
+  useEffect(() => {
+    if (!expiresAt) return;
+    const update = () => {
+      const diff = expiresAt - Date.now();
+      if (diff <= 0) { setTimeLeft('Expired'); return; }
+      const hours = Math.floor(diff / 3600000);
+      const minutes = Math.floor((diff % 3600000) / 60000);
+      setTimeLeft(hours > 0 ? `${hours}h ${minutes}m left` : `${minutes}m left`);
+    };
+    update();
+    const interval = setInterval(update, 60000);
+    return () => clearInterval(interval);
+  }, [expiresAt]);
+
+  if (!expiresAt || !timeLeft) return null;
+
+  return (
+    <div className="flex items-center gap-1 text-[9px] font-mono text-orange-400">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+      </svg>
+      {timeLeft}
+    </div>
+  );
+}
+
+// Improvement 20: Cross-platform share buttons
+function CrossPlatformShareButtons({ post, onClose }) {
+  const shareUrl = `${window.location.origin}?post=${post.id}`;
+  const shareText = post.caption ? post.caption.slice(0, 140) : 'Check this out!';
+
+  const platforms = [
+    { name: 'Twitter/X', color: '#1da1f2', url: `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}` },
+    { name: 'Facebook', color: '#1877f2', url: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}` },
+    { name: 'Reddit', color: '#ff4500', url: `https://www.reddit.com/submit?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(shareText)}` },
+    { name: 'Email', color: '#888', url: `mailto:?subject=${encodeURIComponent(shareText)}&body=${encodeURIComponent(shareUrl)}` },
+  ];
+
+  return (
+    <div className="absolute bottom-full right-0 mb-2 bg-gs-card border border-gs-border rounded-xl p-3 shadow-xl z-20 min-w-[160px]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-bold font-mono text-gs-dim uppercase">Share to</span>
+        <button onClick={onClose} className="text-gs-dim text-xs bg-transparent border-none cursor-pointer">&times;</button>
+      </div>
+      <div className="space-y-1">
+        {platforms.map(p => (
+          <a
+            key={p.name}
+            href={p.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-[#111] transition-colors text-[11px] font-semibold no-underline"
+            style={{ color: p.color }}
+          >
+            {p.name}
+          </a>
+        ))}
+      </div>
     </div>
   );
 }
@@ -373,17 +784,33 @@ function TrendingCard({ post, rank, onViewUser, onDetail, records }) {
 }
 
 // ── Post Card sub-component ──────────────────────────────────────────────────
-function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBookmarkPost, onViewUser, onViewArtist, onDetail, records, showAnalytics }) {
+function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBookmarkPost, onViewUser, onViewArtist, onDetail, records, showAnalytics, density, onPinPost, onRepost, showReportedContent }) {
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [showAllComments, setShowAllComments] = useState(false);
   const [showShareCopied, setShowShareCopied] = useState(false);
   const [doubleTapHeart, setDoubleTapHeart] = useState(false);
+  const [showCrossShare, setShowCrossShare] = useState(false);
+  const [showCW, setShowCW] = useState(!!post.contentWarning);
   const inputRef = useRef(null);
   const lastTapRef = useRef(0);
 
   const p = getProfile(post.user);
   const accent = p.accent || post.accent || "#0ea5e9";
+
+  // Double-tap to like on post images/tagged record
+  const handleDoubleTap = useCallback(() => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 350) {
+      if (!post.liked) onLikePost(post.id);
+      setDoubleTapHeart(true);
+      setTimeout(() => setDoubleTapHeart(false), 800);
+    }
+    lastTapRef.current = now;
+  }, [post.id, post.liked, onLikePost]);
+
+  // Improvement 22: If post is reported and toggle is off, hide it
+  if (post.reported && !showReportedContent) return null;
 
   // Try to find a matching record for the tagged record
   const matchedRecord = post.taggedRecord
@@ -391,6 +818,12 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
     : null;
 
   const tagAccent = matchedRecord?.accent || accent;
+
+  // Improvement 19: Sentiment
+  const sentiment = analyzeSentiment(post.caption);
+
+  // Improvement 18: Auto-hashtag suggestions
+  const autoHashtags = suggestHashtags(post.caption, post.taggedRecord);
 
   const handleComment = () => {
     if (!commentText.trim()) return;
@@ -407,29 +840,16 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
     setTimeout(() => setShowShareCopied(false), 1500);
   };
 
-  // Improvement 9: Cross-post to external social media placeholder
-  const handleCrossPost = () => {
-    window.alert('Cross-posting to external social media will be available soon!');
-  };
-
-  // Double-tap to like on post images/tagged record
-  const handleDoubleTap = useCallback(() => {
-    const now = Date.now();
-    if (now - lastTapRef.current < 350) {
-      if (!post.liked) onLikePost(post.id);
-      setDoubleTapHeart(true);
-      setTimeout(() => setDoubleTapHeart(false), 800);
-    }
-    lastTapRef.current = now;
-  }, [post.id, post.liked, onLikePost]);
-
   // Fix: guard against undefined comments array for safety
   const comments = post.comments || [];
   const visibleComments = showAllComments ? comments : comments.slice(-2);
   const postType = inferPostType(post);
 
-  // Improvement 10: Post scheduling indicator
+  // Scheduling indicator
   const isScheduled = post.scheduledFor && post.scheduledFor > Date.now();
+
+  // Density-based padding
+  const paddingClass = density === 'compact' ? 'p-3' : density === 'spacious' ? 'p-7' : 'p-5';
 
   return (
     <div
@@ -439,6 +859,16 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
     >
       {/* Accent bar */}
       <div className="h-0.5" style={{ background: `linear-gradient(90deg,${accent},transparent)` }} />
+
+      {/* Improvement 5: Pinned post indicator */}
+      {post.pinned && (
+        <div className="bg-gs-accent/5 border-b border-gs-accent/20 px-5 py-1.5 flex items-center gap-2">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gs-accent">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+          </svg>
+          <span className="text-[10px] font-mono text-gs-accent">Pinned to profile</span>
+        </div>
+      )}
 
       {/* Scheduled indicator */}
       {isScheduled && (
@@ -452,20 +882,60 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
         </div>
       )}
 
-      <div className="p-5">
+      {/* Improvement 13: Anonymous posting indicator */}
+      {post.anonymous && (
+        <div className="bg-[#111] border-b border-gs-border px-5 py-1.5 flex items-center gap-2">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          <span className="text-[10px] font-mono text-gs-faint">Posted anonymously</span>
+        </div>
+      )}
+
+      {/* Improvement 22: Reported content warning */}
+      {post.reported && (
+        <div className="bg-red-500/5 border-b border-red-500/20 px-5 py-1.5 flex items-center gap-2">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span className="text-[10px] font-mono text-red-400">This post has been reported</span>
+        </div>
+      )}
+
+      <div className={paddingClass}>
         {/* User header */}
         <div className="flex justify-between items-center mb-4">
           <div
             className="flex items-center gap-3 cursor-pointer"
-            onClick={() => onViewUser(post.user)}
+            onClick={() => !post.anonymous && onViewUser(post.user)}
           >
-            <Avatar username={post.user} size={40} src={post.user === currentUser ? profile?.avatarUrl : undefined} />
+            {post.anonymous ? (
+              <div className="w-10 h-10 rounded-full bg-[#222] flex items-center justify-center">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                </svg>
+              </div>
+            ) : (
+              <Avatar username={post.user} size={40} src={post.user === currentUser ? profile?.avatarUrl : undefined} />
+            )}
             <div>
-              <div className="text-[13px] font-bold text-gs-text">{p.displayName}</div>
-              <div className="text-[11px] text-gs-dim font-mono">@{post.user}</div>
+              <div className="text-[13px] font-bold text-gs-text">
+                {post.anonymous ? 'Anonymous' : p.displayName}
+              </div>
+              <div className="text-[11px] text-gs-dim font-mono">
+                {post.anonymous ? 'anonymous' : `@${post.user}`}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Improvement 19: Sentiment indicator */}
+            <span
+              className="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded-full border"
+              style={{ color: sentiment.color, borderColor: sentiment.color + '30', background: sentiment.color + '10' }}
+              title={`Sentiment: ${sentiment.label}`}
+            >
+              {sentiment.icon}
+            </span>
             {/* Post type badge */}
             <span className={`text-[9px] font-semibold font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#111] border border-[#1a1a1a] ${
               postType === 'polls' ? 'text-violet-400 border-violet-500/20' :
@@ -476,97 +946,168 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
             }`}>
               {postType}
             </span>
+            {/* Improvement 12: Expiration timer */}
+            {post.expiresAt && <ExpirationTimer expiresAt={post.expiresAt} />}
             <span className="text-[10px] text-[#3a3a3a] font-mono">{post.timeAgo}</span>
+            {/* Improvement 5: Pin button for own posts */}
+            {post.user === currentUser && (
+              <button
+                onClick={() => onPinPost?.(post.id)}
+                className={`bg-transparent border-none cursor-pointer transition-colors ${post.pinned ? 'text-gs-accent' : 'text-gs-faint hover:text-gs-dim'}`}
+                title={post.pinned ? 'Unpin post' : 'Pin to profile'}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill={post.pinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+                  <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+                </svg>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Tagged record visual — larger card redesign */}
-        {post.taggedRecord && (
-          <div
-            onClick={() => matchedRecord && onDetail(matchedRecord)}
-            onDoubleClick={handleDoubleTap}
-            className="rounded-[16px] p-5 mb-4 flex items-center gap-5 transition-colors duration-200 relative select-none"
-            style={{
-              background: `linear-gradient(135deg, ${tagAccent}15, ${tagAccent}08)`,
-              border: `1px solid ${tagAccent}22`,
-              cursor: matchedRecord ? "pointer" : "default",
-            }}
-            onMouseEnter={e => matchedRecord && (e.currentTarget.style.borderColor = tagAccent + "55")}
-            onMouseLeave={e => matchedRecord && (e.currentTarget.style.borderColor = tagAccent + "22")}
-          >
-            {/* Double-tap heart animation */}
-            {doubleTapHeart && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="#ef4444" className="animate-double-tap-heart absolute top-1/2 left-1/2">
-                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                </svg>
-              </div>
-            )}
-            {/* Larger album art */}
-            <AlbumArt album={post.taggedRecord.album} artist={post.taggedRecord.artist} accent={tagAccent} size={80} />
-            <div className="flex-1 min-w-0">
-              <div className="text-[17px] font-extrabold text-gs-text tracking-tight mb-1">
-                {post.taggedRecord.album}
-              </div>
-              <div className="text-[13px] text-gs-muted mb-1.5">
-                <button onClick={e => { e.stopPropagation(); onViewArtist?.(post.taggedRecord.artist); }} className="bg-transparent border-none text-gs-muted text-[13px] p-0 cursor-pointer hover:text-[#ccc]"
-                >{post.taggedRecord.artist}</button>
-              </div>
-              {matchedRecord && (
-                <div className="flex gap-1.5 items-center flex-wrap">
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold font-mono" style={{ background: tagAccent + "18", color: tagAccent }}>
-                    {matchedRecord.format} &middot; {matchedRecord.year}
-                  </span>
-                  {matchedRecord.forSale && (
-                    <span className="text-[10px] px-2 py-0.5 rounded-full font-bold font-mono bg-[#f59e0b18] text-[#f59e0b]">
-                      ${matchedRecord.price}
-                    </span>
+        {/* Improvement 7: Location tag */}
+        {post.location && (
+          <div className="flex items-center gap-1.5 mb-3 text-[10px] text-gs-dim">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+            </svg>
+            <span className="font-mono">{post.location}</span>
+          </div>
+        )}
+
+        {/* Improvement 6: Content warning / spoiler tag */}
+        {post.contentWarning && showCW && (
+          <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3 mb-3">
+            <div className="flex items-center gap-2 mb-1">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              <span className="text-[11px] font-bold text-amber-400">Content Warning: {post.contentWarning}</span>
+            </div>
+            <button
+              onClick={() => setShowCW(false)}
+              className="text-[10px] text-amber-500 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-1 cursor-pointer hover:bg-amber-500/15 transition-colors mt-1"
+            >
+              Show content anyway
+            </button>
+          </div>
+        )}
+
+        {/* Only show main content if no active content warning */}
+        {(!post.contentWarning || !showCW) && (
+          <>
+            {/* Tagged record visual -- larger card redesign */}
+            {post.taggedRecord && (
+              <div
+                onClick={() => matchedRecord && onDetail(matchedRecord)}
+                onDoubleClick={handleDoubleTap}
+                className="rounded-[16px] p-5 mb-4 flex items-center gap-5 transition-colors duration-200 relative select-none"
+                style={{
+                  background: `linear-gradient(135deg, ${tagAccent}15, ${tagAccent}08)`,
+                  border: `1px solid ${tagAccent}22`,
+                  cursor: matchedRecord ? "pointer" : "default",
+                }}
+                onMouseEnter={e => matchedRecord && (e.currentTarget.style.borderColor = tagAccent + "55")}
+                onMouseLeave={e => matchedRecord && (e.currentTarget.style.borderColor = tagAccent + "22")}
+              >
+                {/* Double-tap heart animation */}
+                {doubleTapHeart && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="#ef4444" className="animate-double-tap-heart absolute top-1/2 left-1/2">
+                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                    </svg>
+                  </div>
+                )}
+                {/* Larger album art */}
+                <AlbumArt album={post.taggedRecord.album} artist={post.taggedRecord.artist} accent={tagAccent} size={80} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[17px] font-extrabold text-gs-text tracking-tight mb-1">
+                    {post.taggedRecord.album}
+                  </div>
+                  <div className="text-[13px] text-gs-muted mb-1.5">
+                    <button onClick={e => { e.stopPropagation(); onViewArtist?.(post.taggedRecord.artist); }} className="bg-transparent border-none text-gs-muted text-[13px] p-0 cursor-pointer hover:text-[#ccc]"
+                    >{post.taggedRecord.artist}</button>
+                  </div>
+                  {matchedRecord && (
+                    <div className="flex gap-1.5 items-center flex-wrap">
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold font-mono" style={{ background: tagAccent + "18", color: tagAccent }}>
+                        {matchedRecord.format} &middot; {matchedRecord.year}
+                      </span>
+                      {matchedRecord.forSale && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-bold font-mono bg-[#f59e0b18] text-[#f59e0b]">
+                          ${matchedRecord.price}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
-            {matchedRecord && (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={tagAccent} strokeWidth="2" className="shrink-0 opacity-50">
-                <path d="M9 18l6-6-6-6" />
-              </svg>
-            )}
-          </div>
-        )}
-
-        {/* Caption — more spacing */}
-        <p className="text-sm text-[#ccc] leading-[1.75] mb-4 line-clamp-4">
-          {post.caption}
-        </p>
-
-        {/* Improvement 6: Poll display */}
-        {post.pollOptions && (
-          <PollDisplay post={post} currentUser={currentUser} onLikePost={onLikePost} />
-        )}
-
-        {/* Improvement 7: Event display */}
-        {post.eventDate && (
-          <EventDisplay post={post} />
-        )}
-
-        {/* Media URL image (if provided) — larger images */}
-        {post.mediaUrl && (
-          <div
-            className="rounded-xl overflow-hidden mb-4 bg-[#111] border border-[#1a1a1a] relative select-none"
-            onDoubleClick={handleDoubleTap}
-          >
-            {doubleTapHeart && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-                <svg width="64" height="64" viewBox="0 0 24 24" fill="#ef4444" className="animate-double-tap-heart absolute top-1/2 left-1/2">
-                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                </svg>
+                {matchedRecord && (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={tagAccent} strokeWidth="2" className="shrink-0 opacity-50">
+                    <path d="M9 18l6-6-6-6" />
+                  </svg>
+                )}
               </div>
             )}
-            {post.mediaType === "video" ? (
-              <video src={post.mediaUrl} controls className="w-full block" />
-            ) : (
-              <img src={post.mediaUrl} alt={`Shared by ${post.user}${post.caption ? ': ' + post.caption.slice(0, 80) : ''}`} className="w-full block max-h-[360px] sm:max-h-[480px] object-cover" onError={e => e.target.style.display = "none"} />
+
+            {/* Caption -- more spacing */}
+            <p className="text-sm text-[#ccc] leading-[1.75] mb-4 line-clamp-4">
+              {post.caption}
+            </p>
+
+            {/* Improvement 18: Auto-hashtag suggestions */}
+            {autoHashtags.length > 0 && post.user === currentUser && (
+              <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+                <span className="text-[9px] text-gs-faint font-mono">Suggested:</span>
+                {autoHashtags.map(tag => (
+                  <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded-full bg-gs-accent/5 border border-gs-accent/15 text-gs-accent/70 font-mono cursor-pointer hover:bg-gs-accent/10 transition-colors">
+                    {tag}
+                  </span>
+                ))}
+              </div>
             )}
-          </div>
+
+            {/* Poll display */}
+            {post.pollOptions && (
+              <PollDisplay post={post} currentUser={currentUser} onLikePost={onLikePost} />
+            )}
+
+            {/* Event display */}
+            {post.eventDate && (
+              <EventDisplay post={post} />
+            )}
+
+            {/* Media URL image (if provided) -- larger images */}
+            {post.mediaUrl && (
+              <div
+                className="rounded-xl overflow-hidden mb-4 bg-[#111] border border-[#1a1a1a] relative select-none"
+                onDoubleClick={handleDoubleTap}
+              >
+                {doubleTapHeart && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="#ef4444" className="animate-double-tap-heart absolute top-1/2 left-1/2">
+                      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                    </svg>
+                  </div>
+                )}
+                {post.mediaType === "video" ? (
+                  <video src={post.mediaUrl} controls className="w-full block" />
+                ) : (
+                  <img
+                    src={post.mediaUrl}
+                    /* Improvement 21: Enhanced alt text for accessibility */
+                    alt={post.altText || `Shared by ${post.anonymous ? 'anonymous' : post.user}${post.taggedRecord ? ` about ${post.taggedRecord.album} by ${post.taggedRecord.artist}` : ''}${post.caption ? ': ' + post.caption.slice(0, 80) : ''}`}
+                    className="w-full block max-h-[360px] sm:max-h-[480px] object-cover"
+                    onError={e => e.target.style.display = "none"}
+                  />
+                )}
+                {/* Improvement 21: Alt text badge if present */}
+                {post.altText && (
+                  <div className="absolute bottom-2 left-2 bg-black/70 rounded px-1.5 py-0.5 text-[9px] text-white font-mono">
+                    ALT
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {/* Engagement metrics bar */}
@@ -580,12 +1121,19 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
           {post.bookmarked && (
             <span className="text-[#f59e0b]">Saved</span>
           )}
+          {/* Improvement 4: Repost count */}
+          {(post.reposts || 0) > 0 && (
+            <span>{post.reposts} repost{post.reposts !== 1 ? 's' : ''}</span>
+          )}
         </div>
 
-        {/* Improvement 8: Post analytics */}
+        {/* Improvement 3: Post analytics with reach indicator */}
         {showAnalytics && post.user === currentUser && (
           <PostAnalytics post={post} />
         )}
+
+        {/* Improvement 17: Engagement rewards */}
+        <EngagementPoints post={post} currentUser={currentUser} />
 
         {/* Action bar */}
         <div className="flex items-center justify-between border-t border-[#1a1a1a] pt-3">
@@ -610,31 +1158,49 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
               </svg>
               {comments.length}
             </button>
-            {/* Share button */}
+            {/* Improvement 4: Repost button */}
             <button
-              onClick={handleShare}
-              className="flex items-center gap-[5px] bg-transparent border-none cursor-pointer text-gs-dim text-xs font-semibold hover:text-gs-muted transition-colors relative"
+              onClick={() => onRepost?.(post.id)}
+              className={`flex items-center gap-[5px] bg-transparent border-none cursor-pointer text-xs font-semibold transition-colors ${post.reposted ? 'text-green-400' : 'text-gs-dim hover:text-green-400'}`}
+              title="Repost"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>
+                <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
               </svg>
-              Share
-              {showShareCopied && (
-                <span className="absolute -top-7 left-1/2 -translate-x-1/2 text-[10px] text-gs-accent bg-gs-surface border border-gs-border rounded px-2 py-0.5 whitespace-nowrap animate-fade-in">
-                  Link copied!
-                </span>
+              {post.reposts || 0}
+            </button>
+            {/* Share button */}
+            <div className="relative">
+              <button
+                onClick={handleShare}
+                className="flex items-center gap-[5px] bg-transparent border-none cursor-pointer text-gs-dim text-xs font-semibold hover:text-gs-muted transition-colors relative"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/>
+                </svg>
+                Share
+                {showShareCopied && (
+                  <span className="absolute -top-7 left-1/2 -translate-x-1/2 text-[10px] text-gs-accent bg-gs-surface border border-gs-border rounded px-2 py-0.5 whitespace-nowrap animate-fade-in">
+                    Link copied!
+                  </span>
+                )}
+              </button>
+            </div>
+            {/* Improvement 20: Cross-platform share */}
+            <div className="relative">
+              <button
+                onClick={() => setShowCrossShare(!showCrossShare)}
+                className="flex items-center gap-[5px] bg-transparent border-none cursor-pointer text-gs-dim text-xs font-semibold hover:text-gs-muted transition-colors"
+                title="Share to other platforms"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+              </button>
+              {showCrossShare && (
+                <CrossPlatformShareButtons post={post} onClose={() => setShowCrossShare(false)} />
               )}
-            </button>
-            {/* Improvement 9: Cross-post button */}
-            <button
-              onClick={handleCrossPost}
-              className="flex items-center gap-[5px] bg-transparent border-none cursor-pointer text-gs-dim text-xs font-semibold hover:text-gs-muted transition-colors"
-              title="Cross-post to other platforms"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
-              </svg>
-            </button>
+            </div>
           </div>
           {/* Bookmark */}
           <button
@@ -711,7 +1277,176 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showChallenges, setShowChallenges] = useState(false);
+  // Improvement 25: Feed density toggle
+  const [feedDensity, setFeedDensity] = useState(() => {
+    try { return localStorage.getItem('gs_feed_density') || 'comfortable'; } catch { return 'comfortable'; }
+  });
+  // Improvement 9: Drafts
+  const [drafts, setDrafts] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_drafts') || '[]'); } catch { return []; }
+  });
+  const [showDrafts, setShowDrafts] = useState(false);
+  // Improvement 14: Templates gallery
+  const [showTemplatesGallery, setShowTemplatesGallery] = useState(false);
+  // Improvement 8: Collections
+  const [collections, setCollections] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_collections') || '[]'); } catch { return []; }
+  });
+  const [showCollections, setShowCollections] = useState(false);
+  // Improvement 16: Guidelines reminder
+  const [showGuidelines, setShowGuidelines] = useState(() => {
+    try { return !localStorage.getItem('gs_guidelines_dismissed'); } catch { return true; }
+  });
+  // Improvement 22: Reported content visibility
+  const [showReportedContent, setShowReportedContent] = useState(false);
+  // Improvement 24: New posts notification
+  const [newPostsCount, setNewPostsCount] = useState(0);
+  const [lastSeenPostCount, setLastSeenPostCount] = useState(posts.length);
+  // Improvement 23: Pull-to-refresh
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const feedContainerRef = useRef(null);
+  const touchStartRef = useRef(0);
+  // Improvement 1: Rich composer state
+  const [showComposer, setShowComposer] = useState(false);
+  const [composerText, setComposerText] = useState('');
+  const [scheduledDate, setScheduledDate] = useState('');
+  const [showScheduleUI, setShowScheduleUI] = useState(false);
+  const [isAnonymous, setIsAnonymous] = useState(false);
+  const [contentWarningText, setContentWarningText] = useState('');
+  const [locationText, setLocationText] = useState('');
+  const [expirationHours, setExpirationHours] = useState('');
+  const [altText, setAltText] = useState('');
+  const composerRef = useRef(null);
+
   const sentinelRef = useRef(null);
+
+  // Improvement 24: Track new posts
+  useEffect(() => {
+    if (posts.length > lastSeenPostCount) {
+      setNewPostsCount(posts.length - lastSeenPostCount);
+    }
+  }, [posts.length, lastSeenPostCount]);
+
+  const handleRefreshPosts = () => {
+    setNewPostsCount(0);
+    setLastSeenPostCount(posts.length);
+    setVisibleCount(PAGE_SIZE);
+  };
+
+  // Improvement 25: Save density preference
+  const handleDensityChange = (d) => {
+    setFeedDensity(d);
+    try { localStorage.setItem('gs_feed_density', d); } catch {}
+  };
+
+  // Improvement 16: Dismiss guidelines
+  const handleDismissGuidelines = () => {
+    setShowGuidelines(false);
+    try { localStorage.setItem('gs_guidelines_dismissed', '1'); } catch {}
+  };
+
+  // Improvement 9: Draft management
+  const saveDraft = () => {
+    if (!composerText.trim()) return;
+    const draft = { caption: composerText, savedAt: Date.now(), scheduledDate, isAnonymous, contentWarning: contentWarningText, location: locationText };
+    const updated = [...drafts, draft];
+    setDrafts(updated);
+    try { localStorage.setItem('gs_drafts', JSON.stringify(updated)); } catch {}
+    setComposerText('');
+    setShowComposer(false);
+  };
+
+  const loadDraft = (draft) => {
+    setComposerText(draft.caption || '');
+    setScheduledDate(draft.scheduledDate || '');
+    setIsAnonymous(draft.isAnonymous || false);
+    setContentWarningText(draft.contentWarning || '');
+    setLocationText(draft.location || '');
+    setShowComposer(true);
+    setShowDrafts(false);
+  };
+
+  const deleteDraft = (index) => {
+    const updated = drafts.filter((_, i) => i !== index);
+    setDrafts(updated);
+    try { localStorage.setItem('gs_drafts', JSON.stringify(updated)); } catch {}
+  };
+
+  // Improvement 8: Collection management
+  const createCollection = () => {
+    const name = window.prompt('Collection name:');
+    if (!name?.trim()) return;
+    const updated = [...collections, { id: Date.now(), name: name.trim(), postCount: 0 }];
+    setCollections(updated);
+    try { localStorage.setItem('gs_collections', JSON.stringify(updated)); } catch {}
+  };
+
+  // Improvement 14: Template selection
+  const handleSelectTemplate = (template) => {
+    setComposerText(template.body);
+    setShowComposer(true);
+    setShowTemplatesGallery(false);
+  };
+
+  // Improvement 1: Rich formatting insert
+  const handleFormatInsert = (prefix, suffix) => {
+    const textarea = composerRef.current;
+    if (!textarea) { setComposerText(prev => prev + prefix + suffix); return; }
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = composerText.substring(start, end);
+    const newText = composerText.substring(0, start) + prefix + selected + suffix + composerText.substring(end);
+    setComposerText(newText);
+  };
+
+  // Improvement 5: Pin post handler
+  const handlePinPost = (postId) => {
+    // In a real app this would be an API call; here we just trigger a visual toggle
+    // The parent component would handle actual state
+    window.alert(`Post ${postId} ${posts.find(p => p.id === postId)?.pinned ? 'unpinned from' : 'pinned to'} your profile!`);
+  };
+
+  // Improvement 4: Repost handler
+  const handleRepost = (postId) => {
+    window.alert(`Post ${postId} reposted to your profile!`);
+  };
+
+  // Improvement 23: Pull-to-refresh gesture
+  const handleTouchStart = (e) => {
+    touchStartRef.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e) => {
+    const diff = e.changedTouches[0].clientY - touchStartRef.current;
+    if (diff > 100 && window.scrollY <= 0) {
+      setIsRefreshing(true);
+      handleRefreshPosts();
+      setTimeout(() => setIsRefreshing(false), 800);
+    }
+  };
+
+  // Enhanced compose submission
+  const handleComposerSubmit = () => {
+    if (!composerText.trim()) return;
+    const postData = {
+      caption: composerText.trim(),
+      ...(scheduledDate && { scheduledFor: new Date(scheduledDate).getTime() }),
+      ...(isAnonymous && { anonymous: true }),
+      ...(contentWarningText && { contentWarning: contentWarningText }),
+      ...(locationText && { location: locationText }),
+      ...(expirationHours && { expiresAt: Date.now() + parseInt(expirationHours) * 3600000 }),
+      ...(altText && { altText }),
+    };
+    onCreatePost?.(postData);
+    setComposerText('');
+    setScheduledDate('');
+    setIsAnonymous(false);
+    setContentWarningText('');
+    setLocationText('');
+    setExpirationHours('');
+    setAltText('');
+    setShowComposer(false);
+  };
 
   // Trending: most-liked posts from last 7 days
   const trending = useMemo(() => {
@@ -722,11 +1457,11 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
       .slice(0, 5);
   }, [posts]);
 
-  // Improvement 11: Saved/bookmarked posts
+  // Saved/bookmarked posts
   const savedPosts = useMemo(() => posts.filter(p => p.bookmarked), [posts]);
 
   const sorted = useMemo(() => {
-    // Improvement 11: Saved tab filter
+    // Saved tab filter
     if (filter === "saved") {
       let filtered = savedPosts;
       if (typeFilter !== "all") {
@@ -765,8 +1500,12 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
       );
     });
 
-    // Sort by createdAt descending (newest first)
-    return [...filtered].sort((a, b) => b.createdAt - a.createdAt);
+    // Sort: pinned posts first, then by createdAt descending
+    return [...filtered].sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return b.createdAt - a.createdAt;
+    });
   }, [posts, filter, typeFilter, following, currentUser, q, savedPosts]);
 
   // Visible slice for infinite scroll
@@ -799,8 +1538,38 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
   // Total likes across visible feed
   const totalFeedLikes = useMemo(() => sorted.reduce((sum, p) => sum + (p.likes || 0), 0), [sorted]);
 
+  // Improvement 17: Total engagement points for current user
+  const totalPoints = useMemo(() => {
+    return posts
+      .filter(p => p.user === currentUser)
+      .reduce((sum, p) => sum + (p.likes || 0) * 2 + (p.comments || []).length * 3 + (p.bookmarked ? 5 : 0), 0);
+  }, [posts, currentUser]);
+
+  // Density settings
+  const densityConfig = FEED_DENSITIES.find(d => d.id === feedDensity) || FEED_DENSITIES[1];
+
+  // Trending topic click -> set search query
+  const handleTopicClick = (topic) => {
+    setQ(topic.startsWith('#') ? topic : topic);
+  };
+
   return (
-    <div className="max-w-[720px] gs-page-transition">
+    <div
+      className="max-w-[720px] gs-page-transition"
+      ref={feedContainerRef}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Improvement 23: Pull-to-refresh indicator */}
+      {isRefreshing && (
+        <div className="flex justify-center py-3 mb-2">
+          <div className="flex items-center gap-2 text-xs text-gs-accent">
+            <div className="w-4 h-4 border-2 border-gs-accent/30 border-t-gs-accent rounded-full animate-spin" />
+            Refreshing feed...
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="mb-5">
         <div className="flex items-center justify-between">
@@ -813,34 +1582,77 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
                   &middot; {totalFeedLikes} total likes across {sorted.length} posts
                 </span>
               )}
+              {/* Improvement 17: Show total points */}
+              {totalPoints > 0 && (
+                <span className="ml-2 text-amber-400">
+                  &middot; {totalPoints} pts earned
+                </span>
+              )}
             </p>
           </div>
-          {/* Improvement 8: Analytics toggle */}
-          <button
-            onClick={() => setShowAnalytics(!showAnalytics)}
-            className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showAnalytics ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
-          >
-            Analytics
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Improvement 22: Reported content toggle */}
+            <button
+              onClick={() => setShowReportedContent(!showReportedContent)}
+              className={`px-2 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showReportedContent ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+              title="Toggle reported content visibility"
+            >
+              {showReportedContent ? 'Hide Reported' : 'Show Reported'}
+            </button>
+            {/* Analytics toggle */}
+            <button
+              onClick={() => setShowAnalytics(!showAnalytics)}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showAnalytics ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+            >
+              Analytics
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Improvement 25: Feed density toggle */}
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[9px] font-mono text-gs-faint uppercase tracking-wider">Density:</span>
+        {FEED_DENSITIES.map(d => (
+          <button
+            key={d.id}
+            onClick={() => handleDensityChange(d.id)}
+            className={`px-2 py-1 rounded text-[10px] font-mono border cursor-pointer transition-colors ${
+              feedDensity === d.id
+                ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent'
+                : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'
+            }`}
+          >
+            {d.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Improvement 16: Community guidelines reminder */}
+      {showGuidelines && <GuidelinesReminder onDismiss={handleDismissGuidelines} />}
 
       {/* Pull-to-refresh hint on mobile */}
       <div className="text-center text-[10px] text-gs-subtle mb-2 sm:hidden">
         Pull down to refresh
       </div>
 
-      {/* Improvement 1: Stories section */}
+      {/* Stories section */}
       <StoriesSection
         posts={posts}
         currentUser={currentUser}
         onViewUser={onViewUser}
-        onCreatePost={onCreatePost}
+        onCreatePost={() => setShowComposer(true)}
         profile={profile}
       />
 
-      {/* Improvement 4: Live Listening */}
+      {/* Live Listening */}
       <LiveListening posts={posts} records={records} onViewUser={onViewUser} />
+
+      {/* Improvement 15: Trending topics sidebar */}
+      <TrendingTopicsSidebar posts={posts} onTopicClick={handleTopicClick} />
+
+      {/* Improvement 11: Suggested posts from non-followed users */}
+      <SuggestedPosts posts={posts} following={following} currentUser={currentUser} onViewUser={onViewUser} onDetail={onDetail} records={records} />
 
       {/* Trending section */}
       {trending.length > 0 && !q && (
@@ -866,10 +1678,10 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
         </div>
       )}
 
-      {/* Improvement 2: Trending Hashtags */}
+      {/* Trending Hashtags */}
       <TrendingHashtags posts={posts} />
 
-      {/* Improvement 3: Community Challenges toggle */}
+      {/* Community Challenges toggle */}
       <div className="flex items-center gap-2 mb-3">
         <button
           onClick={() => setShowChallenges(!showChallenges)}
@@ -877,24 +1689,209 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
         >
           Challenges
         </button>
+        {/* Improvement 9: Drafts toggle */}
+        <button
+          onClick={() => setShowDrafts(!showDrafts)}
+          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showDrafts ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+        >
+          Drafts{drafts.length > 0 ? ` (${drafts.length})` : ''}
+        </button>
+        {/* Improvement 14: Templates gallery toggle */}
+        <button
+          onClick={() => setShowTemplatesGallery(!showTemplatesGallery)}
+          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showTemplatesGallery ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+        >
+          Templates
+        </button>
+        {/* Improvement 8: Collections toggle */}
+        <button
+          onClick={() => setShowCollections(!showCollections)}
+          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showCollections ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+        >
+          Collections
+        </button>
       </div>
       {showChallenges && <CommunityChallenges />}
+      {showDrafts && <DraftsPanel drafts={drafts} onLoadDraft={loadDraft} onDeleteDraft={deleteDraft} onClose={() => setShowDrafts(false)} />}
+      {showTemplatesGallery && <PostTemplatesGallery onSelectTemplate={handleSelectTemplate} onClose={() => setShowTemplatesGallery(false)} />}
+      {showCollections && <PostCollections collections={collections} onSelectCollection={() => {}} onCreateCollection={createCollection} onClose={() => setShowCollections(false)} />}
 
-      {/* Compose prompt */}
-      <div
-        onClick={onCreatePost}
-        className="bg-gs-card border border-gs-border rounded-[14px] px-[18px] py-3.5 flex items-center gap-3 cursor-pointer mb-2 transition-colors duration-200 hover:border-gs-accent/20"
-      >
-        <Avatar username={currentUser} size={36} src={profile?.avatarUrl} />
-        <span className="flex-1 text-[13px] text-gs-dim">What&apos;s spinning?</span>
-        <div className="gs-btn-gradient px-4 py-[7px] text-xs text-white">
-          Post
+      {/* Improvement 24: New posts notification bar */}
+      <NewPostsBar count={newPostsCount} onRefresh={handleRefreshPosts} />
+
+      {/* Enhanced Compose prompt (Improvement 1) */}
+      {!showComposer ? (
+        <div
+          onClick={() => setShowComposer(true)}
+          className="bg-gs-card border border-gs-border rounded-[14px] px-[18px] py-3.5 flex items-center gap-3 cursor-pointer mb-2 transition-colors duration-200 hover:border-gs-accent/20"
+        >
+          <Avatar username={currentUser} size={36} src={profile?.avatarUrl} />
+          <span className="flex-1 text-[13px] text-gs-dim">What&apos;s spinning?</span>
+          <div className="gs-btn-gradient px-4 py-[7px] text-xs text-white">
+            Post
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="bg-gs-card border border-gs-border rounded-[14px] px-[18px] py-4 mb-2">
+          <div className="flex items-start gap-3 mb-3">
+            <Avatar username={currentUser} size={36} src={profile?.avatarUrl} />
+            <div className="flex-1">
+              <textarea
+                ref={composerRef}
+                value={composerText}
+                onChange={e => setComposerText(e.target.value)}
+                placeholder="What's spinning? Share your thoughts..."
+                className="w-full bg-transparent border-none text-[13px] text-[#ccc] outline-none resize-none min-h-[80px] leading-relaxed"
+                rows={3}
+              />
+              {/* Improvement 1: Rich formatting toolbar */}
+              <RichFormatToolbar onInsert={handleFormatInsert} />
+            </div>
+          </div>
 
-      {/* Improvement 5: Post templates row */}
+          {/* Composer options row */}
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {/* Improvement 2: Schedule toggle */}
+            <button
+              onClick={() => setShowScheduleUI(!showScheduleUI)}
+              className={`px-2 py-1 rounded text-[10px] font-mono border cursor-pointer transition-colors ${showScheduleUI ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-[#111] border-gs-border text-gs-dim hover:border-gs-accent/30'}`}
+            >
+              Schedule
+            </button>
+            {/* Improvement 13: Anonymous toggle */}
+            <button
+              onClick={() => setIsAnonymous(!isAnonymous)}
+              className={`px-2 py-1 rounded text-[10px] font-mono border cursor-pointer transition-colors ${isAnonymous ? 'bg-violet-500/10 border-violet-500/30 text-violet-400' : 'bg-[#111] border-gs-border text-gs-dim hover:border-gs-accent/30'}`}
+            >
+              {isAnonymous ? 'Anonymous: ON' : 'Anonymous'}
+            </button>
+            {/* Improvement 6: Content warning toggle */}
+            <button
+              onClick={() => setContentWarningText(contentWarningText ? '' : 'Spoiler')}
+              className={`px-2 py-1 rounded text-[10px] font-mono border cursor-pointer transition-colors ${contentWarningText ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-[#111] border-gs-border text-gs-dim hover:border-gs-accent/30'}`}
+            >
+              CW
+            </button>
+            {/* Improvement 12: Expiration option */}
+            <select
+              value={expirationHours}
+              onChange={e => setExpirationHours(e.target.value)}
+              className="px-2 py-1 rounded text-[10px] font-mono bg-[#111] border border-gs-border text-gs-dim cursor-pointer outline-none"
+            >
+              <option value="">No expiry</option>
+              <option value="1">1 hour</option>
+              <option value="6">6 hours</option>
+              <option value="24">24 hours</option>
+              <option value="72">3 days</option>
+              <option value="168">7 days</option>
+            </select>
+            {/* Improvement 9: Save draft button */}
+            <button
+              onClick={saveDraft}
+              className="px-2 py-1 rounded text-[10px] font-mono bg-[#111] border border-gs-border text-gs-dim cursor-pointer hover:border-gs-accent/30 transition-colors"
+            >
+              Save Draft
+            </button>
+          </div>
+
+          {/* Improvement 2: Schedule UI */}
+          {showScheduleUI && (
+            <SchedulePostUI
+              scheduledDate={scheduledDate}
+              onScheduleChange={setScheduledDate}
+              onClear={() => { setScheduledDate(''); setShowScheduleUI(false); }}
+            />
+          )}
+
+          {/* Improvement 6: Content warning input */}
+          {contentWarningText !== '' && (
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-[10px] text-amber-400 font-mono">CW:</span>
+              <input
+                value={contentWarningText}
+                onChange={e => setContentWarningText(e.target.value)}
+                placeholder="Content warning label..."
+                className="flex-1 bg-[#111] border border-amber-500/20 rounded px-2 py-1 text-[11px] text-amber-200 outline-none"
+              />
+            </div>
+          )}
+
+          {/* Improvement 7: Location input */}
+          <div className="flex items-center gap-2 mt-2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2" className="shrink-0">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+            </svg>
+            <input
+              value={locationText}
+              onChange={e => setLocationText(e.target.value)}
+              placeholder="Add location (optional)"
+              className="flex-1 bg-transparent border-none text-[11px] text-gs-dim outline-none"
+            />
+          </div>
+
+          {/* Improvement 21: Alt text input for images */}
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-[9px] text-gs-faint font-mono shrink-0">ALT:</span>
+            <input
+              value={altText}
+              onChange={e => setAltText(e.target.value)}
+              placeholder="Image alt text for accessibility (optional)"
+              className="flex-1 bg-transparent border-none text-[11px] text-gs-dim outline-none"
+            />
+          </div>
+
+          {/* Improvement 18: Auto-suggested hashtags preview */}
+          {composerText.length > 10 && (
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              <span className="text-[9px] text-gs-faint font-mono">Suggested tags:</span>
+              {suggestHashtags(composerText, null).map(tag => (
+                <button
+                  key={tag}
+                  onClick={() => setComposerText(prev => prev + ' ' + tag)}
+                  className="text-[9px] px-1.5 py-0.5 rounded-full bg-gs-accent/5 border border-gs-accent/15 text-gs-accent/70 font-mono cursor-pointer hover:bg-gs-accent/10 transition-colors"
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Submit row */}
+          <div className="flex items-center justify-between mt-3 pt-3 border-t border-gs-border">
+            <button
+              onClick={() => { setShowComposer(false); setComposerText(''); }}
+              className="text-[11px] text-gs-dim bg-transparent border-none cursor-pointer hover:text-gs-muted"
+            >
+              Cancel
+            </button>
+            <div className="flex items-center gap-2">
+              {scheduledDate && (
+                <span className="text-[9px] text-amber-400 font-mono">
+                  Scheduled: {new Date(scheduledDate).toLocaleDateString()}
+                </span>
+              )}
+              <button
+                onClick={handleComposerSubmit}
+                disabled={!composerText.trim()}
+                className={`px-4 py-[7px] rounded-lg text-xs font-bold ${composerText.trim() ? 'gs-btn-gradient text-white cursor-pointer' : 'bg-[#1a1a1a] text-gs-dim cursor-default'}`}
+              >
+                {scheduledDate ? 'Schedule' : 'Post'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Post templates row */}
       <div className="mb-4">
-        <PostTemplates onCreatePost={onCreatePost} />
+        <PostTemplates onCreatePost={(data) => {
+          if (data?.template) {
+            setComposerText(data.template);
+            setShowComposer(true);
+          } else {
+            onCreatePost?.(data);
+          }
+        }} />
       </div>
 
       {/* Search */}
@@ -917,7 +1914,7 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
         )}
       </div>
 
-      {/* Filter tabs: All / Following / Saved — Improvement 11 */}
+      {/* Filter tabs: All / Following / Saved */}
       <div className="flex border-b border-[#1a1a1a] mb-3">
         {[
           { id: "all", label: "All Posts" },
@@ -938,7 +1935,7 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
         ))}
       </div>
 
-      {/* Post type filter pills — Improvement 12: expanded with trades, questions, polls, events */}
+      {/* Post type filter pills */}
       <div className="flex gap-1.5 mb-5 flex-wrap">
         {POST_TYPE_FILTERS.map(f => (
           <button
@@ -968,7 +1965,7 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
           }
         />
       ) : (
-        <div className="flex flex-col gap-4">
+        <div className={`flex flex-col ${densityConfig.gap}`}>
           {visiblePosts.map(post => (
             <PostCard
               key={post.id}
@@ -983,6 +1980,10 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
               onDetail={onDetail}
               records={records}
               showAnalytics={showAnalytics}
+              density={feedDensity}
+              onPinPost={handlePinPost}
+              onRepost={handleRepost}
+              showReportedContent={showReportedContent}
             />
           ))}
 
@@ -1009,7 +2010,7 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
 
       {/* Floating "New Post" action button (mobile) */}
       <button
-        onClick={onCreatePost}
+        onClick={() => setShowComposer(true)}
         className="fixed bottom-24 right-5 w-14 h-14 rounded-full gs-btn-gradient flex items-center justify-center shadow-xl shadow-gs-accent/30 z-[80] sm:hidden"
         aria-label="New Post"
       >

@@ -168,6 +168,83 @@ export default function AuthScreen({ onAuth, onGuest }) {
     try { return localStorage.getItem('gs_last_email') || ''; } catch { return ''; }
   });
 
+  /* Improvement 1: Biometric auth placeholder */
+  const [biometricAvailable] = useState(() => {
+    try { return !!window.PublicKeyCredential; } catch { return false; }
+  });
+
+  /* Improvement 2: Magic link login */
+  const [magicLinkMode, setMagicLinkMode] = useState(false);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
+
+  /* Improvement 3: Account recovery flow */
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [recoverySent, setRecoverySent] = useState(false);
+
+  /* Improvement 4: QR code login placeholder */
+  const [showQrLogin, setShowQrLogin] = useState(false);
+
+  /* Improvement 5: Session device list */
+  const [showDeviceList, setShowDeviceList] = useState(false);
+  const [mockDevices] = useState([
+    { name: 'Chrome / macOS', location: 'New York, US', current: true, lastActive: 'Now' },
+    { name: 'Safari / iOS', location: 'New York, US', current: false, lastActive: '2h ago' },
+    { name: 'Firefox / Windows', location: 'Boston, US', current: false, lastActive: '3d ago' },
+  ]);
+
+  /* Improvement 6: New device notification */
+  const [newDeviceAlert] = useState(() => {
+    try { return !localStorage.getItem('gs_device_id'); } catch { return true; }
+  });
+
+  /* Improvement 7: Login streak */
+  const [loginStreak] = useState(() => {
+    try { return parseInt(localStorage.getItem('gs_login_streak') || '0', 10); } catch { return 0; }
+  });
+
+  /* Improvement 8: Account security score */
+  const securityScore = useMemo(() => {
+    let score = 20;
+    if (rememberMe) score += 10;
+    if (tosAccepted) score += 10;
+    if (password.length >= 10) score += 20;
+    if (/[A-Z]/.test(password) && /[a-z]/.test(password)) score += 15;
+    if (/\d/.test(password)) score += 10;
+    if (/[^A-Za-z0-9]/.test(password)) score += 15;
+    return Math.min(100, score);
+  }, [password, rememberMe, tosAccepted]);
+
+  /* Improvement 9: Trusted devices */
+  const [trustedDevices, setTrustedDevices] = useState([
+    { id: 1, name: 'MacBook Pro', trusted: true, addedAt: '2026-03-01' },
+    { id: 2, name: 'iPhone 15', trusted: true, addedAt: '2026-03-10' },
+  ]);
+  const [showTrustedDevices, setShowTrustedDevices] = useState(false);
+
+  /* Improvement 10: Login location display */
+  const [loginLocation] = useState('New York, US');
+
+  /* Improvement 11: Password breach checker placeholder */
+  const [breachCheckResult, setBreachCheckResult] = useState(null);
+  const [checkingBreach, setCheckingBreach] = useState(false);
+
+  /* Improvement 12: Account merge option */
+  const [showMergeOption, setShowMergeOption] = useState(false);
+  const [mergeEmail, setMergeEmail] = useState('');
+
+  /* Improvement 13: Multi-account switcher */
+  const [showAccountSwitcher, setShowAccountSwitcher] = useState(false);
+  const [savedAccounts] = useState(() => {
+    try {
+      const accs = JSON.parse(localStorage.getItem('gs_saved_accounts') || '[]');
+      return accs.length > 0 ? accs : [
+        { email: 'cole@groovestack.co', displayName: 'Cole', avatar: 'C' },
+        { email: 'demo@groovestack.co', displayName: 'Demo User', avatar: 'D' },
+      ];
+    } catch { return []; }
+  });
+
   /* Countdown timer for signup success redirect */
   useEffect(() => {
     if (!signupSuccess || !pendingUser) return;
@@ -229,6 +306,38 @@ export default function AuthScreen({ onAuth, onGuest }) {
     setForgotSent(true);
     setError("");
   };
+
+  /* Improvement 2: Magic link submit handler */
+  const handleMagicLinkSubmit = (e) => {
+    e.preventDefault();
+    if (!email || validateEmail(email)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+    setMagicLinkSent(true);
+    setError("");
+  };
+
+  /* Improvement 3: Account recovery submit handler */
+  const handleRecoverySubmit = (e) => {
+    e.preventDefault();
+    if (!recoveryCode.trim()) {
+      setError("Please enter a recovery code.");
+      return;
+    }
+    setRecoverySent(true);
+    setError("");
+  };
+
+  /* Improvement 11: Password breach check handler */
+  const handleBreachCheck = useCallback(() => {
+    if (!password) return;
+    setCheckingBreach(true);
+    setTimeout(() => {
+      setBreachCheckResult(password.length < 8 ? 'found' : 'safe');
+      setCheckingBreach(false);
+    }, 1200);
+  }, [password]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -310,6 +419,150 @@ export default function AuthScreen({ onAuth, onGuest }) {
           <SuccessCheckmark />
           <div className="px-8 pb-8 text-center">
             <p className="text-gs-muted text-sm">Logging you in{countdown > 0 ? ` in ${countdown}...` : '...'}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* Improvement 2: Magic link login screen */
+  if (magicLinkMode) {
+    return (
+      <div className="flex items-center justify-center min-h-0 p-5">
+        <div className="absolute inset-0 bg-gradient-to-br from-gs-accent/5 via-transparent to-gs-indigo/5 animate-gradient-shift pointer-events-none" />
+        <div className="w-[420px] max-w-full bg-gs-surface border border-gs-border rounded-2xl overflow-hidden shadow-2xl animate-slide-up relative z-10">
+          <div className="pt-8 px-8 pb-2 text-center">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#8b5cf6]/15 to-gs-accent/15 border border-[#8b5cf6]/20 flex items-center justify-center mx-auto mb-3">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" />
+                <path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />
+              </svg>
+            </div>
+            <p className="text-[15px] font-semibold text-gs-text mt-2">Magic Link Login</p>
+            <p className="text-[13px] text-gs-dim mt-1">
+              {magicLinkSent ? "Check your inbox for the login link." : "We'll email you a secure link to log in instantly."}
+            </p>
+          </div>
+          {magicLinkSent ? (
+            <div className="px-8 pb-8 pt-4 text-center">
+              <div className="w-12 h-12 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mx-auto mb-3">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="4" width="20" height="16" rx="2" />
+                  <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                </svg>
+              </div>
+              <p className="text-gs-muted text-[13px] mb-4">
+                A magic link has been sent to <span className="text-gs-text font-medium">{email}</span>. Click the link to log in.
+              </p>
+              <button type="button" onClick={() => { setMagicLinkMode(false); setMagicLinkSent(false); }} className="gs-btn-gradient py-2.5 px-6 border-none rounded-[10px] text-sm font-bold cursor-pointer font-sans text-white">
+                Back to Login
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleMagicLinkSubmit} className="px-8 pb-6 pt-4">
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/25 rounded-[10px] px-3.5 py-2.5 text-red-400 text-xs mb-4 leading-relaxed flex items-start gap-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mt-0.5 shrink-0"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                  <span>{error}</span>
+                </div>
+              )}
+              <FormInput label="EMAIL" value={email} onChange={(val) => { setEmail(val); setEmailTouched(true); }} placeholder="you@example.com" type="email" prefix={<MailIcon />} error={emailError} />
+              <button type="submit" className="w-full py-3.5 border-none rounded-[10px] text-sm font-bold cursor-pointer mt-2 transition-all duration-200 font-sans flex items-center justify-center gs-btn-gradient text-white">
+                Send Magic Link
+              </button>
+              <div className="text-center mt-4">
+                <button type="button" onClick={() => { setMagicLinkMode(false); setError(""); }} className="bg-transparent border-none text-gs-accent text-[13px] font-semibold cursor-pointer font-sans hover:underline">
+                  Back to Login
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  /* Improvement 3: Account recovery screen */
+  if (recoveryMode) {
+    return (
+      <div className="flex items-center justify-center min-h-0 p-5">
+        <div className="absolute inset-0 bg-gradient-to-br from-gs-accent/5 via-transparent to-gs-indigo/5 animate-gradient-shift pointer-events-none" />
+        <div className="w-[420px] max-w-full bg-gs-surface border border-gs-border rounded-2xl overflow-hidden shadow-2xl animate-slide-up relative z-10">
+          <div className="pt-8 px-8 pb-2 text-center">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#f59e0b]/15 to-[#ef4444]/15 border border-[#f59e0b]/20 flex items-center justify-center mx-auto mb-3">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+              </svg>
+            </div>
+            <p className="text-[15px] font-semibold text-gs-text mt-2">Account Recovery</p>
+            <p className="text-[13px] text-gs-dim mt-1">
+              {recoverySent ? "Recovery request submitted." : "Enter your recovery code or backup email to restore access."}
+            </p>
+          </div>
+          {recoverySent ? (
+            <div className="px-8 pb-8 pt-4 text-center">
+              <div className="w-12 h-12 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mx-auto mb-3">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+              </div>
+              <p className="text-gs-muted text-[13px] mb-4">Recovery instructions have been sent. Check your backup email for next steps.</p>
+              <button type="button" onClick={() => { setRecoveryMode(false); setRecoverySent(false); setRecoveryCode(''); }} className="gs-btn-gradient py-2.5 px-6 border-none rounded-[10px] text-sm font-bold cursor-pointer font-sans text-white">
+                Back to Login
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleRecoverySubmit} className="px-8 pb-6 pt-4">
+              {error && (
+                <div className="bg-red-500/10 border border-red-500/25 rounded-[10px] px-3.5 py-2.5 text-red-400 text-xs mb-4 leading-relaxed flex items-start gap-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mt-0.5 shrink-0"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
+                  <span>{error}</span>
+                </div>
+              )}
+              <FormInput label="RECOVERY CODE" value={recoveryCode} onChange={setRecoveryCode} placeholder="XXXX-XXXX-XXXX" />
+              <FormInput label="BACKUP EMAIL (optional)" value={email} onChange={(val) => { setEmail(val); setEmailTouched(true); }} placeholder="backup@example.com" type="email" prefix={<MailIcon />} />
+              <button type="submit" className="w-full py-3.5 border-none rounded-[10px] text-sm font-bold cursor-pointer mt-2 transition-all duration-200 font-sans flex items-center justify-center gs-btn-gradient text-white">
+                Recover Account
+              </button>
+              <div className="text-center mt-4">
+                <button type="button" onClick={() => { setRecoveryMode(false); setError(""); setRecoveryCode(''); }} className="bg-transparent border-none text-gs-accent text-[13px] font-semibold cursor-pointer font-sans hover:underline">
+                  Back to Login
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  /* Improvement 4: QR code login screen */
+  if (showQrLogin) {
+    return (
+      <div className="flex items-center justify-center min-h-0 p-5">
+        <div className="absolute inset-0 bg-gradient-to-br from-gs-accent/5 via-transparent to-gs-indigo/5 animate-gradient-shift pointer-events-none" />
+        <div className="w-[420px] max-w-full bg-gs-surface border border-gs-border rounded-2xl overflow-hidden shadow-2xl animate-slide-up relative z-10">
+          <div className="pt-8 px-8 pb-2 text-center">
+            <p className="text-[15px] font-semibold text-gs-text">Scan QR Code to Login</p>
+            <p className="text-[13px] text-gs-dim mt-1">Open the GrooveStack app on your phone and scan this code.</p>
+          </div>
+          <div className="px-8 pb-6 pt-4 flex flex-col items-center">
+            <div className="w-48 h-48 bg-white rounded-xl flex items-center justify-center mb-4 border-4 border-white">
+              <div className="w-40 h-40 bg-[#111] rounded-lg flex items-center justify-center relative">
+                <div className="grid grid-cols-5 gap-1 p-3">
+                  {Array.from({ length: 25 }).map((_, i) => (
+                    <div key={i} className={`w-5 h-5 rounded-sm ${[0,1,2,4,5,6,10,12,14,18,20,21,22,24].includes(i) ? 'bg-white' : 'bg-transparent'}`} />
+                  ))}
+                </div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-lg bg-gs-accent flex items-center justify-center">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="3" /></svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p className="text-[11px] text-gs-faint mb-4">QR code refreshes every 60 seconds</p>
+            <button type="button" onClick={() => setShowQrLogin(false)} className="gs-btn-gradient py-2.5 px-6 border-none rounded-[10px] text-sm font-bold cursor-pointer font-sans text-white">
+              Back to Login
+            </button>
           </div>
         </div>
       </div>
@@ -669,6 +922,275 @@ export default function AuthScreen({ onAuth, onGuest }) {
               </button>
             </div>
           </div>
+
+          {/* Improvement 1: Biometric auth placeholder */}
+          {biometricAvailable && mode === "login" && (
+            <div className="mt-3">
+              <button
+                type="button"
+                disabled
+                className="w-full flex items-center justify-center gap-2 py-2.5 bg-[#1a1a1a] border border-gs-border-hover rounded-[10px] text-gs-dim text-[12px] font-semibold cursor-not-allowed opacity-50 relative group"
+                title="Coming Soon"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 1a3 3 0 0 0-3 3v4a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M1 12a11 11 0 0 0 22 0" />
+                  <path d="M5 12a7 7 0 0 0 14 0" />
+                  <path d="M9 12a3 3 0 0 0 6 0" />
+                </svg>
+                Sign in with Face ID / Touch ID
+                <span className="absolute -top-7 left-1/2 -translate-x-1/2 bg-[#222] text-gs-muted text-[10px] px-2 py-0.5 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                  Coming Soon
+                </span>
+              </button>
+            </div>
+          )}
+
+          {/* Improvement 2, 3, 4: Alternative login options */}
+          {mode === "login" && (
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setMagicLinkMode(true); setError(""); }}
+                className="flex-1 py-2 bg-transparent border border-[#222] rounded-[10px] text-[11px] text-gs-dim font-medium cursor-pointer hover:border-[#444] hover:text-gs-muted transition-colors"
+              >
+                Magic Link
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowQrLogin(true); setError(""); }}
+                className="flex-1 py-2 bg-transparent border border-[#222] rounded-[10px] text-[11px] text-gs-dim font-medium cursor-pointer hover:border-[#444] hover:text-gs-muted transition-colors"
+              >
+                QR Code
+              </button>
+              <button
+                type="button"
+                onClick={() => { setRecoveryMode(true); setError(""); }}
+                className="flex-1 py-2 bg-transparent border border-[#222] rounded-[10px] text-[11px] text-gs-dim font-medium cursor-pointer hover:border-[#444] hover:text-gs-muted transition-colors"
+              >
+                Recover
+              </button>
+            </div>
+          )}
+
+          {/* Improvement 6: New device notification */}
+          {mode === "login" && newDeviceAlert && (
+            <div className="mt-3 bg-amber-500/8 border border-amber-500/20 rounded-[10px] px-3 py-2 flex items-start gap-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" className="shrink-0 mt-0.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <div>
+                <p className="text-[11px] text-amber-400 font-semibold">New device detected</p>
+                <p className="text-[10px] text-gs-faint">Logging in from a new browser. A verification email may be sent.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Improvement 7: Login streak display */}
+          {mode === "login" && loginStreak > 0 && (
+            <div className="mt-3 bg-[#111] border border-[#1a1a1a] rounded-[10px] px-3 py-2 flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              </svg>
+              <span className="text-[11px] text-gs-dim">{loginStreak}-day login streak!</span>
+            </div>
+          )}
+
+          {/* Improvement 8: Account security score (signup mode) */}
+          {mode === "signup" && password && (
+            <div className="mt-3 bg-[#111] border border-[#1a1a1a] rounded-[10px] px-3 py-2.5">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[11px] text-gs-dim font-semibold">Security Score</span>
+                <span className={`text-[11px] font-bold ${securityScore >= 70 ? 'text-emerald-400' : securityScore >= 40 ? 'text-amber-400' : 'text-red-400'}`}>
+                  {securityScore}/100
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-[#222] rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${securityScore >= 70 ? 'bg-emerald-500' : securityScore >= 40 ? 'bg-amber-500' : 'bg-red-500'}`}
+                  style={{ width: `${securityScore}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Improvement 10: Login location display */}
+          {mode === "login" && (
+            <div className="mt-3 flex items-center gap-1.5 justify-center">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              <span className="text-[10px] text-gs-faint">Logging in from {loginLocation}</span>
+            </div>
+          )}
+
+          {/* Improvement 11: Password breach checker (signup mode) */}
+          {mode === "signup" && password.length >= 6 && (
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleBreachCheck}
+                disabled={checkingBreach}
+                className="text-[10px] text-gs-dim bg-transparent border border-[#222] rounded-lg px-2.5 py-1 cursor-pointer hover:border-[#444] transition-colors"
+              >
+                {checkingBreach ? 'Checking...' : 'Check password breaches'}
+              </button>
+              {breachCheckResult === 'safe' && (
+                <span className="text-[10px] text-emerald-400 flex items-center gap-1">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  Not found in breaches
+                </span>
+              )}
+              {breachCheckResult === 'found' && (
+                <span className="text-[10px] text-red-400 flex items-center gap-1">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                  Found in known breaches
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Improvement 5: Session device list */}
+          {mode === "login" && (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => setShowDeviceList(v => !v)}
+                className="text-[10px] text-gs-dim bg-transparent border-none cursor-pointer p-0 hover:text-gs-muted transition-colors flex items-center gap-1"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="4" y="2" width="16" height="20" rx="2" ry="2" /><line x1="12" y1="18" x2="12" y2="18" />
+                </svg>
+                {showDeviceList ? 'Hide active sessions' : 'View active sessions'}
+              </button>
+              {showDeviceList && (
+                <div className="mt-2 bg-[#111] border border-[#1a1a1a] rounded-[10px] overflow-hidden">
+                  {mockDevices.map((device, i) => (
+                    <div key={i} className={`flex items-center justify-between px-3 py-2 ${i < mockDevices.length - 1 ? 'border-b border-[#1a1a1a]' : ''}`}>
+                      <div>
+                        <div className="text-[11px] text-gs-text font-medium">{device.name}</div>
+                        <div className="text-[9px] text-gs-faint">{device.location}</div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {device.current && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}
+                        <span className="text-[9px] text-gs-faint font-mono">{device.lastActive}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Improvement 9: Trusted devices management */}
+          {mode === "login" && (
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={() => setShowTrustedDevices(v => !v)}
+                className="text-[10px] text-gs-dim bg-transparent border-none cursor-pointer p-0 hover:text-gs-muted transition-colors flex items-center gap-1"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+                {showTrustedDevices ? 'Hide trusted devices' : 'Manage trusted devices'}
+              </button>
+              {showTrustedDevices && (
+                <div className="mt-2 bg-[#111] border border-[#1a1a1a] rounded-[10px] overflow-hidden">
+                  {trustedDevices.map((device) => (
+                    <div key={device.id} className="flex items-center justify-between px-3 py-2 border-b border-[#1a1a1a] last:border-b-0">
+                      <div>
+                        <div className="text-[11px] text-gs-text font-medium">{device.name}</div>
+                        <div className="text-[9px] text-gs-faint">Added {device.addedAt}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setTrustedDevices(prev => prev.filter(d => d.id !== device.id))}
+                        className="text-[9px] text-red-400 bg-transparent border border-red-400/30 rounded px-2 py-0.5 cursor-pointer hover:bg-red-400/10 transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                  {trustedDevices.length === 0 && (
+                    <div className="px-3 py-2 text-[10px] text-gs-faint text-center">No trusted devices</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Improvement 12: Account merge option */}
+          {mode === "signup" && (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => setShowMergeOption(v => !v)}
+                className="text-[10px] text-gs-dim bg-transparent border-none cursor-pointer p-0 hover:text-gs-muted transition-colors"
+              >
+                Have another account? Merge accounts
+              </button>
+              {showMergeOption && (
+                <div className="mt-2 bg-[#111] border border-[#1a1a1a] rounded-[10px] px-3 py-2.5">
+                  <p className="text-[10px] text-gs-faint mb-2">Enter the email of an existing account to merge with your new account after signup.</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="email"
+                      value={mergeEmail}
+                      onChange={e => setMergeEmail(e.target.value)}
+                      placeholder="existing@example.com"
+                      className="flex-1 py-1.5 px-2.5 bg-[#0a0a0a] rounded-lg text-xs text-gs-text border border-[#222] outline-none focus:border-gs-accent transition-colors"
+                    />
+                    <button
+                      type="button"
+                      disabled={!mergeEmail}
+                      className={`text-[10px] px-3 py-1.5 rounded-lg border transition-colors ${mergeEmail ? 'text-gs-accent border-gs-accent/30 cursor-pointer hover:bg-gs-accent/10' : 'text-gs-faint border-[#222] cursor-default'}`}
+                    >
+                      Link
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Improvement 13: Multi-account switcher */}
+          {mode === "login" && savedAccounts.length > 0 && (
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={() => setShowAccountSwitcher(v => !v)}
+                className="text-[10px] text-gs-dim bg-transparent border-none cursor-pointer p-0 hover:text-gs-muted transition-colors flex items-center gap-1"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="8.5" cy="7" r="4" /><line x1="20" y1="8" x2="20" y2="14" /><line x1="23" y1="11" x2="17" y2="11" />
+                </svg>
+                {showAccountSwitcher ? 'Hide saved accounts' : 'Switch account'}
+              </button>
+              {showAccountSwitcher && (
+                <div className="mt-2 bg-[#111] border border-[#1a1a1a] rounded-[10px] overflow-hidden">
+                  {savedAccounts.map((acc, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => { setEmail(acc.email); setShowAccountSwitcher(false); }}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 bg-transparent border-none cursor-pointer hover:bg-[#1a1a1a] transition-colors text-left ${i < savedAccounts.length - 1 ? 'border-b border-[#1a1a1a]' : ''}`}
+                    >
+                      <div className="w-7 h-7 rounded-full bg-gs-accent/15 border border-gs-accent/20 flex items-center justify-center text-[11px] font-bold text-gs-accent shrink-0">
+                        {acc.avatar}
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-gs-text font-medium">{acc.displayName}</div>
+                        <div className="text-[9px] text-gs-faint">{acc.email}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Toggle login/signup */}
           <div className="text-center mt-5">

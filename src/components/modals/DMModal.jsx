@@ -10,7 +10,7 @@ import { USER_PROFILES } from '../../constants';
 // Simulated replies sent by the other user after a short delay to make the chat feel alive
 const AUTO_REPLIES = [
   "That's a killer pressing! Where did you find it?",
-  "Agreed — the dynamics on that one are insane.",
+  "Agreed \u2014 the dynamics on that one are insane.",
   "I've been hunting that one for ages. Is it still available?",
   "Wow nice score. What's the pressing matrix?",
   "I have the same one! Original or reissue?",
@@ -19,7 +19,26 @@ const AUTO_REPLIES = [
   "I paid way too much for mine. Worth every penny though.",
 ];
 
-const REACTION_EMOJIS = ["❤️", "😂", "🔥", "👍", "🎶", "💿"];
+const REACTION_EMOJIS = ["\u2764\uFE0F", "\uD83D\uDE02", "\uD83D\uDD25", "\uD83D\uDC4D", "\uD83C\uDFB6", "\uD83D\uDCBF"];
+
+// Improvement 19 (new): Quick response templates
+const QUICK_RESPONSES = [
+  { label: "Interested", text: "Hey, I'm interested! Is this still available?" },
+  { label: "Price?", text: "What's the best price you can do on this?" },
+  { label: "Condition?", text: "Can you tell me more about the condition? Any scratches or warps?" },
+  { label: "Trade?", text: "Would you be open to a trade? I have some records you might like." },
+  { label: "Thanks!", text: "Thanks so much! Really appreciate it." },
+  { label: "Shipping?", text: "How much would shipping be to my area?" },
+];
+
+// Improvement 18 (new): Translation placeholder languages
+const TRANSLATION_LANGS = [
+  { code: "es", label: "Spanish" },
+  { code: "fr", label: "French" },
+  { code: "de", label: "German" },
+  { code: "ja", label: "Japanese" },
+  { code: "pt", label: "Portuguese" },
+];
 
 export default function DMModal({ open, onClose, currentUser, following, messages, setMessages }) {
   const [activeThread, setActiveThread] = useState(null);
@@ -48,11 +67,44 @@ export default function DMModal({ open, onClose, currentUser, following, message
   // Improvement 9: Attachment sharing
   const [showAttachMenu, setShowAttachMenu] = useState(false);
 
+  // Improvement 18 (new): Message translation
+  const [translatedMessages, setTranslatedMessages] = useState({});
+  const [translatingMsgId, setTranslatingMsgId] = useState(null);
+  const [translateLang, setTranslateLang] = useState("es");
+  const [showTranslateMenu, setShowTranslateMenu] = useState(null);
+  // Improvement 19 (new): Quick responses
+  const [showQuickResponses, setShowQuickResponses] = useState(false);
+  // Improvement 20 (new): Message expiration timer
+  const [expiringMessages, setExpiringMessages] = useState({});
+  const [selfDestructMode, setSelfDestructMode] = useState(false);
+  const [selfDestructTimer, setSelfDestructTimer] = useState("30");
+  // Improvement 21 (new): Read receipt toggle
+  const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(true);
+
   const endRef = useRef(null);
 
   useEffect(() => {
     if (open && endRef.current) setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 80);
   }, [messages, activeThread, open]);
+
+  // Improvement 20: Expire messages countdown
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setExpiringMessages(prev => {
+        const updated = { ...prev };
+        let changed = false;
+        for (const [msgId, expiresAt] of Object.entries(updated)) {
+          if (now >= expiresAt) {
+            delete updated[msgId];
+            changed = true;
+          }
+        }
+        return changed ? updated : prev;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const allUsers = Object.keys(USER_PROFILES);
   // Show followed users as contacts; fall back to first 6 users if the following list is empty
@@ -116,6 +168,20 @@ export default function DMModal({ open, onClose, currentUser, following, message
     setReactionPickerMsgId(null);
   };
 
+  // Improvement 18 (new): Simulate message translation
+  const handleTranslateMsg = (msgId, text, lang) => {
+    setTranslatingMsgId(msgId);
+    setShowTranslateMenu(null);
+    setTimeout(() => {
+      const langLabel = TRANSLATION_LANGS.find(l => l.code === lang)?.label || lang;
+      setTranslatedMessages(prev => ({
+        ...prev,
+        [msgId]: `[${langLabel}] ${text}`,
+      }));
+      setTranslatingMsgId(null);
+    }, 600);
+  };
+
   // Appends the message to the active thread and schedules a random auto-reply
   const send = () => {
     if (!draft.trim() || !activeThread) return;
@@ -134,18 +200,27 @@ export default function DMModal({ open, onClose, currentUser, following, message
 
     const msg = { id: Date.now(), from: currentUser, text: draft.trim(), time: timeStr, status: "sent" };
     setMessages(m => ({ ...m, [activeThread]: [...(m[activeThread] || []), msg] }));
+
+    // Improvement 20: Set expiration if self-destruct mode is on
+    if (selfDestructMode) {
+      const expiresAt = Date.now() + parseInt(selfDestructTimer) * 1000;
+      setExpiringMessages(prev => ({ ...prev, [msg.id]: expiresAt }));
+    }
+
     setDraft("");
 
     // Mark as read after a short delay
-    setTimeout(() => {
-      setMessages(m => {
-        const t = m[activeThread] || [];
-        return {
-          ...m,
-          [activeThread]: t.map(msg2 => msg2.id === msg.id ? { ...msg2, status: "read" } : msg2),
-        };
-      });
-    }, 400);
+    if (readReceiptsEnabled) {
+      setTimeout(() => {
+        setMessages(m => {
+          const t = m[activeThread] || [];
+          return {
+            ...m,
+            [activeThread]: t.map(msg2 => msg2.id === msg.id ? { ...msg2, status: "read" } : msg2),
+          };
+        });
+      }, 400);
+    }
 
     // Show typing indicator, then send auto-reply
     const replyDelay = 900 + Math.random() * 800;
@@ -163,6 +238,11 @@ export default function DMModal({ open, onClose, currentUser, following, message
 
   if (!open) return null;
 
+  // Improvement 20: Filter out expired messages
+  const displayThread = (searchQuery ? filteredThread : thread).filter(
+    msg => !expiringMessages[msg.id] || Date.now() < expiringMessages[msg.id]
+  );
+
   return (
     <div
       className="gs-overlay fixed inset-0 flex items-center justify-center z-[1000]"
@@ -179,7 +259,7 @@ export default function DMModal({ open, onClose, currentUser, following, message
               title="Auto-reply settings"
               className="bg-transparent border-none cursor-pointer text-gs-dim hover:text-gs-muted text-sm p-0"
             >
-              ⚙
+              {"\u2699"}
             </button>
           </div>
 
@@ -201,6 +281,20 @@ export default function DMModal({ open, onClose, currentUser, following, message
                 className="w-full bg-[#111] border border-[#222] rounded-md px-2 py-1.5 text-[11px] text-gs-text outline-none"
                 placeholder="Auto-reply message..."
               />
+
+              {/* Improvement 21 (new): Read receipt toggle */}
+              <div className="flex items-center justify-between mt-2">
+                <span className="text-[10px] text-gs-dim font-mono">READ RECEIPTS</span>
+                <button
+                  onClick={() => setReadReceiptsEnabled(v => !v)}
+                  className={`w-8 h-4 rounded-full border-none cursor-pointer relative transition-colors ${readReceiptsEnabled ? 'bg-gs-accent' : 'bg-[#333]'}`}
+                >
+                  <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${readReceiptsEnabled ? 'left-4' : 'left-0.5'}`} />
+                </button>
+              </div>
+              <div className="text-[9px] text-gs-faint mt-0.5">
+                {readReceiptsEnabled ? "Others can see when you read messages" : "Read receipts are off"}
+              </div>
             </div>
           )}
 
@@ -261,7 +355,7 @@ export default function DMModal({ open, onClose, currentUser, following, message
 
             {contacts.length === 0 && (
               <div className="p-8 text-center">
-                <div className="text-2xl mb-2">💬</div>
+                <div className="text-2xl mb-2">{"\uD83D\uDCAC"}</div>
                 <div className="text-gs-faint text-xs">Follow someone to start a conversation.</div>
               </div>
             )}
@@ -298,7 +392,7 @@ export default function DMModal({ open, onClose, currentUser, following, message
                   title="Search messages"
                   className="bg-[#1a1a1a] border-none rounded-md w-7 h-7 cursor-pointer text-gs-muted text-sm flex items-center justify-center hover:text-gs-text"
                 >
-                  🔍
+                  {"\uD83D\uDD0D"}
                 </button>
               )}
               {/* Improvement 3: Show pinned messages */}
@@ -308,7 +402,7 @@ export default function DMModal({ open, onClose, currentUser, following, message
                   title="Pinned messages"
                   className="bg-[#1a1a1a] border-none rounded-md w-7 h-7 cursor-pointer text-gs-muted text-sm flex items-center justify-center hover:text-gs-text"
                 >
-                  📌
+                  {"\uD83D\uDCCC"}
                 </button>
               )}
               {/* Improvement 8: Archive conversation */}
@@ -321,10 +415,10 @@ export default function DMModal({ open, onClose, currentUser, following, message
                   title="Archive conversation"
                   className="bg-[#1a1a1a] border-none rounded-md w-7 h-7 cursor-pointer text-gs-muted text-sm flex items-center justify-center hover:text-gs-text"
                 >
-                  📥
+                  {"\uD83D\uDCE5"}
                 </button>
               )}
-              <button onClick={onClose} className="bg-[#1a1a1a] border-none rounded-md w-7 h-7 cursor-pointer text-gs-muted text-lg flex items-center justify-center">×</button>
+              <button onClick={onClose} className="bg-[#1a1a1a] border-none rounded-md w-7 h-7 cursor-pointer text-gs-muted text-lg flex items-center justify-center">{"\u00d7"}</button>
             </div>
           </div>
 
@@ -350,7 +444,7 @@ export default function DMModal({ open, onClose, currentUser, following, message
               <div className="text-[10px] text-gs-dim font-mono mb-1.5">PINNED MESSAGES</div>
               {threadPinned.map(m => (
                 <div key={m.id} className="text-[11px] text-gs-muted mb-1 flex items-center gap-1.5">
-                  <span>📌</span>
+                  <span>{"\uD83D\uDCCC"}</span>
                   <span className="font-bold text-gs-text">{m.from === currentUser ? 'You' : m.from}:</span>
                   <span className="truncate">{m.text}</span>
                 </div>
@@ -362,7 +456,7 @@ export default function DMModal({ open, onClose, currentUser, following, message
             {/* Empty state — no conversation selected */}
             {!activeThread && (
               <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
-                <div className="text-4xl mb-3">📨</div>
+                <div className="text-4xl mb-3">{"\uD83D\uDCE8"}</div>
                 <div className="text-gs-muted text-[14px] font-semibold mb-1">Your messages</div>
                 <div className="text-gs-faint text-[12px]">Select a conversation from the sidebar to start chatting.</div>
               </div>
@@ -372,43 +466,65 @@ export default function DMModal({ open, onClose, currentUser, following, message
               <div className="flex-1 flex flex-col items-center justify-center text-center mt-6">
                 <Avatar username={activeThread} size={48} />
                 <div className="text-gs-muted text-[13px] font-semibold mt-3">{p?.displayName}</div>
-                <div className="text-gs-faint text-[12px] mt-1">Start the conversation — say hello!</div>
+                <div className="text-gs-faint text-[12px] mt-1">Start the conversation \u2014 say hello!</div>
               </div>
             )}
-            {(searchQuery ? filteredThread : thread).map(msg => {
+            {displayThread.map(msg => {
               const isMine = msg.from === currentUser;
               const msgReactions = reactions[msg.id] || {};
               const isPinned = (pinnedMessages[activeThread] || new Set()).has(msg.id);
               const reactionEntries = Object.entries(msgReactions);
+              const hasTranslation = translatedMessages[msg.id];
+              const isTranslating = translatingMsgId === msg.id;
+              const isExpiring = expiringMessages[msg.id];
+              const timeLeft = isExpiring ? Math.max(0, Math.ceil((expiringMessages[msg.id] - Date.now()) / 1000)) : null;
+
               return (
                 <div key={msg.id} className={`flex gap-2 items-end group ${isMine ? 'flex-row-reverse' : 'flex-row'}`}>
                   {!isMine && <Avatar username={msg.from} size={26} />}
                   <div className="relative max-w-[72%]">
                     {/* Improvement 3: Pin indicator */}
                     {isPinned && (
-                      <div className={`text-[9px] text-gs-dim mb-0.5 ${isMine ? 'text-right' : 'text-left'}`}>📌 Pinned</div>
+                      <div className={`text-[9px] text-gs-dim mb-0.5 ${isMine ? 'text-right' : 'text-left'}`}>{"\uD83D\uDCCC"} Pinned</div>
+                    )}
+                    {/* Improvement 20: Expiration countdown */}
+                    {isExpiring && timeLeft !== null && (
+                      <div className={`text-[9px] text-red-400 mb-0.5 ${isMine ? 'text-right' : 'text-left'}`}>
+                        {"\u23F3"} Expires in {timeLeft}s
+                      </div>
                     )}
                     <div
                       className={`px-[13px] py-[9px] text-[13px] leading-normal ${
                         msg.status === "scheduled"
                           ? 'rounded-[14px] bg-[#1a1a1a] border border-dashed border-[#333] text-[#888]'
-                          : isMine
-                            ? 'rounded-[14px_14px_4px_14px] gs-btn-gradient text-white'
-                            : 'rounded-[14px_14px_14px_4px] bg-[#1a1a1a] text-[#ddd]'
+                          : isExpiring
+                            ? `${isMine ? 'rounded-[14px_14px_4px_14px]' : 'rounded-[14px_14px_14px_4px]'} bg-red-500/10 border border-red-500/20 text-[#ddd]`
+                            : isMine
+                              ? 'rounded-[14px_14px_4px_14px] gs-btn-gradient text-white'
+                              : 'rounded-[14px_14px_14px_4px] bg-[#1a1a1a] text-[#ddd]'
                       }`}
                     >
                       {msg.text}
+
+                      {/* Improvement 18 (new): Translation display */}
+                      {hasTranslation && (
+                        <div className="text-[11px] mt-1 pt-1 border-t border-white/10 opacity-70 italic">{translatedMessages[msg.id]}</div>
+                      )}
+
                       <div className={`flex items-center gap-1 mt-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
                         {/* Improvement 6: Scheduled indicator */}
                         {msg.status === "scheduled" && (
-                          <span className="text-[10px] text-amber-400/70 mr-1">⏰ {msg.scheduledFor}</span>
+                          <span className="text-[10px] text-amber-400/70 mr-1">{"\u23F0"} {msg.scheduledFor}</span>
                         )}
                         <span className={`text-[10px] ${isMine ? 'text-white/[.47]' : 'text-gs-dim'}`}>{msg.time}</span>
-                        {/* Read receipts for sent messages */}
-                        {isMine && msg.status !== "scheduled" && (
+                        {/* Improvement 21 (new): Read receipts (conditional) */}
+                        {isMine && msg.status !== "scheduled" && readReceiptsEnabled && (
                           <span className={`text-[10px] ${msg.status === "read" ? 'text-blue-400' : 'text-white/[.35]'}`}>
-                            {msg.status === "read" ? "✓✓" : "✓"}
+                            {msg.status === "read" ? "\u2713\u2713" : "\u2713"}
                           </span>
+                        )}
+                        {isMine && msg.status !== "scheduled" && !readReceiptsEnabled && (
+                          <span className="text-[10px] text-white/[.25]">{"\u2713"}</span>
                         )}
                       </div>
                     </div>
@@ -424,23 +540,47 @@ export default function DMModal({ open, onClose, currentUser, following, message
                       </div>
                     )}
 
-                    {/* Hover actions: react and pin */}
-                    <div className={`absolute top-0 ${isMine ? '-left-16' : '-right-16'} hidden group-hover:flex items-center gap-0.5`}>
+                    {/* Hover actions: react, pin, translate */}
+                    <div className={`absolute top-0 ${isMine ? '-left-20' : '-right-20'} hidden group-hover:flex items-center gap-0.5`}>
                       <button
                         onClick={() => setReactionPickerMsgId(reactionPickerMsgId === msg.id ? null : msg.id)}
                         className="bg-[#1a1a1a] border border-[#222] rounded-md w-6 h-6 text-[11px] cursor-pointer flex items-center justify-center hover:bg-[#222]"
                         title="React"
                       >
-                        😊
+                        {"\uD83D\uDE0A"}
                       </button>
                       <button
                         onClick={() => togglePin(msg.id)}
                         className="bg-[#1a1a1a] border border-[#222] rounded-md w-6 h-6 text-[11px] cursor-pointer flex items-center justify-center hover:bg-[#222]"
                         title={isPinned ? "Unpin" : "Pin"}
                       >
-                        📌
+                        {"\uD83D\uDCCC"}
+                      </button>
+                      {/* Improvement 18 (new): Translate button */}
+                      <button
+                        onClick={() => setShowTranslateMenu(showTranslateMenu === msg.id ? null : msg.id)}
+                        className="bg-[#1a1a1a] border border-[#222] rounded-md w-6 h-6 text-[9px] cursor-pointer flex items-center justify-center hover:bg-[#222] font-bold"
+                        title="Translate"
+                      >
+                        {isTranslating ? "..." : "Aa"}
                       </button>
                     </div>
+
+                    {/* Improvement 18 (new): Translation language picker */}
+                    {showTranslateMenu === msg.id && (
+                      <div className={`absolute ${isMine ? 'right-0' : 'left-0'} -top-10 flex gap-0.5 bg-[#1a1a1a] border border-[#333] rounded-lg px-1.5 py-1 z-10 shadow-lg`}>
+                        {TRANSLATION_LANGS.map(lang => (
+                          <button
+                            key={lang.code}
+                            onClick={() => handleTranslateMsg(msg.id, msg.text, lang.code)}
+                            className="bg-transparent border-none cursor-pointer text-[10px] px-1.5 py-0.5 text-gs-muted hover:text-gs-text hover:bg-[#222] rounded"
+                            title={lang.label}
+                          >
+                            {lang.label.slice(0, 2)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
                     {/* Improvement 2: Reaction picker */}
                     {reactionPickerMsgId === msg.id && (
@@ -493,6 +633,24 @@ export default function DMModal({ open, onClose, currentUser, following, message
             </div>
           )}
 
+          {/* Improvement 19 (new): Quick response templates */}
+          {showQuickResponses && activeThread && (
+            <div className="px-[18px] py-2 border-t border-[#1a1a1a] bg-[#0d0d0d]">
+              <div className="text-[10px] text-gs-dim font-mono mb-1.5">QUICK RESPONSES</div>
+              <div className="flex flex-wrap gap-1">
+                {QUICK_RESPONSES.map(qr => (
+                  <button
+                    key={qr.label}
+                    onClick={() => { setDraft(qr.text); setShowQuickResponses(false); }}
+                    className="bg-[#1a1a1a] border border-[#222] rounded-lg px-2.5 py-1.5 text-[11px] text-gs-muted cursor-pointer hover:bg-[#222] hover:text-gs-text transition-colors"
+                  >
+                    {qr.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {activeThread && (
             <div className="px-[18px] py-3 border-t border-[#1a1a1a]">
               {/* Improvement 6: Schedule mode indicator */}
@@ -508,6 +666,25 @@ export default function DMModal({ open, onClose, currentUser, following, message
                   <button onClick={() => { setScheduleMode(false); setScheduleTime(""); }} className="text-[10px] text-gs-dim bg-transparent border-none cursor-pointer hover:text-gs-muted">Cancel</button>
                 </div>
               )}
+
+              {/* Improvement 20 (new): Self-destruct mode indicator */}
+              {selfDestructMode && (
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[10px] text-red-400 font-mono">{"\u23F3"} SELF-DESTRUCT MODE</span>
+                  <select
+                    value={selfDestructTimer}
+                    onChange={e => setSelfDestructTimer(e.target.value)}
+                    className="bg-[#111] border border-[#222] rounded-md px-2 py-1 text-[11px] text-gs-text outline-none cursor-pointer"
+                  >
+                    <option value="10">10 seconds</option>
+                    <option value="30">30 seconds</option>
+                    <option value="60">1 minute</option>
+                    <option value="300">5 minutes</option>
+                  </select>
+                  <button onClick={() => setSelfDestructMode(false)} className="text-[10px] text-gs-dim bg-transparent border-none cursor-pointer hover:text-gs-muted">Cancel</button>
+                </div>
+              )}
+
               <div className="flex gap-2">
                 {/* Improvement 9: Attachment menu */}
                 <div className="relative">
@@ -524,19 +701,19 @@ export default function DMModal({ open, onClose, currentUser, following, message
                         onClick={() => setShowAttachMenu(false)}
                         className="flex items-center gap-2 w-full bg-transparent border-none cursor-pointer text-[11px] text-gs-muted px-2 py-1.5 rounded-md hover:bg-[#222] text-left"
                       >
-                        🖼 Photo
+                        {"\uD83D\uDDBC"} Photo
                       </button>
                       <button
                         onClick={() => { setShowAttachMenu(false); setShowVoiceUI(true); }}
                         className="flex items-center gap-2 w-full bg-transparent border-none cursor-pointer text-[11px] text-gs-muted px-2 py-1.5 rounded-md hover:bg-[#222] text-left"
                       >
-                        🎤 Voice
+                        {"\uD83C\uDFA4"} Voice
                       </button>
                       <button
                         onClick={() => setShowAttachMenu(false)}
                         className="flex items-center gap-2 w-full bg-transparent border-none cursor-pointer text-[11px] text-gs-muted px-2 py-1.5 rounded-md hover:bg-[#222] text-left"
                       >
-                        📎 File
+                        {"\uD83D\uDCCE"} File
                       </button>
                     </div>
                   )}
@@ -544,16 +721,36 @@ export default function DMModal({ open, onClose, currentUser, following, message
                 <input
                   value={draft} onChange={e => setDraft(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && send()}
-                  placeholder={scheduleMode ? "Type a scheduled message..." : "Message..."}
+                  placeholder={scheduleMode ? "Type a scheduled message..." : selfDestructMode ? "This message will self-destruct..." : "Message..."}
                   className="flex-1 bg-[#111] border border-[#222] rounded-[10px] px-[13px] py-[9px] text-[#f0f0f0] text-[13px] outline-none font-sans focus:border-gs-accent/30"
                 />
+                {/* Improvement 19 (new): Quick responses toggle */}
+                <button
+                  onClick={() => setShowQuickResponses(v => !v)}
+                  title="Quick responses"
+                  className={`border rounded-[10px] w-9 h-9 cursor-pointer text-sm flex items-center justify-center ${
+                    showQuickResponses ? 'bg-gs-accent/20 border-gs-accent/30 text-gs-accent' : 'bg-[#1a1a1a] border-[#222] text-gs-muted hover:text-gs-text'
+                  }`}
+                >
+                  {"\u26A1"}
+                </button>
+                {/* Improvement 20 (new): Self-destruct toggle */}
+                <button
+                  onClick={() => setSelfDestructMode(v => !v)}
+                  title="Self-destruct message"
+                  className={`border rounded-[10px] w-9 h-9 cursor-pointer text-sm flex items-center justify-center ${
+                    selfDestructMode ? 'bg-red-500/20 border-red-500/30 text-red-400' : 'bg-[#1a1a1a] border-[#222] text-gs-muted hover:text-gs-text'
+                  }`}
+                >
+                  {"\u23F3"}
+                </button>
                 {/* Improvement 6: Schedule button */}
                 <button
                   onClick={() => setScheduleMode(v => !v)}
                   title="Schedule message"
                   className={`border-none rounded-[10px] w-9 h-9 cursor-pointer text-sm flex items-center justify-center ${scheduleMode ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-[#1a1a1a] border border-[#222] text-gs-muted hover:text-gs-text'}`}
                 >
-                  ⏰
+                  {"\u23F0"}
                 </button>
                 <button onClick={send} className="gs-btn-gradient px-4 py-[9px] border-none rounded-[10px] text-white font-bold text-xs cursor-pointer">
                   {scheduleMode ? "Schedule" : "Send"}

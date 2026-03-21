@@ -6,7 +6,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import Modal from '../ui/Modal';
 import Avatar from '../ui/Avatar';
 
-const QUICK_EMOJIS = ["🔥", "❤️", "🎶", "💿", "🤘", "👏", "😍", "💯"];
+const QUICK_EMOJIS = ["\uD83D\uDD25", "\u2764\uFE0F", "\uD83C\uDFB6", "\uD83D\uDCBF", "\uD83E\uDD18", "\uD83D\uDC4F", "\uD83D\uDE0D", "\uD83D\uDCAF"];
 
 // Improvement 7: Character limit
 const CHAR_LIMIT = 500;
@@ -20,12 +20,23 @@ const SORT_OPTIONS = [
 
 // Improvement 4: Simulated GIF results
 const GIF_RESULTS = [
-  { id: 1, label: "vinyl spin", url: "🎵" },
-  { id: 2, label: "headbang", url: "🎸" },
-  { id: 3, label: "dance", url: "💃" },
-  { id: 4, label: "fire", url: "🔥" },
-  { id: 5, label: "applause", url: "👏" },
-  { id: 6, label: "mind blown", url: "🤯" },
+  { id: 1, label: "vinyl spin", url: "\uD83C\uDFB5" },
+  { id: 2, label: "headbang", url: "\uD83C\uDFB8" },
+  { id: 3, label: "dance", url: "\uD83D\uDC83" },
+  { id: 4, label: "fire", url: "\uD83D\uDD25" },
+  { id: 5, label: "applause", url: "\uD83D\uDC4F" },
+  { id: 6, label: "mind blown", url: "\uD83E\uDD2F" },
+];
+
+// Improvement 17 (new): Sentiment emoji suggestions based on keywords
+const SENTIMENT_MAP = [
+  { keywords: ["love", "amazing", "beautiful", "perfect", "best", "incredible", "fantastic"], emojis: ["\u2764\uFE0F", "\uD83D\uDE0D", "\uD83D\uDCAF"] },
+  { keywords: ["fire", "hot", "sick", "insane", "crazy", "wild"], emojis: ["\uD83D\uDD25", "\uD83E\uDD2F", "\uD83D\uDE31"] },
+  { keywords: ["classic", "vintage", "old school", "legendary", "timeless"], emojis: ["\uD83D\uDCBF", "\uD83C\uDFB6", "\uD83D\uDC51"] },
+  { keywords: ["sad", "miss", "cry", "emotional", "heartbreak"], emojis: ["\uD83D\uDE22", "\uD83D\uDC94", "\uD83E\uDD7A"] },
+  { keywords: ["funny", "lol", "haha", "hilarious", "joke"], emojis: ["\uD83D\uDE02", "\uD83D\uDE06", "\uD83E\uDD23"] },
+  { keywords: ["rock", "metal", "punk", "guitar", "riff"], emojis: ["\uD83E\uDD18", "\uD83C\uDFB8", "\uD83D\uDCA5"] },
+  { keywords: ["jazz", "smooth", "chill", "mellow", "groove"], emojis: ["\uD83C\uDFB7", "\uD83C\uDFB6", "\uD83D\uDE0E"] },
 ];
 
 // Improvement 3: Parse rich text (bold/italic) for display
@@ -99,6 +110,16 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
   // Improvement 3: Formatting toolbar
   const [showFormatHelp, setShowFormatHelp] = useState(false);
 
+  // Improvement 14 (new): Comment voting (upvote/downvote)
+  const [votes, setVotes] = useState({}); // { [commentId]: { up: number, down: number, userVote: 'up'|'down'|null } }
+  // Improvement 15 (new): Best comment highlight
+  const [bestCommentId, setBestCommentId] = useState(null);
+  // Improvement 16 (new): Translation placeholder
+  const [translatingId, setTranslatingId] = useState(null);
+  const [translatedTexts, setTranslatedTexts] = useState({});
+  // Improvement 17 (new): Sentiment emoji auto-suggest
+  const [suggestedEmojis, setSuggestedEmojis] = useState([]);
+
   // endRef is attached to an invisible div at the bottom of the list; used for scroll-to-bottom
   const endRef = useRef(null);
   const inputRef = useRef(null);
@@ -113,6 +134,19 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
     if (open) setVisibleCount(INITIAL_VISIBLE);
   }, [open]);
 
+  // Improvement 17: Auto-suggest emojis based on text sentiment
+  useEffect(() => {
+    if (!text.trim()) { setSuggestedEmojis([]); return; }
+    const lower = text.toLowerCase();
+    const matched = [];
+    for (const sentiment of SENTIMENT_MAP) {
+      if (sentiment.keywords.some(kw => lower.includes(kw))) {
+        matched.push(...sentiment.emojis);
+      }
+    }
+    setSuggestedEmojis([...new Set(matched)].slice(0, 4));
+  }, [text]);
+
   // Improvement 2: Sorted and filtered comments
   const sortedComments = useMemo(() => {
     if (!record) return [];
@@ -122,14 +156,14 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
       sorted.reverse();
     } else if (sortMode === "liked") {
       sorted.sort((a, b) => {
-        const aLiked = likedComments[a.id] ? 1 : 0;
-        const bLiked = likedComments[b.id] ? 1 : 0;
-        return bLiked - aLiked;
+        const aScore = (votes[a.id]?.up || 0) - (votes[a.id]?.down || 0);
+        const bScore = (votes[b.id]?.up || 0) - (votes[b.id]?.down || 0);
+        return bScore - aScore;
       });
     }
     // oldest is default order
     return sorted;
-  }, [record, sortMode, likedComments, deletedIds]);
+  }, [record, sortMode, deletedIds, votes]);
 
   // Improvement 7: Pinned comment
   const pinnedComment = useMemo(() => {
@@ -137,11 +171,65 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
     return record.comments.find(c => c.id === pinnedCommentId) || null;
   }, [pinnedCommentId, record]);
 
+  // Improvement 15 (new): Best comment detection (highest net votes)
+  const bestComment = useMemo(() => {
+    if (!record || record.comments.length < 3) return null;
+    let best = null;
+    let bestScore = 0;
+    for (const c of record.comments) {
+      const score = (votes[c.id]?.up || 0) - (votes[c.id]?.down || 0);
+      if (score > bestScore) { bestScore = score; best = c; }
+    }
+    return bestScore >= 2 ? best : (bestCommentId ? record.comments.find(c => c.id === bestCommentId) : null);
+  }, [record, votes, bestCommentId]);
+
   // Improvement 1: Get replies for a comment
   const getReplies = useCallback((commentId) => {
     if (!record) return [];
     return record.comments.filter(c => c.replyTo === commentId && !deletedIds.has(c.id));
   }, [record, deletedIds]);
+
+  // Improvement 14 (new): Vote on a comment
+  const handleVote = (commentId, direction) => {
+    setVotes(prev => {
+      const current = prev[commentId] || { up: 0, down: 0, userVote: null };
+      if (current.userVote === direction) {
+        // Undo vote
+        return {
+          ...prev,
+          [commentId]: {
+            up: direction === 'up' ? current.up - 1 : current.up,
+            down: direction === 'down' ? current.down - 1 : current.down,
+            userVote: null,
+          },
+        };
+      }
+      // Change or new vote
+      let newUp = current.up;
+      let newDown = current.down;
+      if (current.userVote === 'up') newUp--;
+      if (current.userVote === 'down') newDown--;
+      if (direction === 'up') newUp++;
+      if (direction === 'down') newDown++;
+      return {
+        ...prev,
+        [commentId]: { up: newUp, down: newDown, userVote: direction },
+      };
+    });
+  };
+
+  // Improvement 16 (new): Simulate translation
+  const handleTranslate = (commentId, text) => {
+    setTranslatingId(commentId);
+    // Simulate translation delay
+    setTimeout(() => {
+      setTranslatedTexts(prev => ({
+        ...prev,
+        [commentId]: `[Translated] ${text}`,
+      }));
+      setTranslatingId(null);
+    }, 800);
+  };
 
   // Build a new comment object with a timestamp-based id and post it via onAdd
   const submit = () => {
@@ -160,6 +248,7 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
     onAdd(record.id, comment);
     setText("");
     setReplyTo(null);
+    setSuggestedEmojis([]);
   };
 
   const toggleLike = (commentId) => {
@@ -203,7 +292,7 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
   const isOverLimit = charCount > CHAR_LIMIT;
 
   return (
-    <Modal open={open} onClose={onClose} title={`Comments · ${record.album}`} width="460px">
+    <Modal open={open} onClose={onClose} title={`Comments \u00b7 ${record.album}`} width="460px">
       {/* Improvement 2: Sort controls */}
       <div className="flex items-center justify-between mb-3">
         <div className="text-[11px] text-gs-dim">{sortedComments.length} comment{sortedComments.length !== 1 ? 's' : ''}</div>
@@ -227,7 +316,7 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
         {pinnedComment && (
           <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-lg p-3 mb-3">
             <div className="flex items-center gap-1.5 mb-2">
-              <span className="text-[10px]">📌</span>
+              <span className="text-[10px]">{"\uD83D\uDCCC"}</span>
               <span className="text-[10px] text-gs-dim font-mono">PINNED COMMENT</span>
               <button
                 onClick={() => setPinnedCommentId(null)}
@@ -246,9 +335,29 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
           </div>
         )}
 
+        {/* Improvement 15 (new): Best comment highlight */}
+        {bestComment && bestComment.id !== pinnedCommentId && (
+          <div className="bg-amber-500/[0.04] border border-amber-500/15 rounded-lg p-3 mb-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="text-[10px]">{"\u2B50"}</span>
+              <span className="text-[10px] text-amber-400 font-mono">BEST COMMENT</span>
+            </div>
+            <div className="flex gap-2 items-start">
+              <Avatar username={bestComment.user} size={24} />
+              <div>
+                <span className="text-[11px] font-bold text-gs-text">@{bestComment.user}</span>
+                <p className="text-[12px] text-[#aaa] leading-normal mt-0.5">{highlightMentions(renderRichText(bestComment.text))}</p>
+                <div className="text-[10px] text-amber-400 mt-1">
+                  {(votes[bestComment.id]?.up || 0)} upvotes
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {record.comments.length === 0 && (
           <div className="text-center py-12">
-            <div className="text-3xl mb-3">💬</div>
+            <div className="text-3xl mb-3">{"\uD83D\uDCAC"}</div>
             <div className="text-gs-muted text-[13px] font-semibold mb-1">No comments yet</div>
             <div className="text-gs-faint text-[12px]">Be the first to share your thoughts on this record!</div>
           </div>
@@ -257,9 +366,14 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
           const isOwn = c.user === currentUser;
           const replies = getReplies(c.id);
           const isPinned = pinnedCommentId === c.id;
+          const isBest = bestComment?.id === c.id;
+          const commentVotes = votes[c.id] || { up: 0, down: 0, userVote: null };
+          const netVotes = commentVotes.up - commentVotes.down;
+          const hasTranslation = translatedTexts[c.id];
+          const isTranslating = translatingId === c.id;
 
           return (
-            <div key={c.id} className="mb-4">
+            <div key={c.id} className={`mb-4 ${isBest ? 'bg-amber-500/[0.02] rounded-lg p-1' : ''}`}>
               <div className="flex gap-2.5 group">
                 <Avatar username={c.user} size={32} onClick={() => { onClose(); onViewUser(c.user); }} />
                 <div className="flex-1">
@@ -269,6 +383,10 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
                     {/* Improvement 1: Reply indicator */}
                     {c.replyTo && (
                       <span className="text-[10px] text-gs-accent/60">replying</span>
+                    )}
+                    {/* Improvement 15: Best badge */}
+                    {isBest && (
+                      <span className="text-[10px] text-amber-400 font-semibold">{"\u2B50"} Best</span>
                     )}
                   </div>
 
@@ -289,17 +407,49 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
                     <>
                       {/* Improvement 3 + 5: Rich text + @mention highlighting */}
                       <p className="text-[13px] text-[#aaa] leading-normal mb-1">{highlightMentions(renderRichText(c.text))}</p>
+
+                      {/* Improvement 16 (new): Translation display */}
+                      {hasTranslation && (
+                        <p className="text-[12px] text-gs-accent/70 leading-normal mb-1 italic">{translatedTexts[c.id]}</p>
+                      )}
                     </>
                   )}
 
                   <div className="flex items-center gap-2">
+                    {/* Improvement 14 (new): Upvote/downvote buttons */}
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={() => handleVote(c.id, 'up')}
+                        className={`bg-transparent border-none cursor-pointer text-[11px] p-0 transition-colors ${
+                          commentVotes.userVote === 'up' ? 'text-emerald-400' : 'text-gs-faint hover:text-emerald-400 opacity-0 group-hover:opacity-100'
+                        }`}
+                        title="Upvote"
+                      >
+                        {"\u25B2"}
+                      </button>
+                      <span className={`text-[10px] min-w-[16px] text-center font-mono ${
+                        netVotes > 0 ? 'text-emerald-400' : netVotes < 0 ? 'text-red-400' : 'text-gs-faint'
+                      }`}>
+                        {netVotes !== 0 ? (netVotes > 0 ? `+${netVotes}` : netVotes) : '0'}
+                      </span>
+                      <button
+                        onClick={() => handleVote(c.id, 'down')}
+                        className={`bg-transparent border-none cursor-pointer text-[11px] p-0 transition-colors ${
+                          commentVotes.userVote === 'down' ? 'text-red-400' : 'text-gs-faint hover:text-red-400 opacity-0 group-hover:opacity-100'
+                        }`}
+                        title="Downvote"
+                      >
+                        {"\u25BC"}
+                      </button>
+                    </div>
+
                     <button
                       onClick={() => toggleLike(c.id)}
                       className={`bg-transparent border-none cursor-pointer text-[11px] p-0 transition-colors ${
                         likedComments[c.id] ? 'text-red-400' : 'text-gs-faint hover:text-gs-muted opacity-0 group-hover:opacity-100'
                       }`}
                     >
-                      {likedComments[c.id] ? "❤ Liked" : "♡ Like"}
+                      {likedComments[c.id] ? "\u2764 Liked" : "\u2661 Like"}
                     </button>
 
                     {/* Improvement 1: Reply button */}
@@ -309,6 +459,17 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
                     >
                       Reply
                     </button>
+
+                    {/* Improvement 16 (new): Translate button */}
+                    {!hasTranslation && (
+                      <button
+                        onClick={() => handleTranslate(c.id, c.text)}
+                        className="bg-transparent border-none cursor-pointer text-[11px] text-gs-faint hover:text-gs-muted p-0 opacity-0 group-hover:opacity-100 transition-colors"
+                        disabled={isTranslating}
+                      >
+                        {isTranslating ? "Translating..." : "Translate"}
+                      </button>
+                    )}
 
                     {/* Improvement 6: Edit/Delete for own comments */}
                     {isOwn && editingId !== c.id && (
@@ -337,6 +498,16 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
                     >
                       {isPinned ? "Unpin" : "Pin"}
                     </button>
+
+                    {/* Improvement 15 (new): Mark as best */}
+                    {!isBest && isOwn && (
+                      <button
+                        onClick={() => setBestCommentId(c.id)}
+                        className="bg-transparent border-none cursor-pointer text-[11px] text-gs-faint hover:text-amber-400 p-0 opacity-0 group-hover:opacity-100 transition-colors"
+                      >
+                        {"\u2B50"} Best
+                      </button>
+                    )}
                   </div>
 
                   {/* Improvement 1: Threaded replies */}
@@ -351,14 +522,33 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
                               <span className="text-[9px] text-gs-faint font-mono">{formatTime(reply.time)}</span>
                             </div>
                             <p className="text-[12px] text-[#999] leading-normal">{highlightMentions(renderRichText(reply.text))}</p>
-                            <button
-                              onClick={() => toggleLike(reply.id)}
-                              className={`bg-transparent border-none cursor-pointer text-[10px] p-0 mt-0.5 transition-colors ${
-                                likedComments[reply.id] ? 'text-red-400' : 'text-gs-faint hover:text-gs-muted opacity-0 group-hover:opacity-100'
-                              }`}
-                            >
-                              {likedComments[reply.id] ? "❤" : "♡"}
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => toggleLike(reply.id)}
+                                className={`bg-transparent border-none cursor-pointer text-[10px] p-0 mt-0.5 transition-colors ${
+                                  likedComments[reply.id] ? 'text-red-400' : 'text-gs-faint hover:text-gs-muted opacity-0 group-hover:opacity-100'
+                                }`}
+                              >
+                                {likedComments[reply.id] ? "\u2764" : "\u2661"}
+                              </button>
+                              {/* Improvement 14: Reply voting */}
+                              <button
+                                onClick={() => handleVote(reply.id, 'up')}
+                                className={`bg-transparent border-none cursor-pointer text-[9px] p-0 mt-0.5 ${
+                                  (votes[reply.id]?.userVote === 'up') ? 'text-emerald-400' : 'text-gs-faint opacity-0 group-hover:opacity-100'
+                                }`}
+                              >
+                                {"\u25B2"}
+                              </button>
+                              <button
+                                onClick={() => handleVote(reply.id, 'down')}
+                                className={`bg-transparent border-none cursor-pointer text-[9px] p-0 mt-0.5 ${
+                                  (votes[reply.id]?.userVote === 'down') ? 'text-red-400' : 'text-gs-faint opacity-0 group-hover:opacity-100'
+                                }`}
+                              >
+                                {"\u25BC"}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -395,6 +585,22 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
           >
             Cancel
           </button>
+        </div>
+      )}
+
+      {/* Improvement 17 (new): Sentiment emoji auto-suggest */}
+      {suggestedEmojis.length > 0 && (
+        <div className="flex items-center gap-1.5 mb-2 px-1">
+          <span className="text-[10px] text-gs-dim">Suggested:</span>
+          {suggestedEmojis.map(emoji => (
+            <button
+              key={emoji}
+              onClick={() => setText(prev => prev + emoji)}
+              className="w-7 h-7 flex items-center justify-center rounded-md bg-gs-accent/10 border border-gs-accent/20 cursor-pointer text-sm hover:bg-gs-accent/20 transition-colors animate-fade-in"
+            >
+              {emoji}
+            </button>
+          ))}
         </div>
       )}
 
@@ -463,7 +669,7 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
       </div>
       {showFormatHelp && (
         <div className="mb-2 text-[10px] text-gs-dim bg-[#0d0d0d] border border-[#1a1a1a] rounded-md px-2.5 py-2">
-          <span className="font-mono">**bold**</span> for <strong>bold</strong> · <span className="font-mono">*italic*</span> for <em>italic</em> · <span className="font-mono">@username</span> to mention
+          <span className="font-mono">**bold**</span> for <strong>bold</strong> {"\u00b7"} <span className="font-mono">*italic*</span> for <em>italic</em> {"\u00b7"} <span className="font-mono">@username</span> to mention
         </div>
       )}
 

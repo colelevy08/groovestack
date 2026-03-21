@@ -1,11 +1,26 @@
 // Record post card — the primary visual unit of the feed.
 // Receives a record (r) and action callbacks from App.js via cardHandlers.
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import AlbumArt from './ui/AlbumArt';
 import Stars from './ui/Stars';
 import Badge from './ui/Badge';
 import UserChip from './UserChip';
 import { condColor } from '../utils/helpers';
+import { getCoverUrl } from '../utils/coverArt';
+import { getDiscogsPrice } from '../utils/discogs';
+
+// Estimate heuristic: base price by condition with year multiplier
+function estimateValue(condition, year) {
+  const basePrices = { M: 40, NM: 30, 'VG+': 22, VG: 15, 'G+': 10, G: 7, F: 5, P: 3 };
+  const base = basePrices[condition] || 15;
+  let yearMult = 1.0;
+  if (year && year < 1970) yearMult = 1.6;
+  else if (year && year < 1980) yearMult = 1.4;
+  else if (year && year < 1990) yearMult = 1.2;
+  else if (year && year < 2000) yearMult = 1.0;
+  else if (year) yearMult = 0.9;
+  return Math.round(base * yearMult);
+}
 
 // #1 — Time ago helper
 function timeAgoFromDate(dateStr) {
@@ -33,13 +48,12 @@ function rarityLabel(r) {
   return null;
 }
 
-// #10 — Price comparison
-function priceTag(r) {
+// #10 — Price comparison using estimate or Discogs data
+function priceTag(r, discogsPrice) {
   if (!r.forSale || !r.price) return null;
   const p = parseFloat(r.price);
-  const marketBase = { M: 45, NM: 35, 'VG+': 25, VG: 18, 'G+': 12, G: 8, F: 5, P: 3 };
-  const est = marketBase[r.condition] || 20;
-  if (p < est * 0.85) return { label: 'Below Market', color: '#10b981' };
+  const est = discogsPrice || estimateValue(r.condition, r.year);
+  if (p < est * 0.85) return { label: 'Below Est.', color: '#10b981' };
   if (p <= est * 1.15) return { label: 'Fair Price', color: '#60a5fa' };
   return null;
 }
@@ -102,10 +116,36 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
   const [showHoverPreview, setShowHoverPreview] = useState(false);
   const [pinned, setPinned] = useState(r.pinned || false);
   const [quickViewOpen, setQuickViewOpen] = useState(false);
+  const [vinylCoverUrl, setVinylCoverUrl] = useState(null);
+  const [discogsPrice, setDiscogsPrice] = useState(null);
   const hoverTimeout = useRef(null);
   const menuRef = useRef(null);
   const cardRef = useRef(null);
   const swipeRef = useRef({ startX: 0, startY: 0, swiping: false });
+
+  // Fetch cover URL for vinyl label (cached, no extra API call)
+  useEffect(() => {
+    let cancelled = false;
+    if (r.album || r.artist) {
+      getCoverUrl(r.album, r.artist).then(url => {
+        if (!cancelled) setVinylCoverUrl(url);
+      });
+    }
+    return () => { cancelled = true; };
+  }, [r.album, r.artist]);
+
+  // Fetch Discogs market price (cached via discogs utility)
+  useEffect(() => {
+    let cancelled = false;
+    if (r.album && r.artist) {
+      getDiscogsPrice(r.album, r.artist).then(data => {
+        if (!cancelled && data && data.median) {
+          setDiscogsPrice(data.median);
+        }
+      });
+    }
+    return () => { cancelled = true; };
+  }, [r.album, r.artist]);
 
   // NEW: Animated like heart burst
   const handleLike = () => {
@@ -191,7 +231,11 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
   const isFeatured = r.rating >= 4.5;
   const borderAccent = condColor(r.condition);
   const rarity = rarityLabel(r);
-  const priceBadge = priceTag(r);
+  const estValue = discogsPrice || estimateValue(r.condition, r.year);
+  const isDiscogsData = !!discogsPrice;
+  const priceBadge = priceTag(r, discogsPrice);
+  const wantCount = r.wishlistCount || r.wantedBy || 0;
+  const isPopular = (r.likes || 0) >= 3;
   const condGradient = CONDITION_GRADIENTS[r.condition] || 'none';
   const fmtIcon = formatIcon(r.format);
   const priceChange = priceChangeIndicator(r);
@@ -293,6 +337,15 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
                 {rarity.label.toUpperCase()}
               </span>
             )}
+            {/* Popular badge — 3+ likes */}
+            {isPopular && (
+              <span
+                className="text-[9px] font-bold tracking-wide px-1.5 py-0.5 rounded-[4px] border"
+                style={{ color: '#f472b6', borderColor: '#f472b633', background: '#f472b611' }}
+              >
+                POPULAR
+              </span>
+            )}
             {/* NEW: Record format icon */}
             {fmtIcon && (
               <span
@@ -388,14 +441,60 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
             <div className="absolute inset-0 rounded-xl bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
             {/* Vinyl disc peek on hover */}
             <div
-              className={`absolute -right-2 top-1/2 -translate-y-1/2 w-[52px] h-[52px] rounded-full bg-[#111] border-2 border-[#222] transition-all duration-500 pointer-events-none ${
+              className={`absolute -right-2 top-1/2 -translate-y-1/2 w-[52px] h-[52px] rounded-full transition-all duration-500 pointer-events-none ${
                 imgZoomed ? 'opacity-80 translate-x-3' : 'opacity-0 translate-x-0'
               }`}
-              style={{ boxShadow: 'inset 0 0 12px rgba(0,0,0,0.5)' }}
             >
-              <div className={`w-full h-full rounded-full border-[3px] border-[#1a1a1a] flex items-center justify-center ${imgZoomed ? 'animate-spin-slow' : ''}`}>
-                <div className="w-3 h-3 rounded-full" style={{ background: r.accent }} />
-              </div>
+              <svg
+                width="52"
+                height="52"
+                viewBox="0 0 100 100"
+                className={imgZoomed ? 'animate-spin-slow' : ''}
+                style={{ filter: 'drop-shadow(-2px 0 4px rgba(0,0,0,0.5))' }}
+              >
+                <defs>
+                  <clipPath id={`card-vinyl-label-${r.id}`}>
+                    <circle cx="50" cy="50" r="20" />
+                  </clipPath>
+                  <radialGradient id={`card-vinyl-sheen-${r.id}`} cx="35%" cy="35%" r="65%">
+                    <stop offset="0%" stopColor="rgba(255,255,255,0.06)" />
+                    <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+                  </radialGradient>
+                </defs>
+                {/* Outer disc */}
+                <circle cx="50" cy="50" r="48" fill="#111" stroke="#222" strokeWidth="1" />
+                {/* Vinyl grooves */}
+                <circle cx="50" cy="50" r="46" fill="none" stroke="#1a1a1a" strokeWidth="0.3" />
+                <circle cx="50" cy="50" r="44" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
+                <circle cx="50" cy="50" r="42" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
+                <circle cx="50" cy="50" r="40" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
+                <circle cx="50" cy="50" r="38" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
+                <circle cx="50" cy="50" r="36" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
+                <circle cx="50" cy="50" r="34" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
+                <circle cx="50" cy="50" r="32" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
+                <circle cx="50" cy="50" r="30" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
+                <circle cx="50" cy="50" r="28" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
+                <circle cx="50" cy="50" r="26" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
+                <circle cx="50" cy="50" r="24" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
+                <circle cx="50" cy="50" r="22" fill="none" stroke="#1a1a1a" strokeWidth="0.3" />
+                {/* Label area background */}
+                <circle cx="50" cy="50" r="20" fill="#222" />
+                {/* Album art as center label */}
+                {vinylCoverUrl && (
+                  <image
+                    href={vinylCoverUrl}
+                    x="30" y="30" width="40" height="40"
+                    clipPath={`url(#card-vinyl-label-${r.id})`}
+                    preserveAspectRatio="xMidYMid slice"
+                  />
+                )}
+                {/* Label ring border */}
+                <circle cx="50" cy="50" r="20" fill="none" stroke="#333" strokeWidth="0.8" />
+                {/* Spindle hole */}
+                <circle cx="50" cy="50" r="2.5" fill="#0a0a0a" stroke="#333" strokeWidth="0.5" />
+                {/* Vinyl sheen overlay */}
+                <circle cx="50" cy="50" r="48" fill={`url(#card-vinyl-sheen-${r.id})`} />
+              </svg>
             </div>
           </div>
           <div className="flex-1 min-w-0">
@@ -441,6 +540,10 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
                   </span>
                 )}
               </div>
+              {/* Estimate or Discogs market price below listing price */}
+              <div className="text-[9px] mt-0.5" style={{ color: isDiscogsData ? '#10b981' : '#6b7280' }}>
+                {isDiscogsData ? `Market ~$${estValue}` : `Est. ~$${estValue}`}
+              </div>
               {/* NEW: Shipping estimate */}
               {shipping && (
                 <div className="text-[9px] font-medium mt-0.5" style={{ color: shipping.color }}>
@@ -452,7 +555,7 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
                 className="mt-1.5 px-3 py-1 rounded-[7px] text-black border-none cursor-pointer text-[10px] font-bold hover:opacity-90 transition-opacity"
                 style={{ background: r.accent }}
               >
-                BUY
+                MAKE AN OFFER
               </button>
               {onQuickBuy && (
                 <button
@@ -542,6 +645,13 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
             <span key={t} className="gs-pill">#{t}</span>
           ))}
         </div>
+
+        {/* Want count — wishlist demand signal */}
+        {wantCount > 0 && (
+          <div className="text-[10px] text-gs-dim mb-2">
+            <span className="text-amber-400 font-semibold">{wantCount} {wantCount === 1 ? 'person wants' : 'people want'} this</span>
+          </div>
+        )}
 
         {/* Actions — with animated heart burst */}
         <div className="flex items-center justify-between border-t border-gs-border pt-2.5">

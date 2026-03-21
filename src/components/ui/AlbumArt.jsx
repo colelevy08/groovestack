@@ -211,19 +211,57 @@ export default function AlbumArt({ album, artist, size = 72, sizePreset, accent 
               animation: 'vinylPeek 0.35s ease-out forwards',
             }}
           >
+            <div style={{ width: '100%', height: '100%', animation: 'vinylSpin 3s linear infinite' }}>
             <svg
               width="100%"
               height="100%"
               viewBox="0 0 100 100"
               style={{ filter: 'drop-shadow(-2px 0 4px rgba(0,0,0,0.5))' }}
             >
+              <defs>
+                <clipPath id={`vinyl-label-clip-${resolvedSize}`}>
+                  <circle cx="50" cy="50" r="20" />
+                </clipPath>
+                <radialGradient id={`vinyl-sheen-${resolvedSize}`} cx="35%" cy="35%" r="65%">
+                  <stop offset="0%" stopColor="rgba(255,255,255,0.06)" />
+                  <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+                </radialGradient>
+              </defs>
+              {/* Outer disc */}
               <circle cx="50" cy="50" r="48" fill="#111" stroke="#222" strokeWidth="1" />
-              <circle cx="50" cy="50" r="38" fill="none" stroke="#1a1a1a" strokeWidth="0.5" />
-              <circle cx="50" cy="50" r="28" fill="none" stroke="#1a1a1a" strokeWidth="0.5" />
-              <circle cx="50" cy="50" r="18" fill="none" stroke="#1a1a1a" strokeWidth="0.5" />
-              <circle cx="50" cy="50" r="8" fill="#222" stroke="#333" strokeWidth="1" />
-              <circle cx="50" cy="50" r="2" fill={accent} />
+              {/* Vinyl grooves — outer region */}
+              <circle cx="50" cy="50" r="46" fill="none" stroke="#1a1a1a" strokeWidth="0.3" />
+              <circle cx="50" cy="50" r="44" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
+              <circle cx="50" cy="50" r="42" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
+              <circle cx="50" cy="50" r="40" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
+              <circle cx="50" cy="50" r="38" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
+              <circle cx="50" cy="50" r="36" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
+              <circle cx="50" cy="50" r="34" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
+              <circle cx="50" cy="50" r="32" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
+              <circle cx="50" cy="50" r="30" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
+              <circle cx="50" cy="50" r="28" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
+              <circle cx="50" cy="50" r="26" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
+              <circle cx="50" cy="50" r="24" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
+              <circle cx="50" cy="50" r="22" fill="none" stroke="#1a1a1a" strokeWidth="0.3" />
+              {/* Label area background */}
+              <circle cx="50" cy="50" r="20" fill="#222" />
+              {/* Album art as center label */}
+              {url && (
+                <image
+                  href={url}
+                  x="30" y="30" width="40" height="40"
+                  clipPath={`url(#vinyl-label-clip-${resolvedSize})`}
+                  preserveAspectRatio="xMidYMid slice"
+                />
+              )}
+              {/* Label ring border */}
+              <circle cx="50" cy="50" r="20" fill="none" stroke="#333" strokeWidth="0.8" />
+              {/* Spindle hole */}
+              <circle cx="50" cy="50" r="2.5" fill="#0a0a0a" stroke="#333" strokeWidth="0.5" />
+              {/* Vinyl sheen overlay */}
+              <circle cx="50" cy="50" r="48" fill={`url(#vinyl-sheen-${resolvedSize})`} />
             </svg>
+            </div>
           </div>
         )}
       </div>
@@ -262,6 +300,10 @@ export default function AlbumArt({ album, artist, size = 72, sizePreset, accent 
         @keyframes vinylPeek {
           from { right: ${-resolvedSize * 0.6}px; opacity: 0; }
           to { right: ${-resolvedSize * 0.25}px; opacity: 1; }
+        }
+        @keyframes vinylSpin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
     </>
