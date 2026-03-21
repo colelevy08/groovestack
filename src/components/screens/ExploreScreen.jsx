@@ -100,6 +100,173 @@ const getRecordOfTheDay = (records) => {
   return records[seed % records.length];
 };
 
+// ── Improvement B1: Seller location data (simulated) ─────────────────
+const SELLER_LOCATIONS = {
+  'New York': { lat: 40.7, lng: -74.0 }, 'Los Angeles': { lat: 34.1, lng: -118.2 },
+  'Chicago': { lat: 41.9, lng: -87.6 }, 'Nashville': { lat: 36.2, lng: -86.8 },
+  'Austin': { lat: 30.3, lng: -97.7 }, 'Portland': { lat: 45.5, lng: -122.7 },
+  'Seattle': { lat: 47.6, lng: -122.3 }, 'London': { lat: 51.5, lng: -0.1 },
+  'Tokyo': { lat: 35.7, lng: 139.7 }, 'Berlin': { lat: 52.5, lng: 13.4 },
+};
+const CITY_NAMES = Object.keys(SELLER_LOCATIONS);
+const getSellerCity = (username) => {
+  let h = 0;
+  for (let i = 0; i < (username || '').length; i++) h = ((h << 5) - h + username.charCodeAt(i)) | 0;
+  return CITY_NAMES[Math.abs(h) % CITY_NAMES.length];
+};
+
+// ── Improvement B2: Record rarity scoring algorithm ──────────────────
+const computeRarityScore = (record, allRecords) => {
+  let score = 0;
+  // Fewer copies = rarer
+  const copies = allRecords.filter(r => r.album === record.album && r.artist === record.artist).length;
+  if (copies === 1) score += 40;
+  else if (copies <= 3) score += 25;
+  else score += 10;
+  // Age bonus
+  if (record.year && record.year < 1970) score += 30;
+  else if (record.year && record.year < 1985) score += 20;
+  else if (record.year && record.year < 2000) score += 10;
+  // Condition bonus for high-grade old records
+  const cRank = COND_RANK[record.condition] || 0;
+  if (record.year && record.year < 1980 && cRank >= 6) score += 15;
+  // Format bonus
+  const fmt = (record.format || '').toLowerCase();
+  if (fmt.includes('limited') || fmt.includes('picture disc') || fmt.includes('colored')) score += 15;
+  return Math.min(score, 100);
+};
+const rarityLabel = (score) => {
+  if (score >= 80) return { text: 'Ultra Rare', color: '#ef4444' };
+  if (score >= 60) return { text: 'Rare', color: '#f59e0b' };
+  if (score >= 40) return { text: 'Uncommon', color: '#8b5cf6' };
+  return { text: 'Common', color: '#6b7280' };
+};
+
+// ── Improvement B3: Price trend mini chart data (simulated) ──────────
+const generatePriceTrend = (record) => {
+  const basePrice = record.price || 15;
+  const points = [];
+  let h = 0;
+  const s = String(record.id);
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  for (let i = 0; i < 6; i++) {
+    const variance = ((h * (i + 1)) % 20) - 10;
+    points.push(Math.max(1, basePrice + variance));
+  }
+  points.push(basePrice); // current price last
+  return points;
+};
+
+// ── Improvement B4: Seller response rate badge ───────────────────────
+const getSellerResponseRate = (username) => {
+  let h = 0;
+  for (let i = 0; i < (username || '').length; i++) h = ((h << 5) - h + username.charCodeAt(i)) | 0;
+  const rate = 60 + (Math.abs(h) % 40); // 60-99%
+  const avgHrs = 1 + (Math.abs(h * 3) % 24);
+  return { rate, avgHrs, fast: avgHrs <= 4 };
+};
+
+// ── Improvement B5: Bundle deal suggestions ──────────────────────────
+const findBundleDeals = (records) => {
+  const sellerGroups = {};
+  records.filter(r => r.forSale).forEach(r => {
+    if (!sellerGroups[r.user]) sellerGroups[r.user] = [];
+    sellerGroups[r.user].push(r);
+  });
+  return Object.entries(sellerGroups)
+    .filter(([, recs]) => recs.length >= 2)
+    .map(([seller, recs]) => {
+      const bundleRecs = recs.slice(0, 3);
+      const total = bundleRecs.reduce((s, r) => s + (r.price || 0), 0);
+      const discount = Math.round(total * 0.1);
+      return { seller, records: bundleRecs, total, discount, bundlePrice: total - discount };
+    })
+    .sort((a, b) => b.discount - a.discount)
+    .slice(0, 3);
+};
+
+// ── Improvement B6: Time-limited deals helper ────────────────────────
+const getTimeLimitedDeals = (records) => {
+  const now = new Date();
+  const seed = now.getHours() * 60 + now.getMinutes();
+  return records
+    .filter(r => r.forSale)
+    .sort((a, b) => ((a.id * seed) % 47) - ((b.id * seed) % 47))
+    .slice(0, 4)
+    .map(r => {
+      const minutesLeft = 30 + ((r.id * 11) % 90);
+      const discountPct = 10 + ((r.id * 7) % 20);
+      return { ...r, minutesLeft, discountPct, salePrice: Math.round(r.price * (1 - discountPct / 100)) };
+    });
+};
+
+// ── Improvement B7: Verified condition badge ─────────────────────────
+const isConditionVerified = (record) => {
+  const trust = getSellerTrustScore(record.user || '');
+  return trust >= 90 && (COND_RANK[record.condition] || 0) >= 5;
+};
+
+// ── Improvement B9: Matrix number display (simulated) ────────────────
+const getMatrixNumber = (record) => {
+  let h = 0;
+  const s = `${record.artist}${record.album}${record.year}`;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  const prefix = record.artist ? record.artist.slice(0, 2).toUpperCase() : 'XX';
+  return `${prefix}-${Math.abs(h).toString(36).toUpperCase().slice(0, 6)}`;
+};
+
+// ── Improvement B10: Catalog number (simulated) ──────────────────────
+const getCatalogNumber = (record) => {
+  let h = 0;
+  const s = String(record.id) + (record.album || '');
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  const labels = ['COL', 'ATL', 'DEF', 'SUB', 'WAR', 'VRV', 'CAP', 'MCA'];
+  const label = labels[Math.abs(h) % labels.length];
+  return `${label}-${Math.abs(h % 99999).toString().padStart(5, '0')}`;
+};
+
+// ── Improvement B11: Label data (simulated) ──────────────────────────
+const LABELS = ['Columbia', 'Atlantic', 'Def Jam', 'Sub Pop', 'Warner Bros', 'Verve', 'Capitol', 'MCA', 'Blue Note', 'Motown', 'Island', 'Rough Trade'];
+const getRecordLabel = (record) => {
+  let h = 0;
+  const s = String(record.id);
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return LABELS[Math.abs(h) % LABELS.length];
+};
+
+// ── Improvement B12: Decade helpers ──────────────────────────────────
+const DECADES = ['1950s', '1960s', '1970s', '1980s', '1990s', '2000s', '2010s', '2020s'];
+const getDecade = (year) => {
+  if (!year) return null;
+  const d = Math.floor(year / 10) * 10;
+  return `${d}s`;
+};
+
+// ── Improvement B13: Format list ─────────────────────────────────────
+const FORMAT_SECTIONS = ['12" Vinyl', '7" Vinyl', '10" Vinyl', 'LP', 'EP', 'CD', 'Cassette'];
+
+// ── PriceTrendMiniChart component ────────────────────────────────────
+function PriceTrendMiniChart({ points }) {
+  if (!points || points.length < 2) return null;
+  const max = Math.max(...points);
+  const min = Math.min(...points);
+  const range = max - min || 1;
+  const w = 60;
+  const h = 20;
+  const path = points.map((p, i) => {
+    const x = (i / (points.length - 1)) * w;
+    const y = h - ((p - min) / range) * h;
+    return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const trending = points[points.length - 1] > points[0];
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="shrink-0">
+      <path d={path} fill="none" stroke={trending ? '#22c55e' : '#ef4444'} strokeWidth="1.5" />
+      <circle cx={w} cy={h - ((points[points.length - 1] - min) / range) * h} r="2" fill={trending ? '#22c55e' : '#ef4444'} />
+    </svg>
+  );
+}
+
 // Improvement 3: Saved search filters with localStorage
 const SAVED_FILTERS_KEY = 'gs-saved-search-filters';
 const loadSavedFilters = () => {
@@ -291,6 +458,27 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
   // Improvement A12: Sound sample preview placeholder
   const [soundPreviewRecordId, setSoundPreviewRecordId] = useState(null);
 
+  // ── Improvement B1: Map view of sellers by location ────────────────
+  const [showSellerMap, setShowSellerMap] = useState(false);
+
+  // ── Improvement B5: Bundle deal suggestions toggle ─────────────────
+  const [showBundleDeals, setShowBundleDeals] = useState(false);
+
+  // ── Improvement B6: Time-limited deals section ─────────────────────
+  const [showTimeLimitedDeals, setShowTimeLimitedDeals] = useState(true);
+
+  // ── Improvement B10: Catalog number search ─────────────────────────
+  const [catalogSearch, setCatalogSearch] = useState("");
+
+  // ── Improvement B11: Label filter dropdown ─────────────────────────
+  const [labelFilter, setLabelFilter] = useState("All");
+
+  // ── Improvement B12: Decade filter with visual decade bar ──────────
+  const [decadeFilter, setDecadeFilter] = useState("All");
+
+  // ── Improvement B13: Format-specific browse sections toggle ────────
+  const [showFormatSections, setShowFormatSections] = useState(false);
+
   // Micro-improvement 1: Lazy image loading with blur-up effect
   const [loadedImages, setLoadedImages] = useState(new Set());
   const markImageLoaded = useCallback((recordId) => {
@@ -358,7 +546,7 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
   // Reset visible count when filters change
   useEffect(() => {
     setVisibleCount(20);
-  }, [q, genre, subgenre, sort, newThisWeekOnly]);
+  }, [q, genre, subgenre, sort, newThisWeekOnly, catalogSearch, labelFilter, decadeFilter]);
 
   // Only show genre pills for genres that exist in the current records data
   const activeGenres = ["All", ...GENRES.filter(g => records.some(r => r.tags?.includes(g)))];
@@ -405,15 +593,28 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
     return isNegated ? !matches : matches;
   };
 
-  // Base filter: text search + genre + subgenre + new this week (shared by both modes)
+  // Base filter: text search + genre + subgenre + new this week + label + decade + catalog (shared by both modes)
   const baseFiltered = useMemo(() => records.filter(r => {
+    // B10: Catalog number search
+    if (catalogSearch) {
+      const cat = getCatalogNumber(r).toLowerCase();
+      if (!cat.includes(catalogSearch.toLowerCase())) return false;
+    }
+    // B11: Label filter
+    if (labelFilter !== "All") {
+      if (getRecordLabel(r) !== labelFilter) return false;
+    }
+    // B12: Decade filter
+    if (decadeFilter !== "All") {
+      if (getDecade(r.year) !== decadeFilter) return false;
+    }
     return (
       matchesAdvancedSearch(r, q) &&
       (genre === "All" || r.tags?.includes(genre)) &&
       (!subgenre || r.tags?.includes(subgenre)) &&
       (!newThisWeekOnly || isNewThisWeek(r, records))
     );
-  }), [records, q, genre, subgenre, newThisWeekOnly, matchesAdvancedSearch]);
+  }), [records, q, genre, subgenre, newThisWeekOnly, matchesAdvancedSearch, catalogSearch, labelFilter, decadeFilter]);
 
   // Improvement 7: Similar records logic
   const similarRecords = useMemo(() => {
@@ -596,6 +797,48 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
     return candidates
       .sort((a, b) => ((a.id * seed) % 97) - ((b.id * seed) % 97))
       .slice(0, 4);
+  }, [records]);
+
+  // ── Improvement B1: Sellers by location data ────────────────────────
+  const sellersByCity = useMemo(() => {
+    const cityMap = {};
+    const sellers = [...new Set(records.filter(r => r.forSale).map(r => r.user))];
+    sellers.forEach(u => {
+      const city = getSellerCity(u);
+      if (!cityMap[city]) cityMap[city] = { city, coords: SELLER_LOCATIONS[city], sellers: [], recordCount: 0 };
+      cityMap[city].sellers.push(u);
+      cityMap[city].recordCount += records.filter(r => r.user === u && r.forSale).length;
+    });
+    return Object.values(cityMap).sort((a, b) => b.recordCount - a.recordCount);
+  }, [records]);
+
+  // ── Improvement B5: Bundle deal suggestions ────────────────────────
+  const bundleDeals = useMemo(() => findBundleDeals(records), [records]);
+
+  // ── Improvement B6: Time-limited deals ─────────────────────────────
+  const timeLimitedDeals = useMemo(() => getTimeLimitedDeals(records), [records]);
+
+  // ── Improvement B12: Decade distribution for visual bar ────────────
+  const decadeDistribution = useMemo(() => {
+    const counts = {};
+    DECADES.forEach(d => { counts[d] = 0; });
+    records.forEach(r => {
+      const d = getDecade(r.year);
+      if (d && counts[d] !== undefined) counts[d]++;
+    });
+    const max = Math.max(1, ...Object.values(counts));
+    return DECADES.map(d => ({ decade: d, count: counts[d] || 0, pct: ((counts[d] || 0) / max) * 100 }));
+  }, [records]);
+
+  // ── Improvement B13: Records grouped by format ─────────────────────
+  const recordsByFormat = useMemo(() => {
+    const groups = {};
+    records.forEach(r => {
+      const fmt = r.format || 'Other';
+      if (!groups[fmt]) groups[fmt] = [];
+      groups[fmt].push(r);
+    });
+    return Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
   }, [records]);
 
   // Improvement A7: "New Arrivals" auto-section
@@ -973,6 +1216,214 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
               {sg}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* ── Improvement B11: Label filter dropdown ──────────────────────── */}
+      <div className="flex gap-2 items-center mb-3 flex-wrap">
+        <div>
+          <span className="text-[10px] text-gs-dim font-mono mr-1.5">LABEL:</span>
+          <select value={labelFilter} onChange={e => setLabelFilter(e.target.value)}
+            className="bg-gs-card border border-[#222] rounded-lg py-[5px] px-2.5 text-[#aaa] text-[11px] outline-none cursor-pointer">
+            <option value="All">All Labels</option>
+            {LABELS.map(l => <option key={l} value={l}>{l}</option>)}
+          </select>
+        </div>
+        {/* ── Improvement B10: Catalog number search ───────────────────── */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] text-gs-dim font-mono">CAT#:</span>
+          <input
+            type="text"
+            value={catalogSearch}
+            onChange={e => setCatalogSearch(e.target.value)}
+            placeholder="Search catalog #..."
+            className="bg-gs-card border border-[#222] rounded-lg py-[5px] px-2.5 text-[#aaa] text-[11px] outline-none w-[130px] placeholder:text-gs-faint focus:border-gs-accent/30"
+          />
+          {catalogSearch && (
+            <button onClick={() => setCatalogSearch("")} className="bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-xs p-0">x</button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Improvement B12: Decade filter with visual decade bar ──────── */}
+      <div className="mb-4">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-[10px] text-gs-dim font-mono">DECADE:</span>
+          <button
+            onClick={() => setDecadeFilter("All")}
+            className={`text-[10px] px-2 py-0.5 rounded-full border cursor-pointer transition-colors ${decadeFilter === "All" ? "border-gs-accent bg-gs-accent/10 text-gs-accent" : "border-gs-border bg-transparent text-gs-dim"}`}
+          >All</button>
+        </div>
+        <div className="flex gap-1 items-end h-10">
+          {decadeDistribution.map(d => (
+            <button
+              key={d.decade}
+              onClick={() => setDecadeFilter(decadeFilter === d.decade ? "All" : d.decade)}
+              className={`flex-1 flex flex-col items-center gap-0.5 cursor-pointer bg-transparent border-none p-0 group`}
+              title={`${d.decade}: ${d.count} records`}
+            >
+              <div
+                className="w-full rounded-t-sm transition-all duration-300"
+                style={{
+                  height: `${Math.max(d.pct, 8)}%`,
+                  background: decadeFilter === d.decade ? '#0ea5e9' : d.count > 0 ? '#0ea5e944' : '#1a1a1a',
+                }}
+              />
+              <span className={`text-[8px] font-mono ${decadeFilter === d.decade ? 'text-gs-accent font-bold' : 'text-gs-faint'}`}>{d.decade.slice(2)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Improvement B1: Seller map view toggle ─────────────────────── */}
+      {mode === "shop" && (
+        <div className="mb-4">
+          <button
+            onClick={() => setShowSellerMap(!showSellerMap)}
+            className={`gs-btn-secondary px-3.5 py-2 text-[11px] flex items-center gap-1.5 mb-2 ${showSellerMap ? 'text-gs-accent' : ''}`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+            {showSellerMap ? 'Hide' : 'Show'} Seller Map
+          </button>
+          {showSellerMap && (
+            <div className="bg-gs-card border border-gs-border rounded-xl p-3 overflow-hidden">
+              <div className="text-[10px] text-gs-dim font-mono mb-2">SELLERS BY LOCATION</div>
+              <svg width="100%" height="160" viewBox="0 0 400 160">
+                <rect width="400" height="160" fill="#0a0a0a" rx="8" />
+                {/* Simplified world outline */}
+                <ellipse cx="200" cy="80" rx="180" ry="65" fill="none" stroke="#1a1a1a" strokeWidth="1" />
+                <path d="M40,60 L80,40 L140,35 L200,30 L260,35 L320,45 L360,60 L350,90 L300,110 L240,120 L180,118 L120,108 L70,95 L45,80 Z" fill="#111" stroke="#222" strokeWidth="0.5" />
+                {sellersByCity.map((c, i) => {
+                  const x = 200 + (c.coords.lng / 180) * 170;
+                  const y = 80 - (c.coords.lat / 90) * 60;
+                  const r = Math.min(8, 3 + c.recordCount);
+                  return (
+                    <g key={c.city}>
+                      <circle cx={x} cy={y} r={r} fill="#0ea5e9" opacity={0.5 + (c.recordCount / 20)}>
+                        <animate attributeName="opacity" values={`${0.3 + i * 0.05};${0.7 + i * 0.03};${0.3 + i * 0.05}`} dur="3s" repeatCount="indefinite" />
+                      </circle>
+                      <text x={x} y={y - r - 3} fill="#0ea5e9" fontSize="7" textAnchor="middle" fontFamily="monospace">{c.city}</text>
+                      <text x={x} y={y + r + 8} fill="#555" fontSize="6" textAnchor="middle" fontFamily="monospace">{c.recordCount} records</text>
+                    </g>
+                  );
+                })}
+              </svg>
+              <div className="flex gap-2 flex-wrap mt-2">
+                {sellersByCity.slice(0, 5).map(c => (
+                  <span key={c.city} className="text-[9px] px-2 py-0.5 rounded-full bg-[#111] border border-gs-border text-gs-dim font-mono">
+                    {c.city}: {c.sellers.length} seller{c.sellers.length !== 1 ? 's' : ''}, {c.recordCount} records
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Improvement B6: Time-limited deals section ─────────────────── */}
+      {mode === "shop" && showTimeLimitedDeals && timeLimitedDeals.length > 0 && (
+        <div className="mb-4 p-3.5 rounded-xl border border-amber-500/30 bg-gradient-to-r from-amber-500/5 to-red-500/5 relative">
+          <button onClick={() => setShowTimeLimitedDeals(false)} className="absolute top-2 right-2 bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-sm">x</button>
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="text-[10px] font-bold tracking-widest text-amber-400 font-mono">LIMITED TIME DEALS</span>
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {timeLimitedDeals.map(r => (
+              <div key={r.id} onClick={() => trackView(r)} className="shrink-0 flex gap-2 items-center bg-[#111] rounded-lg px-3 py-2 cursor-pointer hover:bg-[#1a1a1a] transition-colors min-w-[180px]">
+                <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={36} />
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-gs-text truncate max-w-[100px]">{r.album}</div>
+                  <div className="text-[10px] text-gs-faint truncate max-w-[100px]">{r.artist}</div>
+                  <div className="flex gap-1.5 items-center mt-0.5">
+                    <span className="text-xs font-bold text-amber-400">${r.salePrice}</span>
+                    <span className="text-[9px] text-gs-faint line-through">${r.price}</span>
+                    <span className="text-[8px] px-1 py-px rounded bg-red-500/20 text-red-400 font-bold">-{r.discountPct}%</span>
+                  </div>
+                  <div className="text-[8px] text-amber-400/70 font-mono mt-0.5">{r.minutesLeft}m left</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Improvement B5: Bundle deal suggestions ────────────────────── */}
+      {mode === "shop" && (
+        <div className="mb-4">
+          <button
+            onClick={() => setShowBundleDeals(!showBundleDeals)}
+            className={`gs-btn-secondary px-3.5 py-2 text-[11px] flex items-center gap-1.5 mb-2 ${showBundleDeals ? 'text-green-400' : ''}`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a4 4 0 0 0-8 0v2"/></svg>
+            {showBundleDeals ? 'Hide' : 'Show'} Bundle Deals ({bundleDeals.length})
+          </button>
+          {showBundleDeals && bundleDeals.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {bundleDeals.map((bundle, bi) => (
+                <div key={bi} className="bg-gs-card border border-green-500/20 rounded-xl p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-mono text-gs-dim">Bundle from <button onClick={() => onViewUser(bundle.seller)} className="bg-transparent border-none text-gs-accent cursor-pointer text-[10px] p-0 font-mono">@{bundle.seller}</button></span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 font-bold">Save ${bundle.discount}</span>
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {bundle.records.map(r => (
+                      <div key={r.id} className="shrink-0 flex gap-2 items-center bg-[#111] rounded-lg px-2 py-1.5">
+                        <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={28} />
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-bold text-gs-text truncate max-w-[80px]">{r.album}</div>
+                          <div className="text-[9px] text-gs-faint">${r.price}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-[#1a1a1a]">
+                    <div className="text-[10px] text-gs-dim">
+                      <span className="line-through mr-1.5">${bundle.total}</span>
+                      <span className="text-green-400 font-bold">${bundle.bundlePrice}</span>
+                    </div>
+                    <button onClick={() => bundle.records.forEach(r => onAddToCart(r))} className="gs-btn-gradient px-3 py-1 text-[10px]">Add Bundle to Cart</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Improvement B13: Format-specific browse sections ───────────── */}
+      {mode === "browse" && !q && (
+        <div className="mb-4">
+          <button
+            onClick={() => setShowFormatSections(!showFormatSections)}
+            className={`gs-btn-secondary px-3.5 py-2 text-[11px] flex items-center gap-1.5 mb-2 ${showFormatSections ? 'text-gs-accent' : ''}`}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+            {showFormatSections ? 'Hide' : 'Browse by'} Format
+          </button>
+          {showFormatSections && (
+            <div className="flex flex-col gap-3">
+              {recordsByFormat.slice(0, 5).map(([fmt, recs]) => (
+                <div key={fmt}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold text-gs-dim font-mono tracking-wider">{fmt.toUpperCase()} ({recs.length})</span>
+                  </div>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {recs.slice(0, 8).map(r => (
+                      <div key={r.id} onClick={() => trackView(r)} className="shrink-0 flex gap-2 items-center bg-gs-card border border-gs-border rounded-lg px-2.5 py-2 cursor-pointer hover:border-gs-accent/30 transition-colors">
+                        <AlbumArt album={r.album} artist={r.artist} accent={r.accent || "#555"} size={32} />
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-semibold text-gs-muted truncate max-w-[90px]">{r.album}</div>
+                          <div className="text-[9px] text-gs-faint truncate max-w-[90px]">{r.artist}</div>
+                          {r.forSale && <span className="text-[9px] text-amber-400 font-bold">${r.price}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1510,10 +1961,68 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
                   {isCollectorsEdition(r) && (
                     <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/20 font-bold mt-1 inline-block">COLLECTOR&apos;S EDITION</span>
                   )}
+                  {/* ── B2: Rarity scoring badge ─────────────────────── */}
+                  {(() => {
+                    const score = computeRarityScore(r, records);
+                    const rl = rarityLabel(score);
+                    return (
+                      <div className="flex items-center gap-1 mt-1">
+                        <div className="h-1 w-10 rounded-full bg-[#1a1a1a] overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${score}%`, backgroundColor: rl.color }} />
+                        </div>
+                        <span className="text-[8px] font-bold" style={{ color: rl.color }}>{rl.text}</span>
+                      </div>
+                    );
+                  })()}
+                  {/* ── B4: Seller response rate badge ───────────────── */}
+                  {(() => {
+                    const resp = getSellerResponseRate(r.user);
+                    return (
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="text-[8px] text-gs-faint">Response:</span>
+                        <span className={`text-[8px] font-bold ${resp.fast ? 'text-green-400' : 'text-gs-dim'}`}>{resp.rate}%</span>
+                        {resp.fast && <span className="text-[7px] px-1 py-px rounded bg-green-500/15 text-green-400 font-bold">FAST</span>}
+                        <span className="text-[8px] text-gs-faint">~{resp.avgHrs}h</span>
+                      </div>
+                    );
+                  })()}
+                  {/* ── B7: Verified condition badge ─────────────────── */}
+                  {isConditionVerified(r) && (
+                    <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-blue-500/15 text-blue-400 border border-blue-500/20 font-bold mt-0.5 inline-flex items-center gap-0.5">
+                      <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                      VERIFIED CONDITION
+                    </span>
+                  )}
+                  {/* ── B8: Pressing plant info ──────────────────────── */}
+                  {(() => {
+                    const info = getPressingInfo(r);
+                    const plants = ['United Records', 'Rainbo Records', 'Sterling Sound', 'GZ Media', 'Optimal Media'];
+                    let h2 = 0;
+                    const s2 = String(r.id);
+                    for (let i = 0; i < s2.length; i++) h2 = ((h2 << 5) - h2 + s2.charCodeAt(i)) | 0;
+                    const plant = plants[Math.abs(h2) % plants.length];
+                    return (
+                      <div className="text-[8px] text-gs-faint mt-0.5">
+                        Plant: {plant} ({info.pressing})
+                      </div>
+                    );
+                  })()}
+                  {/* ── B9: Matrix number display ────────────────────── */}
+                  <div className="text-[8px] text-gs-faint font-mono mt-0.5">
+                    Matrix: {getMatrixNumber(r)}
+                  </div>
+                  {/* ── B10: Catalog number display ──────────────────── */}
+                  <div className="text-[8px] text-gs-faint font-mono">
+                    Cat#: {getCatalogNumber(r)} | Label: {getRecordLabel(r)}
+                  </div>
                 </div>
                 <div className="text-right shrink-0">
                   <div className="relative">
                     <div className="text-2xl font-extrabold text-gs-text tracking-[-0.03em] mb-0.5">${r.price}</div>
+                    {/* ── B3: Price trend mini chart ──────────────────── */}
+                    <div className="flex items-center gap-1 mb-0.5 justify-end">
+                      <PriceTrendMiniChart points={generatePriceTrend(r)} />
+                    </div>
                     {/* Estimate below listing price */}
                     <div className="text-[9px] mb-1" style={{ color: '#6b7280' }}>
                       Est. ~${estimateValue(r.condition, r.year)}
@@ -1656,7 +2165,7 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
       )}
 
       {/* Improvement 15: Animated filter transitions — active filter summary bar */}
-      {(genre !== "All" || condFilter !== "All" || newThisWeekOnly || q || subgenre) && (
+      {(genre !== "All" || condFilter !== "All" || newThisWeekOnly || q || subgenre || labelFilter !== "All" || decadeFilter !== "All" || catalogSearch) && (
         <div className="mt-4 flex gap-1.5 flex-wrap items-center transition-all duration-300">
           <span className="text-[10px] text-gs-faint font-mono mr-1">Active filters:</span>
           {genre !== "All" && (
@@ -1699,8 +2208,32 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
               &quot;{q}&quot; <span className="text-gs-faint">×</span>
             </button>
           )}
+          {labelFilter !== "All" && (
+            <button
+              onClick={() => setLabelFilter("All")}
+              className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20 cursor-pointer flex items-center gap-1 transition-all duration-200 hover:bg-violet-500/20"
+            >
+              Label: {labelFilter} <span className="text-gs-faint">x</span>
+            </button>
+          )}
+          {decadeFilter !== "All" && (
+            <button
+              onClick={() => setDecadeFilter("All")}
+              className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 cursor-pointer flex items-center gap-1 transition-all duration-200 hover:bg-cyan-500/20"
+            >
+              {decadeFilter} <span className="text-gs-faint">x</span>
+            </button>
+          )}
+          {catalogSearch && (
+            <button
+              onClick={() => setCatalogSearch("")}
+              className="text-[10px] px-2 py-0.5 rounded-full bg-[#1a1a1a] text-gs-muted border border-gs-border cursor-pointer flex items-center gap-1 transition-all duration-200 hover:bg-[#222]"
+            >
+              Cat# &quot;{catalogSearch}&quot; <span className="text-gs-faint">x</span>
+            </button>
+          )}
           <button
-            onClick={() => { setGenre("All"); setSubgenre(null); setCondFilter("All"); setNewThisWeekOnly(false); setQ(""); }}
+            onClick={() => { setGenre("All"); setSubgenre(null); setCondFilter("All"); setNewThisWeekOnly(false); setQ(""); setLabelFilter("All"); setDecadeFilter("All"); setCatalogSearch(""); }}
             className="text-[10px] text-gs-faint hover:text-red-400 bg-transparent border-none cursor-pointer ml-1 transition-colors"
           >
             Clear all

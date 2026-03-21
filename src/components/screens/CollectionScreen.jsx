@@ -359,6 +359,501 @@ function MissingSuggestions({ records }) {
   );
 }
 
+// Improvement v3-14: Collection visualization (bubble chart by genre)
+function GenreBubbleChart({ records }) {
+  const genreData = useMemo(() => {
+    const genres = {};
+    records.forEach(r => {
+      (r.tags || []).forEach(t => {
+        if (GENRE_LIST.includes(t)) {
+          genres[t] = (genres[t] || 0) + 1;
+        }
+      });
+    });
+    return Object.entries(genres).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  }, [records]);
+
+  if (genreData.length === 0) return null;
+  const maxCount = Math.max(...genreData.map(g => g[1]));
+  const colors = ['#0ea5e9', '#8b5cf6', '#ef4444', '#22c55e', '#f59e0b', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+      <div className="text-[10px] font-mono text-gs-dim mb-3 tracking-wider uppercase">Genre Bubble Chart</div>
+      <div className="flex flex-wrap gap-2 justify-center items-center min-h-[100px]">
+        {genreData.map(([genre, count], i) => {
+          const size = Math.max(40, Math.round((count / maxCount) * 80));
+          return (
+            <div
+              key={genre}
+              className="rounded-full flex items-center justify-center text-center transition-transform hover:scale-110 cursor-default"
+              style={{
+                width: size, height: size,
+                background: `${colors[i % colors.length]}22`,
+                border: `2px solid ${colors[i % colors.length]}44`,
+              }}
+              title={`${genre}: ${count} records`}
+            >
+              <div>
+                <div className="text-[8px] font-bold" style={{ color: colors[i % colors.length] }}>{genre}</div>
+                <div className="text-[7px] font-mono text-gs-faint">{count}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Improvement v3-15: Import from CSV
+function CSVImporter({ onImport, onClose }) {
+  const [csvText, setCsvText] = useState('');
+  const [preview, setPreview] = useState([]);
+
+  const handleParse = () => {
+    const lines = csvText.trim().split('\n');
+    if (lines.length < 2) return;
+    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, '').toLowerCase());
+    const parsed = lines.slice(1).map(line => {
+      const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+      const record = {};
+      headers.forEach((h, i) => { record[h] = values[i] || ''; });
+      return record;
+    }).filter(r => r.album || r.artist);
+    setPreview(parsed.slice(0, 5));
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => { setCsvText(ev.target?.result || ''); };
+    reader.readAsText(file);
+  };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] font-bold font-mono text-gs-dim tracking-wider uppercase">Import from CSV</span>
+        <button onClick={onClose} className="text-gs-dim text-xs bg-transparent border-none cursor-pointer">&times;</button>
+      </div>
+      <div className="mb-3">
+        <input type="file" accept=".csv" onChange={handleFileUpload} className="text-[10px] text-gs-muted mb-2" />
+        <textarea
+          value={csvText}
+          onChange={e => setCsvText(e.target.value)}
+          placeholder="Or paste CSV data here (Album,Artist,Year,Format,Condition)..."
+          className="w-full bg-[#0a0a0a] border border-gs-border rounded px-2 py-2 text-[10px] text-gs-muted font-mono resize-none focus:outline-none focus:border-gs-accent/50"
+          rows={4}
+        />
+      </div>
+      <div className="flex gap-2 mb-3">
+        <button onClick={handleParse} disabled={!csvText.trim()} className={`px-3 py-1.5 rounded text-[10px] font-semibold ${csvText.trim() ? 'gs-btn-gradient text-white cursor-pointer' : 'bg-[#111] border border-gs-border text-gs-faint cursor-default'}`}>
+          Preview
+        </button>
+        {preview.length > 0 && (
+          <button onClick={() => { onImport?.(preview); onClose(); }} className="px-3 py-1.5 rounded text-[10px] font-semibold bg-green-500/10 border border-green-500/30 text-green-400 cursor-pointer hover:bg-green-500/20">
+            Import {preview.length} Records
+          </button>
+        )}
+      </div>
+      {preview.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[9px] text-gs-faint font-mono uppercase">Preview (first 5):</div>
+          {preview.map((r, i) => (
+            <div key={i} className="text-[10px] text-gs-muted bg-[#0a0a0a] rounded px-2 py-1 border border-gs-border/50">
+              {r.album || r.Album || '?'} - {r.artist || r.Artist || '?'} ({r.year || r.Year || 'N/A'})
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Improvement v3-16: Collection lending tracker
+function LendingTracker({ records, onClose }) {
+  const [lentRecords, setLentRecords] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_lent_records') || '[]'); } catch { return []; }
+  });
+  const [showAdd, setShowAdd] = useState(false);
+  const [selectedRecord, setSelectedRecord] = useState('');
+  const [lentTo, setLentTo] = useState('');
+
+  const saveLent = useCallback((updated) => {
+    setLentRecords(updated);
+    localStorage.setItem('gs_lent_records', JSON.stringify(updated));
+  }, []);
+
+  const addLending = () => {
+    if (!selectedRecord || !lentTo.trim()) return;
+    saveLent([...lentRecords, { recordId: selectedRecord, lentTo: lentTo.trim(), date: Date.now(), returned: false }]);
+    setSelectedRecord('');
+    setLentTo('');
+    setShowAdd(false);
+  };
+
+  const markReturned = (idx) => {
+    const updated = lentRecords.map((l, i) => i === idx ? { ...l, returned: true, returnDate: Date.now() } : l);
+    saveLent(updated);
+  };
+
+  const activeLendings = lentRecords.filter(l => !l.returned);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-mono text-gs-dim tracking-wider uppercase">Lending Tracker ({activeLendings.length} out)</span>
+        <div className="flex gap-2">
+          <button onClick={() => setShowAdd(!showAdd)} className="text-[10px] text-gs-accent bg-transparent border border-gs-accent/30 rounded px-2 py-0.5 cursor-pointer hover:bg-gs-accent/10">+ Lend</button>
+          <button onClick={onClose} className="text-gs-dim text-xs bg-transparent border-none cursor-pointer">&times;</button>
+        </div>
+      </div>
+      {showAdd && (
+        <div className="bg-[#111] rounded-lg p-2.5 mb-2 border border-gs-border space-y-2">
+          <select value={selectedRecord} onChange={e => setSelectedRecord(e.target.value)} className="w-full bg-[#0a0a0a] border border-gs-border rounded px-2 py-1.5 text-[10px] text-gs-muted outline-none">
+            <option value="">Select record...</option>
+            {records.map(r => <option key={r.id} value={r.id}>{r.album} - {r.artist}</option>)}
+          </select>
+          <input value={lentTo} onChange={e => setLentTo(e.target.value)} placeholder="Lent to..." className="w-full bg-[#0a0a0a] border border-gs-border rounded px-2 py-1.5 text-[10px] text-gs-muted outline-none" />
+          <button onClick={addLending} disabled={!selectedRecord || !lentTo.trim()} className={`px-3 py-1 rounded text-[10px] ${selectedRecord && lentTo.trim() ? 'gs-btn-gradient text-white cursor-pointer' : 'bg-[#111] text-gs-faint cursor-default'}`}>Add</button>
+        </div>
+      )}
+      {activeLendings.length > 0 && (
+        <div className="space-y-1.5">
+          {activeLendings.map((l, i) => {
+            const rec = records.find(r => r.id === l.recordId);
+            return (
+              <div key={i} className="flex items-center justify-between p-2 bg-[#111] rounded-lg border border-[#1a1a1a]">
+                <div>
+                  <div className="text-[10px] text-gs-muted">{rec ? `${rec.album} - ${rec.artist}` : 'Unknown'}</div>
+                  <div className="text-[9px] text-gs-faint font-mono">Lent to {l.lentTo} on {new Date(l.date).toLocaleDateString()}</div>
+                </div>
+                <button onClick={() => markReturned(i)} className="text-[9px] text-green-400 bg-green-500/10 border border-green-500/20 rounded px-2 py-0.5 cursor-pointer">Returned</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {activeLendings.length === 0 && !showAdd && (
+        <div className="text-[10px] text-gs-faint text-center py-2">No records currently lent out.</div>
+      )}
+    </div>
+  );
+}
+
+// Improvement v3-17: Condition upgrade tracker
+function ConditionUpgradeTracker({ records }) {
+  const upgrades = useMemo(() => {
+    const candidates = records
+      .filter(r => r.condition && COND_ORDER.indexOf(r.condition) > 2) // G+ or worse
+      .sort((a, b) => COND_ORDER.indexOf(b.condition) - COND_ORDER.indexOf(a.condition));
+    return candidates.slice(0, 5).map(r => ({
+      ...r,
+      currentIdx: COND_ORDER.indexOf(r.condition),
+      targetCondition: COND_ORDER[Math.max(0, COND_ORDER.indexOf(r.condition) - 2)],
+      estimatedSavings: estimateValue(COND_ORDER[Math.max(0, COND_ORDER.indexOf(r.condition) - 2)], r.year) - estimateValue(r.condition, r.year),
+    }));
+  }, [records]);
+
+  if (upgrades.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+      <div className="text-[10px] font-mono text-gs-dim mb-2 tracking-wider uppercase">Upgrade Candidates</div>
+      <div className="space-y-1.5">
+        {upgrades.map(r => (
+          <div key={r.id} className="flex items-center justify-between p-2 bg-[#111] rounded-lg border border-[#1a1a1a]">
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-bold text-gs-text truncate">{r.album}</div>
+              <div className="text-[9px] text-gs-dim">{r.artist}</div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[10px] font-mono text-red-400">{r.condition}</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+              <span className="text-[10px] font-mono text-green-400">{r.targetCondition}</span>
+              <span className="text-[8px] font-mono text-amber-400">(+${r.estimatedSavings})</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="text-[9px] text-gs-faint mt-2 italic">Upgrading condition increases collection value.</div>
+    </div>
+  );
+}
+
+// Improvement v3-18: Collection completion percentage per artist
+function ArtistCompletionTracker({ records }) {
+  const completionData = useMemo(() => {
+    const artistAlbums = {};
+    records.forEach(r => {
+      if (r.artist) {
+        if (!artistAlbums[r.artist]) artistAlbums[r.artist] = [];
+        artistAlbums[r.artist].push(r.album);
+      }
+    });
+    const knownDiscographies = {
+      'Pink Floyd': 15, 'Led Zeppelin': 9, 'The Beatles': 13, 'Queen': 15,
+      'David Bowie': 25, 'Radiohead': 9, 'Fleetwood Mac': 17, 'The Rolling Stones': 23,
+      'Nirvana': 3, 'The Doors': 6, 'Jimi Hendrix': 4, 'Bob Dylan': 38,
+    };
+    return Object.entries(artistAlbums)
+      .filter(([, albums]) => albums.length >= 2)
+      .map(([artist, albums]) => {
+        const known = knownDiscographies[artist];
+        const total = known || Math.max(albums.length + 2, Math.round(albums.length * 1.5));
+        return { artist, owned: albums.length, total, pct: Math.round((albums.length / total) * 100) };
+      })
+      .sort((a, b) => b.owned - a.owned)
+      .slice(0, 6);
+  }, [records]);
+
+  if (completionData.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+      <div className="text-[10px] font-mono text-gs-dim mb-2 tracking-wider uppercase">Artist Completion</div>
+      <div className="space-y-2">
+        {completionData.map(a => (
+          <div key={a.artist}>
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-[10px] text-gs-muted">{a.artist}</span>
+              <span className="text-[9px] font-mono text-gs-accent">{a.owned}/{a.total} ({a.pct}%)</span>
+            </div>
+            <div className="h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+              <div className="h-full bg-gs-accent/60 rounded-full transition-all" style={{ width: `${a.pct}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Improvement v3-19: Smart sorting (AI-suggested order)
+function SmartSortSuggestion({ records, onApplySort }) {
+  const suggestion = useMemo(() => {
+    const hasHighValue = records.some(r => estimateValue(r.condition, r.year) > 30);
+    const hasOldRecords = records.some(r => r.year && r.year < 1975);
+    const mostGenres = {};
+    records.forEach(r => (r.tags || []).forEach(t => { if (GENRE_LIST.includes(t)) mostGenres[t] = (mostGenres[t] || 0) + 1; }));
+    const topGenre = Object.entries(mostGenres).sort((a, b) => b[1] - a[1])[0];
+
+    if (hasOldRecords) return { label: 'Chronological Journey', key: 'yearAsc', reason: 'You have vintage records - explore them chronologically' };
+    if (hasHighValue) return { label: 'Value Showcase', key: 'priceDesc', reason: 'Highlight your most valuable pieces first' };
+    if (topGenre) return { label: `${topGenre[0]} First`, key: 'artistAZ', reason: `Your top genre is ${topGenre[0]} - group by artist for easy browsing` };
+    return { label: 'Recently Added', key: 'dateDesc', reason: 'See your latest additions first' };
+  }, [records]);
+
+  return (
+    <div className="bg-gradient-to-r from-violet-500/5 to-transparent border border-violet-500/20 rounded-xl p-2.5 mb-3 flex items-center gap-3">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><path d="M12 2a7 7 0 017 7c0 5.25-7 13-7 13S5 14.25 5 9a7 7 0 017-7z"/><circle cx="12" cy="9" r="2.5"/></svg>
+      <div className="flex-1 min-w-0">
+        <div className="text-[10px] font-bold text-violet-400">Smart Sort: {suggestion.label}</div>
+        <div className="text-[9px] text-gs-dim">{suggestion.reason}</div>
+      </div>
+      <button onClick={() => onApplySort(suggestion.key)} className="text-[9px] px-2.5 py-1 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-400 cursor-pointer hover:bg-violet-500/20 whitespace-nowrap">
+        Apply
+      </button>
+    </div>
+  );
+}
+
+// Improvement v3-20: Collection insurance calculator
+function InsuranceCalculator({ records }) {
+  const calc = useMemo(() => {
+    const totalEstValue = records.reduce((s, r) => s + estimateValue(r.condition, r.year), 0);
+    const premiumLow = Math.round(totalEstValue * 0.012);  // 1.2% annual
+    const premiumHigh = Math.round(totalEstValue * 0.025); // 2.5% annual
+    const highValueItems = records.filter(r => estimateValue(r.condition, r.year) >= 30).length;
+    return { totalEstValue, premiumLow, premiumHigh, highValueItems };
+  }, [records]);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+      <div className="text-[10px] font-mono text-gs-dim mb-2 tracking-wider uppercase">Insurance Estimate</div>
+      <div className="grid grid-cols-2 gap-2 mb-2">
+        <div className="bg-[#111] rounded-lg p-2 text-center">
+          <div className="text-sm font-extrabold text-emerald-400">${calc.totalEstValue}</div>
+          <div className="text-[8px] text-gs-faint font-mono">Total Value</div>
+        </div>
+        <div className="bg-[#111] rounded-lg p-2 text-center">
+          <div className="text-sm font-extrabold text-amber-400">${calc.premiumLow}-${calc.premiumHigh}</div>
+          <div className="text-[8px] text-gs-faint font-mono">Annual Premium Est.</div>
+        </div>
+      </div>
+      <div className="text-[9px] text-gs-faint font-mono">{calc.highValueItems} high-value items ($30+). Consider specialty vinyl insurance.</div>
+    </div>
+  );
+}
+
+// Improvement v3-21: Want vs Have counter per genre
+function WantVsHaveCounter({ records }) {
+  const data = useMemo(() => {
+    const genreHave = {};
+    records.forEach(r => {
+      (r.tags || []).forEach(t => {
+        if (GENRE_LIST.includes(t)) {
+          if (!genreHave[t]) genreHave[t] = { have: 0, want: 0 };
+          genreHave[t].have++;
+          if (r.wantMore) genreHave[t].want++;
+        }
+      });
+    });
+    // Estimate "want" based on collection size (artists with few records)
+    const artistByGenre = {};
+    records.forEach(r => {
+      (r.tags || []).forEach(t => {
+        if (GENRE_LIST.includes(t)) {
+          if (!artistByGenre[t]) artistByGenre[t] = new Set();
+          artistByGenre[t].add(r.artist);
+        }
+      });
+    });
+    Object.entries(genreHave).forEach(([genre, data]) => {
+      const artistCount = artistByGenre[genre]?.size || 0;
+      data.want = Math.max(data.want, Math.round(artistCount * 0.6));
+    });
+    return Object.entries(genreHave).sort((a, b) => b[1].have - a[1].have).slice(0, 6);
+  }, [records]);
+
+  if (data.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+      <div className="text-[10px] font-mono text-gs-dim mb-2 tracking-wider uppercase">Want vs Have</div>
+      <div className="space-y-1.5">
+        {data.map(([genre, { have, want }]) => (
+          <div key={genre} className="flex items-center gap-2">
+            <span className="text-[10px] text-gs-muted w-20 truncate">{genre}</span>
+            <div className="flex-1 flex gap-0.5">
+              <div className="h-3 bg-green-500/30 rounded-l" style={{ width: `${Math.round((have / (have + want)) * 100)}%` }} title={`Have: ${have}`} />
+              <div className="h-3 bg-red-500/20 rounded-r" style={{ width: `${Math.round((want / (have + want)) * 100)}%` }} title={`Want: ${want}`} />
+            </div>
+            <span className="text-[8px] font-mono text-green-400 w-6 text-right">{have}</span>
+            <span className="text-[8px] font-mono text-red-400 w-6 text-right">{want}</span>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-4 mt-2 text-[8px] text-gs-faint font-mono">
+        <span className="flex items-center gap-1"><div className="w-2 h-2 bg-green-500/30 rounded" /> Have</span>
+        <span className="flex items-center gap-1"><div className="w-2 h-2 bg-red-500/20 rounded" /> Want</span>
+      </div>
+    </div>
+  );
+}
+
+// Improvement v3-22: Collection year distribution chart
+function YearDistributionChart({ records }) {
+  const yearData = useMemo(() => {
+    const years = {};
+    records.forEach(r => {
+      if (r.year) {
+        const decade = Math.floor(r.year / 10) * 10;
+        years[decade] = (years[decade] || 0) + 1;
+      }
+    });
+    return Object.entries(years).sort((a, b) => parseInt(a[0]) - parseInt(b[0]));
+  }, [records]);
+
+  if (yearData.length < 2) return null;
+  const maxCount = Math.max(...yearData.map(d => d[1]));
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+      <div className="text-[10px] font-mono text-gs-dim mb-2 tracking-wider uppercase">Year Distribution</div>
+      <div className="flex items-end gap-1 h-16">
+        {yearData.map(([decade, count]) => (
+          <div key={decade} className="flex-1 flex flex-col items-center gap-0.5">
+            <span className="text-[7px] font-mono text-gs-faint">{count}</span>
+            <div
+              className="w-full bg-gradient-to-t from-gs-accent/60 to-gs-accent/20 rounded-t-sm transition-all"
+              style={{ height: `${Math.max(4, (count / maxCount) * 56)}px` }}
+              title={`${decade}s: ${count} records`}
+            />
+            <span className="text-[7px] text-gs-faint font-mono">{decade}s</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Improvement v3-23: Pressing quality indicator
+function PressingQualityIndicator({ record }) {
+  const quality = useMemo(() => {
+    let score = 50;
+    if (record.year && record.year < 1975) score += 20;
+    else if (record.year && record.year < 1990) score += 10;
+    if (record.format === 'Vinyl' || record.format === '12"') score += 10;
+    if (record.condition === 'M' || record.condition === 'NM') score += 15;
+    else if (record.condition === 'VG+') score += 10;
+    if (record.label && ['Blue Note', 'Motown', 'Columbia', 'Atlantic', 'Decca', 'Prestige'].some(l => record.label.includes(l))) score += 10;
+    score = Math.min(100, score);
+    const label = score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : score >= 40 ? 'Standard' : 'Basic';
+    const color = score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : score >= 40 ? '#888' : '#ef4444';
+    return { score, label, color };
+  }, [record]);
+
+  return (
+    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded-full border" style={{ color: quality.color, borderColor: quality.color + '30', background: quality.color + '10' }} title={`Pressing quality: ${quality.score}/100`}>
+      {quality.label}
+    </span>
+  );
+}
+
+// Improvement v3-24: Collection labels breakdown
+function LabelsBreakdown({ records }) {
+  const labelData = useMemo(() => {
+    const labels = {};
+    records.forEach(r => {
+      if (r.label) {
+        labels[r.label] = (labels[r.label] || 0) + 1;
+      }
+    });
+    return Object.entries(labels).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  }, [records]);
+
+  if (labelData.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+      <div className="text-[10px] font-mono text-gs-dim mb-2 tracking-wider uppercase">Labels in Collection</div>
+      <div className="space-y-1">
+        {labelData.map(([label, count]) => (
+          <div key={label} className="flex items-center justify-between">
+            <span className="text-[10px] text-gs-muted truncate flex-1">{label}</span>
+            <span className="text-[9px] px-2 py-0.5 rounded-full bg-[#111] text-gs-faint font-mono border border-gs-border">{count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Improvement v3-25: First pressing identifier
+function FirstPressingBadge({ record }) {
+  const isFirstPressing = useMemo(() => {
+    if (!record.year) return false;
+    // Heuristic: if year is before 1985 and condition is good, likely original
+    // Also check if pressing info mentions "1st" or "original"
+    const notesHint = (record.notes || '').toLowerCase();
+    if (notesHint.includes('first pressing') || notesHint.includes('1st pressing') || notesHint.includes('original pressing')) return true;
+    if (record.year < 1975 && (record.condition === 'M' || record.condition === 'NM' || record.condition === 'VG+' || record.condition === 'VG')) return true;
+    if (record.year < 1960) return true;
+    return false;
+  }, [record]);
+
+  if (!isFirstPressing) return null;
+
+  return (
+    <span className="text-[8px] font-mono px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400" title="Likely first or early pressing">
+      1st Pressing
+    </span>
+  );
+}
+
 // Fix: explicitly destructure batch/drag props that App.js passes, plus onDelete for bulk actions
 export default function CollectionScreen({ records, currentUser, onAddRecord, onDelete, batchMode: appBatchMode, batchSelected: appBatchSelected, onToggleBatchSelect, dragState, onDragStart, onDragOver, onDragEnd, ...handlers }) {
   const [search, setSearch] = useState("");

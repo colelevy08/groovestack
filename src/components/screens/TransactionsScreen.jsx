@@ -66,6 +66,104 @@ const getEscrowStage = (purchaseId) => {
   return Math.abs(hash) % ESCROW_STAGES.length;
 };
 
+// ── Improvement C14: Transaction messaging thread helpers ────────────────
+const generateMessageThread = (purchaseId, seller, buyer) => {
+  let h = 0;
+  const s = String(purchaseId);
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  const msgs = [
+    { from: buyer, text: "Hi! Looking forward to receiving this record. Any idea on shipping timeline?", time: "2 days ago" },
+    { from: seller, text: "Just packed it up! Shipping tomorrow via USPS Media Mail.", time: "1 day ago" },
+    { from: buyer, text: "Perfect, thanks!", time: "1 day ago" },
+  ];
+  if (Math.abs(h) % 2 === 0) {
+    msgs.push({ from: seller, text: "Tracking number has been updated. Should arrive in 3-5 days.", time: "12 hours ago" });
+  }
+  return msgs;
+};
+
+// ── Improvement C15: Automated follow-up reminders ──────────────────────
+const getFollowUpReminders = (purchase, stage) => {
+  const reminders = [];
+  if (stage < 2) reminders.push({ type: 'ship', text: `Remind @${purchase.seller} to ship your order`, urgency: 'medium' });
+  if (stage >= 4) reminders.push({ type: 'review', text: 'Leave a review for this transaction', urgency: 'low' });
+  if (stage >= 2 && stage < 4) reminders.push({ type: 'confirm', text: 'Confirm delivery when your record arrives', urgency: 'high' });
+  return reminders;
+};
+
+// ── Improvement C17: Transaction insurance status ───────────────────────
+const getInsuranceStatus = (purchase) => {
+  const price = parseFloat(purchase.price) || 0;
+  if (price >= 100) return { insured: true, coverage: price, premium: Math.round(price * 0.03), provider: 'GrooveGuard Premium' };
+  if (price >= 50) return { insured: true, coverage: price * 0.8, premium: Math.round(price * 0.02), provider: 'GrooveGuard Basic' };
+  return { insured: false, coverage: 0, premium: 0, provider: 'Not insured' };
+};
+
+// ── Improvement C19: Payment installment tracker ────────────────────────
+const getInstallmentPlan = (purchase) => {
+  const price = parseFloat(purchase.price) || 0;
+  if (price < 50) return null;
+  const installments = price >= 200 ? 4 : price >= 100 ? 3 : 2;
+  const amount = Math.round(price / installments * 100) / 100;
+  let h = 0;
+  const s = String(purchase.id);
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  const paid = (Math.abs(h) % installments) + 1;
+  return { total: installments, paid: Math.min(paid, installments), amount, remaining: Math.max(0, installments - paid) };
+};
+
+// ── Improvement C22: Package weight estimator ───────────────────────────
+const estimatePackageWeight = (purchase) => {
+  const fmt = (purchase.format || '').toLowerCase();
+  let weight = 0.5; // base lbs
+  if (fmt.includes('12') || fmt.includes('lp')) weight = 1.2;
+  else if (fmt.includes('7')) weight = 0.4;
+  else if (fmt.includes('10')) weight = 0.8;
+  else if (fmt.includes('cd')) weight = 0.3;
+  else if (fmt.includes('cassette')) weight = 0.2;
+  // packaging adds weight
+  weight += 0.3;
+  return { weight: weight.toFixed(1), unit: 'lbs', oz: Math.round(weight * 16) };
+};
+
+// ── Improvement C21: Customs declaration generator ──────────────────────
+const generateCustomsDeclaration = (purchase, currentUser) => {
+  const weight = estimatePackageWeight(purchase);
+  return [
+    "═══════════════════════════════════════════",
+    "     CUSTOMS DECLARATION (CN 22/23)        ",
+    "═══════════════════════════════════════════",
+    "",
+    `Sender:      @${purchase.seller}`,
+    `Recipient:   @${currentUser}`,
+    "",
+    "CONTENTS DESCRIPTION:",
+    `  Item:        Vinyl Record`,
+    `  Description: ${purchase.album} by ${purchase.artist}`,
+    `  Format:      ${purchase.format || 'N/A'}`,
+    `  Quantity:    1`,
+    `  Value:       $${parseFloat(purchase.price).toFixed(2)} USD`,
+    `  Weight:      ${weight.weight} ${weight.unit} (${weight.oz} oz)`,
+    `  HS Code:     8524.39 (Recorded media)`,
+    "",
+    "PURPOSE: Commercial / Gift",
+    "ORIGIN:  United States",
+    "",
+    "═══════════════════════════════════════════",
+    "I certify the above is correct.",
+    "═══════════════════════════════════════════",
+  ].join("\n");
+};
+
+// ── Improvement C24: Dispute timeline stages ────────────────────────────
+const DISPUTE_TIMELINE_STAGES = [
+  { key: 'filed', label: 'Dispute Filed', color: '#ef4444' },
+  { key: 'review', label: 'Under Review', color: '#f59e0b' },
+  { key: 'evidence', label: 'Evidence Requested', color: '#0ea5e9' },
+  { key: 'resolution', label: 'Resolution', color: '#8b5cf6' },
+  { key: 'closed', label: 'Closed', color: '#22c55e' },
+];
+
 // ── New Improvement 16: Transaction timeline component ──────────────────
 function TransactionTimeline({ purchases, offers, currentUser }) {
   const events = useMemo(() => {
@@ -1097,6 +1195,50 @@ function PurchaseRow({ purchase, records, currentUser, onViewUser, onBuy, onExpo
   const [surveyFeedback, setSurveyFeedback] = useState(""); // New Improvement 25
   const [surveySubmitted, setSurveySubmitted] = useState(false); // New Improvement 25
 
+  // ── Improvement C14: Transaction messaging thread ──────────────────
+  const [showMessaging, setShowMessaging] = useState(false);
+  const [newMessage, setNewMessage] = useState("");
+  const [localMessages, setLocalMessages] = useState([]);
+
+  // ── Improvement C15: Follow-up reminders ───────────────────────────
+  const [showReminders, setShowReminders] = useState(false);
+  const [dismissedReminders, setDismissedReminders] = useState([]);
+
+  // ── Improvement C16: Return shipping label ─────────────────────────
+  const [showReturnLabel, setShowReturnLabel] = useState(false);
+
+  // ── Improvement C17: Transaction insurance status ──────────────────
+  const [showInsurance, setShowInsurance] = useState(false);
+
+  // ── Improvement C18: Buyer/seller agreement viewer ─────────────────
+  const [showAgreement, setShowAgreement] = useState(false);
+
+  // ── Improvement C19: Payment installment tracker ───────────────────
+  const [showInstallments, setShowInstallments] = useState(false);
+
+  // ── Improvement C20: Transaction photo evidence ────────────────────
+  const [showPhotoEvidence, setShowPhotoEvidence] = useState(false);
+  const [photoNotes, setPhotoNotes] = useState("");
+
+  // ── Improvement C21: Customs declaration ───────────────────────────
+  const [showCustoms, setShowCustoms] = useState(false);
+
+  // ── Improvement C22: Package weight estimator ──────────────────────
+  const [showWeightEstimate, setShowWeightEstimate] = useState(false);
+
+  // ── Improvement C23: Delivery confirmation workflow ────────────────
+  const [deliveryConfirmed, setDeliveryConfirmed] = useState(false);
+  const [showDeliveryConfirm, setShowDeliveryConfirm] = useState(false);
+
+  // ── Improvement C24: Dispute timeline ──────────────────────────────
+  const [showDisputeTimeline, setShowDisputeTimeline] = useState(false);
+
+  // ── Improvement C25: Feedback loop ─────────────────────────────────
+  const [showFeedbackLoop, setShowFeedbackLoop] = useState(false);
+  const [feedbackRating, setFeedbackRating] = useState(0);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+
   // Simulated tracking number
   const trackingNum = useMemo(() => {
     let h = 0;
@@ -1307,6 +1449,95 @@ function PurchaseRow({ purchase, records, currentUser, onViewUser, onBuy, onExpo
         )}
         {surveySubmitted && (
           <span className="px-2.5 py-1.5 text-[10px] text-pink-400 font-semibold flex items-center gap-1">Surveyed</span>
+        )}
+
+        {/* ── C14: Messaging thread button ────────────────────── */}
+        <button onClick={() => setShowMessaging(!showMessaging)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showMessaging ? "text-blue-400" : ""}`}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Messages
+        </button>
+
+        {/* ── C15: Follow-up reminders ───────────────────────── */}
+        <button onClick={() => setShowReminders(!showReminders)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showReminders ? "text-amber-400" : ""}`}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          Reminders
+        </button>
+
+        {/* ── C16: Return shipping label ─────────────────────── */}
+        <button onClick={() => setShowReturnLabel(!showReturnLabel)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showReturnLabel ? "text-red-400" : ""}`}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+          Return
+        </button>
+
+        {/* ── C17: Insurance status ──────────────────────────── */}
+        <button onClick={() => setShowInsurance(!showInsurance)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showInsurance ? "text-green-400" : ""}`}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          Insurance
+        </button>
+
+        {/* ── C18: Agreement viewer ──────────────────────────── */}
+        <button onClick={() => setShowAgreement(!showAgreement)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showAgreement ? "text-violet-400" : ""}`}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Agreement
+        </button>
+
+        {/* ── C19: Installment tracker ───────────────────────── */}
+        {getInstallmentPlan(p) && (
+          <button onClick={() => setShowInstallments(!showInstallments)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showInstallments ? "text-cyan-400" : ""}`}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+            Installments
+          </button>
+        )}
+
+        {/* ── C20: Photo evidence ────────────────────────────── */}
+        <button onClick={() => setShowPhotoEvidence(!showPhotoEvidence)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showPhotoEvidence ? "text-emerald-400" : ""}`}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Photos
+        </button>
+
+        {/* ── C21: Customs declaration ───────────────────────── */}
+        <button onClick={() => setShowCustoms(!showCustoms)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showCustoms ? "text-orange-400" : ""}`}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          Customs
+        </button>
+
+        {/* ── C22: Weight estimator ──────────────────────────── */}
+        <button onClick={() => setShowWeightEstimate(!showWeightEstimate)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showWeightEstimate ? "text-sky-400" : ""}`}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/></svg>
+          Weight
+        </button>
+
+        {/* ── C23: Delivery confirmation ─────────────────────── */}
+        {stage >= 3 && !deliveryConfirmed && (
+          <button onClick={() => setShowDeliveryConfirm(!showDeliveryConfirm)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showDeliveryConfirm ? "text-green-400" : ""}`}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+            Confirm Delivery
+          </button>
+        )}
+        {deliveryConfirmed && (
+          <span className="px-2.5 py-1.5 text-[10px] text-green-400 font-semibold flex items-center gap-1">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>
+            Delivered
+          </span>
+        )}
+
+        {/* ── C24: Dispute timeline ──────────────────────────── */}
+        {disputeSubmitted && (
+          <button onClick={() => setShowDisputeTimeline(!showDisputeTimeline)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showDisputeTimeline ? "text-red-400" : ""}`}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Dispute Progress
+          </button>
+        )}
+
+        {/* ── C25: Feedback loop ─────────────────────────────── */}
+        {stage >= 4 && !feedbackSubmitted && (
+          <button onClick={() => setShowFeedbackLoop(!showFeedbackLoop)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showFeedbackLoop ? "text-teal-400" : ""}`}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+            Feedback
+          </button>
+        )}
+        {feedbackSubmitted && (
+          <span className="px-2.5 py-1.5 text-[10px] text-teal-400 font-semibold flex items-center gap-1">Feedback Sent</span>
         )}
 
         {/* New Improvement 15: Multi-currency display */}

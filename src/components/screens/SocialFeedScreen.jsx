@@ -341,6 +341,565 @@ function SuggestedPosts({ posts, following, currentUser, onViewUser, onDetail, r
   );
 }
 
+// Improvement v3-1: Story creation with timer
+function StoryCreator({ onCreateStory, onClose }) {
+  const [storyText, setStoryText] = useState('');
+  const [duration, setDuration] = useState(24); // hours
+  const [bgColor, setBgColor] = useState('#0ea5e9');
+  const colors = ['#0ea5e9', '#8b5cf6', '#ef4444', '#22c55e', '#f59e0b', '#ec4899', '#14b8a6'];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] font-bold font-mono text-gs-dim tracking-wider uppercase">Create Story</span>
+        <button onClick={onClose} className="text-gs-dim text-xs bg-transparent border-none cursor-pointer hover:text-gs-muted">&times;</button>
+      </div>
+      <div className="rounded-xl p-6 mb-3 min-h-[120px] flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${bgColor}, ${bgColor}88)` }}>
+        <textarea
+          value={storyText}
+          onChange={e => setStoryText(e.target.value)}
+          placeholder="What's on your mind?"
+          className="w-full bg-transparent border-none text-white text-center text-sm font-bold outline-none resize-none"
+          rows={3}
+        />
+      </div>
+      <div className="flex gap-1.5 mb-3">
+        {colors.map(c => (
+          <button
+            key={c}
+            onClick={() => setBgColor(c)}
+            className={`w-6 h-6 rounded-full border-2 cursor-pointer transition-transform ${bgColor === c ? 'border-white scale-110' : 'border-transparent'}`}
+            style={{ background: c }}
+          />
+        ))}
+      </div>
+      <div className="flex items-center gap-3 mb-3">
+        <span className="text-[10px] text-gs-dim font-mono">Expires in:</span>
+        {[6, 12, 24, 48].map(h => (
+          <button
+            key={h}
+            onClick={() => setDuration(h)}
+            className={`px-2 py-1 rounded text-[10px] font-mono border cursor-pointer transition-colors ${duration === h ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim'}`}
+          >
+            {h}h
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={() => { onCreateStory?.({ text: storyText, bgColor, duration }); onClose(); }}
+        disabled={!storyText.trim()}
+        className={`w-full py-2 rounded-lg text-xs font-bold ${storyText.trim() ? 'gs-btn-gradient text-white cursor-pointer' : 'bg-[#1a1a1a] text-gs-dim cursor-default'}`}
+      >
+        Share Story ({duration}h)
+      </button>
+    </div>
+  );
+}
+
+// Improvement v3-2: Story viewer with progress bar
+function StoryViewer({ story, onClose, onNext, onPrev, totalStories, currentIndex }) {
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setProgress(prev => {
+        if (prev >= 100) {
+          onNext?.();
+          return 0;
+        }
+        return prev + 2;
+      });
+    }, 100);
+    return () => clearInterval(timer);
+  }, [story, onNext]);
+
+  if (!story) return null;
+
+  const sp = getProfile(story.user);
+
+  return (
+    <div className="fixed inset-0 bg-black/90 z-[200] flex items-center justify-center">
+      <div className="w-full max-w-sm mx-auto relative">
+        {/* Progress bars */}
+        <div className="flex gap-1 px-3 pt-3 mb-3">
+          {Array.from({ length: totalStories }, (_, i) => (
+            <div key={i} className="flex-1 h-0.5 bg-white/20 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-white rounded-full transition-all duration-100"
+                style={{ width: i < currentIndex ? '100%' : i === currentIndex ? `${progress}%` : '0%' }}
+              />
+            </div>
+          ))}
+        </div>
+        {/* User info */}
+        <div className="flex items-center gap-2 px-3 mb-3">
+          <Avatar username={story.user} size={28} />
+          <span className="text-xs font-bold text-white">{sp.displayName}</span>
+          <span className="text-[10px] text-white/50 font-mono">{story.timeAgo || 'now'}</span>
+        </div>
+        {/* Story content */}
+        <div
+          className="rounded-xl p-8 min-h-[300px] flex items-center justify-center mx-3"
+          style={{ background: `linear-gradient(135deg, ${story.bgColor || '#0ea5e9'}, ${story.bgColor || '#0ea5e9'}88)` }}
+        >
+          <p className="text-white text-center text-lg font-bold">{story.text || story.caption}</p>
+        </div>
+        {/* Nav buttons */}
+        <button onClick={onPrev} className="absolute left-0 top-1/2 -translate-y-1/2 w-12 h-full bg-transparent border-none cursor-pointer" />
+        <button onClick={onNext} className="absolute right-0 top-1/2 -translate-y-1/2 w-12 h-full bg-transparent border-none cursor-pointer" />
+        <button onClick={onClose} className="absolute top-3 right-3 text-white/70 text-lg bg-transparent border-none cursor-pointer hover:text-white">&times;</button>
+      </div>
+    </div>
+  );
+}
+
+// Improvement v3-3: Post boost/promote feature
+function PostBoostPanel({ post, onBoost, onClose }) {
+  const [boostLevel, setBoostLevel] = useState('standard');
+  const boostOptions = [
+    { id: 'standard', label: 'Standard', reach: '2x', desc: 'Double your post reach', cost: 50 },
+    { id: 'enhanced', label: 'Enhanced', reach: '5x', desc: 'Show to genre enthusiasts', cost: 120 },
+    { id: 'spotlight', label: 'Spotlight', reach: '10x', desc: 'Featured in trending', cost: 250 },
+  ];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] font-bold font-mono text-gs-dim tracking-wider uppercase">Boost Post</span>
+        <button onClick={onClose} className="text-gs-dim text-xs bg-transparent border-none cursor-pointer">&times;</button>
+      </div>
+      <div className="space-y-2 mb-3">
+        {boostOptions.map(opt => (
+          <button
+            key={opt.id}
+            onClick={() => setBoostLevel(opt.id)}
+            className={`w-full text-left p-3 rounded-lg border transition-colors cursor-pointer ${boostLevel === opt.id ? 'bg-gs-accent/10 border-gs-accent/40' : 'bg-[#111] border-gs-border hover:border-[#333]'}`}
+          >
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-[11px] font-bold text-gs-text">{opt.label}</span>
+              <span className="text-[10px] font-mono text-gs-accent">{opt.reach} reach</span>
+            </div>
+            <div className="text-[10px] text-gs-dim">{opt.desc}</div>
+            <div className="text-[9px] text-amber-400 font-mono mt-1">{opt.cost} pts</div>
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={() => { onBoost?.(post.id, boostLevel); onClose(); }}
+        className="w-full py-2 rounded-lg text-xs font-bold gs-btn-gradient text-white cursor-pointer"
+      >
+        Boost Now
+      </button>
+    </div>
+  );
+}
+
+// Improvement v3-4: Community spotlight feature
+function CommunitySpotlight({ posts, onViewUser }) {
+  const spotlight = useMemo(() => {
+    const userEngagement = {};
+    posts.forEach(p => {
+      if (!userEngagement[p.user]) userEngagement[p.user] = { user: p.user, posts: 0, likes: 0, comments: 0 };
+      userEngagement[p.user].posts++;
+      userEngagement[p.user].likes += (p.likes || 0);
+      userEngagement[p.user].comments += (p.comments || []).length;
+    });
+    return Object.values(userEngagement)
+      .map(u => ({ ...u, score: u.posts * 3 + u.likes * 2 + u.comments }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+  }, [posts]);
+
+  if (spotlight.length === 0) return null;
+
+  return (
+    <div className="bg-gradient-to-r from-amber-500/5 to-transparent border border-amber-500/20 rounded-xl p-3 mb-4">
+      <div className="flex items-center gap-1.5 mb-2.5">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="#fbbf24" stroke="#fbbf24" strokeWidth="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        <span className="text-[10px] font-bold font-mono text-amber-400 tracking-wider uppercase">Community Spotlight</span>
+      </div>
+      <div className="space-y-2">
+        {spotlight.map((s, i) => {
+          const sp = getProfile(s.user);
+          return (
+            <div key={s.user} className="flex items-center gap-2.5 cursor-pointer hover:bg-[#111] rounded-lg p-1.5 -m-1 transition-colors" onClick={() => onViewUser(s.user)}>
+              <span className="text-[10px] font-extrabold font-mono text-amber-400 w-4">#{i + 1}</span>
+              <Avatar username={s.user} size={24} />
+              <div className="flex-1 min-w-0">
+                <span className="text-[11px] font-semibold text-gs-muted">{sp.displayName}</span>
+                <div className="text-[9px] text-gs-faint font-mono">{s.posts} posts / {s.likes} likes</div>
+              </div>
+              <span className="text-[9px] font-mono text-amber-400">{s.score} pts</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Improvement v3-5: Post series/thread support
+function PostThreadIndicator({ post, posts, onViewThread }) {
+  if (!post.threadId) return null;
+  const threadPosts = posts.filter(p => p.threadId === post.threadId).sort((a, b) => a.createdAt - b.createdAt);
+  const idx = threadPosts.findIndex(p => p.id === post.id);
+
+  return (
+    <div className="flex items-center gap-2 mb-2 px-1">
+      <div className="w-0.5 h-4 bg-gs-accent/30 rounded-full" />
+      <span className="text-[9px] font-mono text-gs-accent">
+        Thread ({idx + 1}/{threadPosts.length})
+      </span>
+      <button
+        onClick={() => onViewThread?.(post.threadId)}
+        className="text-[9px] text-gs-accent/70 bg-transparent border border-gs-accent/20 rounded px-1.5 py-0.5 cursor-pointer hover:bg-gs-accent/10 transition-colors"
+      >
+        View full thread
+      </button>
+    </div>
+  );
+}
+
+// Improvement v3-6: Vinyl challenge of the week
+function VinylChallengeOfTheWeek() {
+  const challenges = [
+    { week: 'This Week', title: 'Deep Cuts Only', desc: 'Share your favorite non-single album track', icon: '🎯', participants: 47 },
+    { week: 'Next Week', title: 'First Pressing Friday', desc: 'Show off your oldest first pressing', icon: '💎', participants: 0 },
+  ];
+
+  return (
+    <div className="bg-gradient-to-r from-violet-500/5 to-transparent border border-violet-500/20 rounded-xl p-3 mb-4">
+      <div className="text-[10px] font-bold font-mono text-violet-400 tracking-wider uppercase mb-2.5">Vinyl Challenge of the Week</div>
+      {challenges.map((c, i) => (
+        <div key={i} className={`flex items-center gap-3 p-2 rounded-lg ${i === 0 ? 'bg-violet-500/5 border border-violet-500/10' : 'opacity-50'} ${i > 0 ? 'mt-2' : ''}`}>
+          <span className="text-xl">{c.icon}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold text-gs-text">{c.title}</span>
+              <span className="text-[8px] font-mono text-gs-faint uppercase">{c.week}</span>
+            </div>
+            <div className="text-[10px] text-gs-dim">{c.desc}</div>
+          </div>
+          {c.participants > 0 && (
+            <span className="text-[9px] font-mono text-violet-400">{c.participants} joined</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Improvement v3-7: Genre spotlight rotation
+function GenreSpotlightRotation({ posts }) {
+  const genreData = useMemo(() => {
+    const genres = {};
+    posts.forEach(p => {
+      if (p.taggedRecord?.genre) {
+        const g = p.taggedRecord.genre;
+        if (!genres[g]) genres[g] = { genre: g, count: 0, topPost: null };
+        genres[g].count++;
+        if (!genres[g].topPost || (p.likes || 0) > (genres[g].topPost.likes || 0)) genres[g].topPost = p;
+      }
+    });
+    // Also scan hashtags for genre-related mentions
+    const genreKeywords = { '#jazz': 'Jazz', '#rock': 'Rock', '#hiphop': 'Hip-Hop', '#electronic': 'Electronic', '#soul': 'Soul', '#funk': 'Funk', '#punk': 'Punk' };
+    posts.forEach(p => {
+      const hashtags = (p.caption || '').match(/#\w+/g) || [];
+      hashtags.forEach(tag => {
+        const mapped = genreKeywords[tag.toLowerCase()];
+        if (mapped) {
+          if (!genres[mapped]) genres[mapped] = { genre: mapped, count: 0, topPost: null };
+          genres[mapped].count++;
+        }
+      });
+    });
+    return Object.values(genres).sort((a, b) => b.count - a.count).slice(0, 5);
+  }, [posts]);
+
+  if (genreData.length === 0) return null;
+
+  const spotlightGenre = genreData[0];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+      <div className="text-[10px] font-bold font-mono text-gs-dim tracking-wider uppercase mb-2">Genre Spotlight</div>
+      <div className="flex items-center gap-3 p-2 bg-[#111] rounded-lg border border-[#1a1a1a] mb-2">
+        <div className="w-10 h-10 rounded-lg bg-gs-accent/10 flex items-center justify-center text-lg font-bold text-gs-accent">
+          {spotlightGenre.genre.charAt(0)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-bold text-gs-text">{spotlightGenre.genre}</div>
+          <div className="text-[10px] text-gs-dim">{spotlightGenre.count} posts this week</div>
+        </div>
+      </div>
+      <div className="flex gap-1.5 flex-wrap">
+        {genreData.slice(1).map(g => (
+          <span key={g.genre} className="text-[10px] px-2 py-0.5 rounded-full bg-[#111] border border-gs-border text-gs-muted font-mono">
+            {g.genre} ({g.count})
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Improvement v3-8: User spotlight feature
+function UserSpotlight({ posts, currentUser, onViewUser }) {
+  const spotlightUser = useMemo(() => {
+    const weekAgo = Date.now() - 7 * 86400000;
+    const recentPosts = posts.filter(p => p.createdAt >= weekAgo && p.user !== currentUser);
+    const userScores = {};
+    recentPosts.forEach(p => {
+      if (!userScores[p.user]) userScores[p.user] = { user: p.user, posts: 0, totalLikes: 0 };
+      userScores[p.user].posts++;
+      userScores[p.user].totalLikes += (p.likes || 0);
+    });
+    const candidates = Object.values(userScores).filter(u => u.posts >= 2);
+    if (candidates.length === 0) return null;
+    return candidates.sort((a, b) => b.totalLikes - a.totalLikes)[0];
+  }, [posts, currentUser]);
+
+  if (!spotlightUser) return null;
+
+  const sp = getProfile(spotlightUser.user);
+
+  return (
+    <div className="bg-gradient-to-r from-cyan-500/5 to-transparent border border-cyan-500/20 rounded-xl p-3 mb-4">
+      <div className="text-[10px] font-bold font-mono text-cyan-400 tracking-wider uppercase mb-2">User of the Week</div>
+      <div className="flex items-center gap-3 cursor-pointer" onClick={() => onViewUser(spotlightUser.user)}>
+        <Avatar username={spotlightUser.user} size={40} />
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-bold text-gs-text">{sp.displayName}</div>
+          <div className="text-[10px] text-gs-dim">@{spotlightUser.user}</div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] font-mono text-cyan-400">{spotlightUser.posts} posts</div>
+          <div className="text-[9px] font-mono text-gs-faint">{spotlightUser.totalLikes} likes earned</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Improvement v3-9: Post approval workflow for community mods
+function ModApprovalQueue({ posts, currentUser, onApprovePost, onRejectPost }) {
+  const [showQueue, setShowQueue] = useState(false);
+  const pendingPosts = posts.filter(p => p.status === 'pending_review');
+
+  if (pendingPosts.length === 0) return null;
+
+  return (
+    <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-3 mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span className="text-[10px] font-bold font-mono text-amber-400 tracking-wider uppercase">Mod Queue ({pendingPosts.length})</span>
+        </div>
+        <button onClick={() => setShowQueue(!showQueue)} className="text-[10px] text-amber-400 bg-transparent border border-amber-500/30 rounded px-2 py-0.5 cursor-pointer hover:bg-amber-500/10">
+          {showQueue ? 'Hide' : 'Review'}
+        </button>
+      </div>
+      {showQueue && (
+        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+          {pendingPosts.map(p => {
+            const sp = getProfile(p.user);
+            return (
+              <div key={p.id} className="bg-[#111] border border-[#1a1a1a] rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Avatar username={p.user} size={20} />
+                  <span className="text-[11px] font-bold text-gs-muted">{sp.displayName}</span>
+                  <span className="text-[9px] text-gs-faint font-mono">{p.timeAgo}</span>
+                </div>
+                <p className="text-[10px] text-gs-dim line-clamp-2 mb-2">{p.caption}</p>
+                <div className="flex gap-2">
+                  <button onClick={() => onApprovePost?.(p.id)} className="px-3 py-1 rounded text-[10px] font-semibold bg-green-500/10 border border-green-500/30 text-green-400 cursor-pointer hover:bg-green-500/20">Approve</button>
+                  <button onClick={() => onRejectPost?.(p.id)} className="px-3 py-1 rounded text-[10px] font-semibold bg-red-500/10 border border-red-500/30 text-red-400 cursor-pointer hover:bg-red-500/20">Reject</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Improvement v3-10: Content recommendation explanations
+function RecommendationExplanation({ post, following, currentUser }) {
+  if (post.user === currentUser || following.includes(post.user)) return null;
+  const reasons = [];
+  if ((post.likes || 0) >= 10) reasons.push('Popular in the community');
+  if (post.taggedRecord) reasons.push(`Based on your interest in ${post.taggedRecord.genre || 'music'}`);
+  if ((post.comments || []).length >= 5) reasons.push('Highly discussed');
+  if (reasons.length === 0) reasons.push('Suggested for you');
+
+  return (
+    <div className="flex items-center gap-1.5 mb-2 px-1">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+      <span className="text-[9px] text-gs-faint font-mono">{reasons[0]}</span>
+    </div>
+  );
+}
+
+// Improvement v3-11: Social feed stats dashboard
+function FeedStatsDashboard({ posts, currentUser, onClose }) {
+  const stats = useMemo(() => {
+    const myPosts = posts.filter(p => p.user === currentUser);
+    const totalLikesReceived = myPosts.reduce((s, p) => s + (p.likes || 0), 0);
+    const totalCommentsReceived = myPosts.reduce((s, p) => s + (p.comments || []).length, 0);
+    const totalLikesGiven = posts.filter(p => p.liked).length;
+    const totalBookmarks = posts.filter(p => p.bookmarked).length;
+    const topPost = myPosts.sort((a, b) => (b.likes || 0) - (a.likes || 0))[0];
+    const postsByDay = {};
+    myPosts.forEach(p => {
+      const day = new Date(p.createdAt).toLocaleDateString('en-US', { weekday: 'short' });
+      postsByDay[day] = (postsByDay[day] || 0) + 1;
+    });
+    return { myPosts: myPosts.length, totalLikesReceived, totalCommentsReceived, totalLikesGiven, totalBookmarks, topPost, postsByDay };
+  }, [posts, currentUser]);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] font-bold font-mono text-gs-dim tracking-wider uppercase">Feed Stats</span>
+        <button onClick={onClose} className="text-gs-dim text-xs bg-transparent border-none cursor-pointer">&times;</button>
+      </div>
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="bg-[#111] rounded-lg p-2.5 text-center">
+          <div className="text-lg font-extrabold text-gs-accent">{stats.myPosts}</div>
+          <div className="text-[9px] text-gs-faint font-mono">Posts</div>
+        </div>
+        <div className="bg-[#111] rounded-lg p-2.5 text-center">
+          <div className="text-lg font-extrabold text-red-400">{stats.totalLikesReceived}</div>
+          <div className="text-[9px] text-gs-faint font-mono">Likes Rcvd</div>
+        </div>
+        <div className="bg-[#111] rounded-lg p-2.5 text-center">
+          <div className="text-lg font-extrabold text-violet-400">{stats.totalCommentsReceived}</div>
+          <div className="text-[9px] text-gs-faint font-mono">Comments</div>
+        </div>
+      </div>
+      <div className="flex justify-between text-[10px] text-gs-dim font-mono px-1">
+        <span>Likes given: {stats.totalLikesGiven}</span>
+        <span>Bookmarks: {stats.totalBookmarks}</span>
+      </div>
+      {stats.topPost && (
+        <div className="mt-2 p-2 bg-[#111] rounded-lg border border-[#1a1a1a]">
+          <div className="text-[9px] text-gs-faint font-mono uppercase mb-1">Top Post</div>
+          <p className="text-[10px] text-gs-muted line-clamp-1">{stats.topPost.caption}</p>
+          <span className="text-[9px] text-gs-accent font-mono">{stats.topPost.likes} likes</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Improvement v3-12: Post bookmark collections
+function BookmarkCollections({ bookmarkedPosts, collections, onMoveToCollection, onCreateCollection, onClose }) {
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] font-bold font-mono text-gs-dim tracking-wider uppercase">Bookmark Collections</span>
+        <div className="flex items-center gap-2">
+          <button onClick={onCreateCollection} className="text-[10px] text-gs-accent bg-transparent border border-gs-accent/30 rounded px-2 py-0.5 cursor-pointer hover:bg-gs-accent/10">+ New</button>
+          <button onClick={onClose} className="text-gs-dim text-xs bg-transparent border-none cursor-pointer">&times;</button>
+        </div>
+      </div>
+      <div className="space-y-2 mb-3">
+        {collections.map(c => (
+          <div key={c.id} className="flex items-center justify-between p-2.5 bg-[#111] rounded-lg border border-[#1a1a1a]">
+            <div>
+              <div className="text-[11px] font-bold text-gs-text">{c.name}</div>
+              <span className="text-[9px] text-gs-faint font-mono">{c.postCount || 0} posts</span>
+            </div>
+          </div>
+        ))}
+        {collections.length === 0 && (
+          <p className="text-[10px] text-gs-faint text-center py-2">No collections yet. Create one to organize bookmarks.</p>
+        )}
+      </div>
+      <div className="text-[10px] text-gs-dim font-mono">{bookmarkedPosts.length} bookmarked post{bookmarkedPosts.length !== 1 ? 's' : ''} total</div>
+    </div>
+  );
+}
+
+// Improvement v3-13: Feed customization wizard
+function FeedCustomizationWizard({ onSave, onClose }) {
+  const [step, setStep] = useState(0);
+  const [selectedGenres, setSelectedGenres] = useState([]);
+  const [selectedContentTypes, setSelectedContentTypes] = useState([]);
+  const [showNewOnly, setShowNewOnly] = useState(false);
+
+  const genres = ['Rock', 'Jazz', 'Electronic', 'Hip-Hop', 'Metal', 'Pop', 'Punk', 'R&B', 'Soul', 'Folk', 'Classical', 'Funk'];
+  const contentTypes = ['Reviews', 'Discussions', 'Photos', 'Trades', 'Polls', 'Events', 'Questions'];
+
+  const toggleGenre = (g) => setSelectedGenres(prev => prev.includes(g) ? prev.filter(x => x !== g) : [...prev, g]);
+  const toggleType = (t) => setSelectedContentTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-xl p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] font-bold font-mono text-gs-dim tracking-wider uppercase">Customize Your Feed</span>
+        <button onClick={onClose} className="text-gs-dim text-xs bg-transparent border-none cursor-pointer">&times;</button>
+      </div>
+      {/* Step indicators */}
+      <div className="flex gap-2 mb-4">
+        {['Genres', 'Content', 'Preferences'].map((s, i) => (
+          <div key={s} className={`flex-1 text-center py-1 rounded text-[10px] font-mono ${step === i ? 'bg-gs-accent/15 text-gs-accent border border-gs-accent/30' : 'bg-[#111] text-gs-faint border border-gs-border'}`}>
+            {s}
+          </div>
+        ))}
+      </div>
+      {step === 0 && (
+        <div>
+          <p className="text-[10px] text-gs-dim mb-2">Select genres you want to see more of:</p>
+          <div className="flex flex-wrap gap-1.5">
+            {genres.map(g => (
+              <button key={g} onClick={() => toggleGenre(g)} className={`px-2.5 py-1 rounded-full text-[10px] font-mono border cursor-pointer transition-colors ${selectedGenres.includes(g) ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim'}`}>
+                {g}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {step === 1 && (
+        <div>
+          <p className="text-[10px] text-gs-dim mb-2">What types of posts interest you?</p>
+          <div className="flex flex-wrap gap-1.5">
+            {contentTypes.map(t => (
+              <button key={t} onClick={() => toggleType(t)} className={`px-2.5 py-1 rounded-full text-[10px] font-mono border cursor-pointer transition-colors ${selectedContentTypes.includes(t) ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim'}`}>
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {step === 2 && (
+        <div className="space-y-3">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={showNewOnly} onChange={e => setShowNewOnly(e.target.checked)} className="accent-gs-accent w-3.5 h-3.5" />
+            <span className="text-[11px] text-gs-muted">Only show posts from the last 7 days</span>
+          </label>
+          <div className="p-2 bg-[#111] rounded-lg border border-gs-border">
+            <div className="text-[10px] text-gs-dim font-mono mb-1">Summary:</div>
+            <div className="text-[10px] text-gs-muted">{selectedGenres.length} genres, {selectedContentTypes.length} content types{showNewOnly ? ', recent only' : ''}</div>
+          </div>
+        </div>
+      )}
+      <div className="flex justify-between mt-4">
+        <button onClick={() => step > 0 ? setStep(step - 1) : onClose()} className="text-[10px] text-gs-dim bg-transparent border border-gs-border rounded px-3 py-1.5 cursor-pointer hover:border-[#333]">
+          {step === 0 ? 'Cancel' : 'Back'}
+        </button>
+        <button
+          onClick={() => step < 2 ? setStep(step + 1) : (() => { onSave?.({ selectedGenres, selectedContentTypes, showNewOnly }); onClose(); })()}
+          className="text-[10px] font-semibold gs-btn-gradient text-white rounded px-3 py-1.5 cursor-pointer"
+        >
+          {step < 2 ? 'Next' : 'Save Preferences'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Improvement 24: New posts notification bar
 function NewPostsBar({ count, onRefresh }) {
   if (!count || count <= 0) return null;
@@ -784,7 +1343,7 @@ function TrendingCard({ post, rank, onViewUser, onDetail, records }) {
 }
 
 // ── Post Card sub-component ──────────────────────────────────────────────────
-function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBookmarkPost, onViewUser, onViewArtist, onDetail, records, showAnalytics, density, onPinPost, onRepost, showReportedContent }) {
+function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBookmarkPost, onViewUser, onViewArtist, onDetail, records, showAnalytics, density, onPinPost, onRepost, showReportedContent, posts, following, onBoostPost }) {
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentText, setCommentText] = useState("");
   const [showAllComments, setShowAllComments] = useState(false);
@@ -792,6 +1351,7 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
   const [doubleTapHeart, setDoubleTapHeart] = useState(false);
   const [showCrossShare, setShowCrossShare] = useState(false);
   const [showCW, setShowCW] = useState(!!post.contentWarning);
+  const [showBoost, setShowBoost] = useState(false);
   const inputRef = useRef(null);
   const lastTapRef = useRef(0);
 
@@ -859,6 +1419,12 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
     >
       {/* Accent bar */}
       <div className="h-0.5" style={{ background: `linear-gradient(90deg,${accent},transparent)` }} />
+
+      {/* v3-10: Content recommendation explanation */}
+      <RecommendationExplanation post={post} following={following || []} currentUser={currentUser} />
+
+      {/* v3-5: Post series/thread indicator */}
+      <PostThreadIndicator post={post} posts={posts || []} onViewThread={(threadId) => window.alert(`View thread ${threadId}`)} />
 
       {/* Improvement 5: Pinned post indicator */}
       {post.pinned && (
@@ -1202,15 +1768,34 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
               )}
             </div>
           </div>
-          {/* Bookmark */}
-          <button
-            onClick={() => onBookmarkPost(post.id)}
-            className={`bg-transparent border-none cursor-pointer transition-all duration-200 ${post.bookmarked ? 'text-[#f59e0b]' : 'text-gs-dim'}`}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill={post.bookmarked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
-              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-3">
+            {/* v3-3: Boost button (own posts) */}
+            {post.user === currentUser && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowBoost(!showBoost)}
+                  className={`flex items-center gap-[5px] bg-transparent border-none cursor-pointer text-xs font-semibold transition-colors ${showBoost ? 'text-amber-400' : 'text-gs-dim hover:text-amber-400'}`}
+                  title="Boost post"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                </button>
+                {showBoost && (
+                  <div className="absolute bottom-full right-0 mb-2 z-20 min-w-[250px]">
+                    <PostBoostPanel post={post} onBoost={onBoostPost} onClose={() => setShowBoost(false)} />
+                  </div>
+                )}
+              </div>
+            )}
+            {/* Bookmark */}
+            <button
+              onClick={() => onBookmarkPost(post.id)}
+              className={`bg-transparent border-none cursor-pointer transition-all duration-200 ${post.bookmarked ? 'text-[#f59e0b]' : 'text-gs-dim'}`}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill={post.bookmarked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Inline comment preview */}
@@ -1317,6 +1902,14 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
   const [expirationHours, setExpirationHours] = useState('');
   const [altText, setAltText] = useState('');
   const composerRef = useRef(null);
+  // v3 Improvement states
+  const [showStoryCreator, setShowStoryCreator] = useState(false);
+  const [viewingStory, setViewingStory] = useState(null);
+  const [storyViewIndex, setStoryViewIndex] = useState(0);
+  const [showBoostPanel, setShowBoostPanel] = useState(null);
+  const [showFeedStats, setShowFeedStats] = useState(false);
+  const [showBookmarkCollections, setShowBookmarkCollections] = useState(false);
+  const [showFeedWizard, setShowFeedWizard] = useState(false);
 
   const sentinelRef = useRef(null);
 
@@ -1580,6 +2173,39 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
   // Density settings
   const densityConfig = FEED_DENSITIES.find(d => d.id === feedDensity) || FEED_DENSITIES[1];
 
+  // v3: Story viewing helpers
+  const storyUsers = useMemo(() => {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const userStories = {};
+    posts.forEach(p => {
+      if (p.createdAt >= cutoff && !userStories[p.user]) {
+        userStories[p.user] = p;
+      }
+    });
+    return Object.values(userStories);
+  }, [posts]);
+
+  const handleViewStory = useCallback((user) => {
+    const idx = storyUsers.findIndex(s => s.user === user);
+    if (idx >= 0) { setViewingStory(storyUsers[idx]); setStoryViewIndex(idx); }
+  }, [storyUsers]);
+
+  const handleNextStory = useCallback(() => {
+    if (storyViewIndex < storyUsers.length - 1) {
+      setStoryViewIndex(storyViewIndex + 1);
+      setViewingStory(storyUsers[storyViewIndex + 1]);
+    } else {
+      setViewingStory(null);
+    }
+  }, [storyViewIndex, storyUsers]);
+
+  const handlePrevStory = useCallback(() => {
+    if (storyViewIndex > 0) {
+      setStoryViewIndex(storyViewIndex - 1);
+      setViewingStory(storyUsers[storyViewIndex - 1]);
+    }
+  }, [storyViewIndex, storyUsers]);
+
   // Trending topic click -> set search query
   const handleTopicClick = (topic) => {
     setQ(topic.startsWith('#') ? topic : topic);
@@ -1592,6 +2218,18 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
+      {/* v3-2: Story Viewer overlay */}
+      {viewingStory && (
+        <StoryViewer
+          story={viewingStory}
+          onClose={() => setViewingStory(null)}
+          onNext={handleNextStory}
+          onPrev={handlePrevStory}
+          totalStories={storyUsers.length}
+          currentIndex={storyViewIndex}
+        />
+      )}
+
       {/* Improvement 23: Pull-to-refresh indicator */}
       {isRefreshing && (
         <div className="flex justify-center py-3 mb-2">
@@ -1708,6 +2346,41 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
       {/* Live Listening */}
       <LiveListening posts={posts} records={records} onViewUser={onViewUser} />
 
+      {/* v3-1: Story Creator */}
+      {showStoryCreator && (
+        <StoryCreator onCreateStory={(data) => onCreatePost?.({ ...data, isStory: true })} onClose={() => setShowStoryCreator(false)} />
+      )}
+
+      {/* v3-4: Community Spotlight */}
+      <CommunitySpotlight posts={posts} onViewUser={onViewUser} />
+
+      {/* v3-6: Vinyl Challenge of the Week */}
+      <VinylChallengeOfTheWeek />
+
+      {/* v3-7: Genre Spotlight Rotation */}
+      <GenreSpotlightRotation posts={posts} />
+
+      {/* v3-8: User Spotlight */}
+      <UserSpotlight posts={posts} currentUser={currentUser} onViewUser={onViewUser} />
+
+      {/* v3-9: Mod Approval Queue */}
+      <ModApprovalQueue posts={posts} currentUser={currentUser} onApprovePost={(id) => window.alert(`Post ${id} approved`)} onRejectPost={(id) => window.alert(`Post ${id} rejected`)} />
+
+      {/* v3-11: Feed Stats Dashboard */}
+      {showFeedStats && (
+        <FeedStatsDashboard posts={posts} currentUser={currentUser} onClose={() => setShowFeedStats(false)} />
+      )}
+
+      {/* v3-12: Bookmark Collections */}
+      {showBookmarkCollections && (
+        <BookmarkCollections bookmarkedPosts={savedPosts} collections={collections} onMoveToCollection={() => {}} onCreateCollection={createCollection} onClose={() => setShowBookmarkCollections(false)} />
+      )}
+
+      {/* v3-13: Feed Customization Wizard */}
+      {showFeedWizard && (
+        <FeedCustomizationWizard onSave={(prefs) => { try { localStorage.setItem('gs_feed_prefs', JSON.stringify(prefs)); } catch {} }} onClose={() => setShowFeedWizard(false)} />
+      )}
+
       {/* Improvement 15: Trending topics sidebar */}
       <TrendingTopicsSidebar posts={posts} onTopicClick={handleTopicClick} />
 
@@ -1769,6 +2442,34 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
           className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showCollections ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
         >
           Collections
+        </button>
+        {/* v3-1: Story Creator toggle */}
+        <button
+          onClick={() => setShowStoryCreator(!showStoryCreator)}
+          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showStoryCreator ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+        >
+          Story
+        </button>
+        {/* v3-11: Feed Stats toggle */}
+        <button
+          onClick={() => setShowFeedStats(!showFeedStats)}
+          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showFeedStats ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+        >
+          Stats
+        </button>
+        {/* v3-12: Bookmark Collections toggle */}
+        <button
+          onClick={() => setShowBookmarkCollections(!showBookmarkCollections)}
+          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showBookmarkCollections ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+        >
+          Bookmarks
+        </button>
+        {/* v3-13: Feed Wizard toggle */}
+        <button
+          onClick={() => setShowFeedWizard(!showFeedWizard)}
+          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showFeedWizard ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+        >
+          Customize
         </button>
       </div>
       {showChallenges && <CommunityChallenges />}
@@ -2044,6 +2745,9 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
               onPinPost={handlePinPost}
               onRepost={handleRepost}
               showReportedContent={showReportedContent}
+              posts={posts}
+              following={following}
+              onBoostPost={(postId, level) => window.alert(`Post ${postId} boosted to ${level}!`)}
             />
           ))}
 

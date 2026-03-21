@@ -9698,6 +9698,1148 @@ app.get('/api/rate-limit/status', (req, res) => {
   });
 });
 
+// ── Feature F41: Seller Dashboard Overview ────────────────────────────────────
+
+// GET /api/marketplace/seller-dashboard/:sellerId — comprehensive seller overview
+app.get('/api/marketplace/seller-dashboard/:sellerId', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const sellerId = parseInt(req.params.sellerId);
+    if (req.user.id !== sellerId) return res.status(403).json({ error: 'Access denied' });
+
+    const [listings, sales, revenue, ratings, recentOrders] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE for_sale = true) as active,
+                COUNT(*) FILTER (WHERE for_sale = false) as sold
+         FROM records WHERE user_id = $1`, [sellerId]
+      ),
+      pool.query(
+        `SELECT COUNT(*) as total_sales,
+                COUNT(*) FILTER (WHERE created_at >= now() - interval '30 days') as last_30_days,
+                COUNT(*) FILTER (WHERE created_at >= now() - interval '7 days') as last_7_days
+         FROM purchases WHERE seller_id = $1 AND status IN ('completed', 'paid')`, [sellerId]
+      ),
+      pool.query(
+        `SELECT COALESCE(SUM(amount), 0) as total_revenue,
+                COALESCE(SUM(amount) FILTER (WHERE created_at >= now() - interval '30 days'), 0) as revenue_30d,
+                COALESCE(SUM(amount) FILTER (WHERE created_at >= now() - interval '7 days'), 0) as revenue_7d
+         FROM purchases WHERE seller_id = $1 AND status IN ('completed', 'paid')`, [sellerId]
+      ),
+      pool.query(
+        `SELECT COALESCE(AVG(rating), 0) as avg_rating, COUNT(*) as review_count
+         FROM reviews WHERE seller_id = $1`, [sellerId]
+      ),
+      pool.query(
+        `SELECT p.id, p.amount, p.status, p.created_at, r.title, r.artist
+         FROM purchases p JOIN records r ON p.record_id = r.id
+         WHERE p.seller_id = $1 ORDER BY p.created_at DESC LIMIT 10`, [sellerId]
+      ),
+    ]);
+
+    res.json({
+      success: true,
+      dashboard: {
+        sellerId,
+        listings: listings.rows[0],
+        sales: sales.rows[0],
+        revenue: {
+          total: parseFloat(revenue.rows[0].total_revenue),
+          last30Days: parseFloat(revenue.rows[0].revenue_30d),
+          last7Days: parseFloat(revenue.rows[0].revenue_7d),
+        },
+        ratings: {
+          average: Math.round(parseFloat(ratings.rows[0].avg_rating) * 100) / 100,
+          count: parseInt(ratings.rows[0].review_count),
+        },
+        recentOrders: recentOrders.rows,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Seller dashboard error:', err.message);
+    res.status(500).json({ error: 'Failed to load seller dashboard' });
+  }
+});
+
+// ── Feature F42: Buyer Dashboard Overview ─────────────────────────────────────
+
+// GET /api/marketplace/buyer-dashboard — buyer purchases, offers, wishlist matches
+app.get('/api/marketplace/buyer-dashboard', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const buyerId = req.user.id;
+
+    const [purchases, activeOffers, wishlistMatches, recentPurchases] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) as total_purchases,
+                COALESCE(SUM(amount), 0) as total_spent,
+                COUNT(*) FILTER (WHERE created_at >= now() - interval '30 days') as purchases_30d
+         FROM purchases WHERE buyer_id = $1 AND status IN ('completed', 'paid')`, [buyerId]
+      ),
+      pool.query(
+        `SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE status = 'pending') as pending
+         FROM offers WHERE buyer_id = $1`, [buyerId]
+      ),
+      pool.query(
+        `SELECT r.id, r.title, r.artist, r.price, r.condition
+         FROM wishlists w JOIN records r ON r.artist ILIKE w.artist AND r.for_sale = true
+         WHERE w.user_id = $1 AND r.user_id != $1
+         ORDER BY r.created_at DESC LIMIT 20`, [buyerId]
+      ),
+      pool.query(
+        `SELECT p.id, p.amount, p.status, p.created_at, r.title, r.artist
+         FROM purchases p JOIN records r ON p.record_id = r.id
+         WHERE p.buyer_id = $1 ORDER BY p.created_at DESC LIMIT 10`, [buyerId]
+      ),
+    ]);
+
+    res.json({
+      success: true,
+      dashboard: {
+        buyerId,
+        purchases: purchases.rows[0],
+        offers: activeOffers.rows[0],
+        wishlistMatches: wishlistMatches.rows,
+        recentPurchases: recentPurchases.rows,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Buyer dashboard error:', err.message);
+    res.status(500).json({ error: 'Failed to load buyer dashboard' });
+  }
+});
+
+// ── Feature F43: Marketplace Search with Faceted Filtering ────────────────────
+
+// GET /api/marketplace/search — full-text search with facets
+app.get('/api/marketplace/search', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const {
+      q = '', genre, condition, minPrice, maxPrice, year, format,
+      sortBy = 'relevance', order = 'desc', page = 1, limit = 25,
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 25));
+    const offset = (pageNum - 1) * limitNum;
+
+    let whereConditions = ['r.for_sale = true'];
+    const params = [];
+    let paramIdx = 0;
+
+    if (q.trim()) {
+      paramIdx++;
+      whereConditions.push(`(r.title ILIKE $${paramIdx} OR r.artist ILIKE $${paramIdx} OR r.label ILIKE $${paramIdx})`);
+      params.push(`%${q.trim()}%`);
+    }
+    if (genre) { paramIdx++; whereConditions.push(`r.genre = $${paramIdx}`); params.push(genre); }
+    if (condition) { paramIdx++; whereConditions.push(`r.condition = $${paramIdx}`); params.push(condition); }
+    if (minPrice) { paramIdx++; whereConditions.push(`r.price >= $${paramIdx}`); params.push(parseFloat(minPrice)); }
+    if (maxPrice) { paramIdx++; whereConditions.push(`r.price <= $${paramIdx}`); params.push(parseFloat(maxPrice)); }
+    if (year) { paramIdx++; whereConditions.push(`r.year = $${paramIdx}`); params.push(parseInt(year)); }
+    if (format) { paramIdx++; whereConditions.push(`r.format = $${paramIdx}`); params.push(format); }
+
+    const whereClause = whereConditions.join(' AND ');
+    const sortMap = {
+      relevance: 'r.created_at',
+      price: 'r.price',
+      date: 'r.created_at',
+      title: 'r.title',
+      artist: 'r.artist',
+    };
+    const sortCol = sortMap[sortBy] || 'r.created_at';
+    const sortOrder = order === 'asc' ? 'ASC' : 'DESC';
+
+    const [results, total, facets] = await Promise.all([
+      pool.query(
+        `SELECT r.id, r.title, r.artist, r.price, r.condition, r.genre, r.year, r.format, r.cover_url,
+                p.username as seller_username
+         FROM records r LEFT JOIN profiles p ON r.user_id = p.id
+         WHERE ${whereClause} ORDER BY ${sortCol} ${sortOrder} LIMIT $${paramIdx + 1} OFFSET $${paramIdx + 2}`,
+        [...params, limitNum, offset]
+      ),
+      pool.query(`SELECT COUNT(*) as cnt FROM records r WHERE ${whereClause}`, params),
+      pool.query(
+        `SELECT
+           json_agg(DISTINCT genre) FILTER (WHERE genre IS NOT NULL) as genres,
+           json_agg(DISTINCT condition) FILTER (WHERE condition IS NOT NULL) as conditions,
+           json_agg(DISTINCT format) FILTER (WHERE format IS NOT NULL) as formats,
+           MIN(price) as min_price, MAX(price) as max_price
+         FROM records r WHERE r.for_sale = true`
+      ),
+    ]);
+
+    const totalCount = parseInt(total.rows[0].cnt);
+    res.json({
+      success: true,
+      results: results.rows,
+      facets: facets.rows[0],
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limitNum),
+      },
+      query: { q, genre, condition, minPrice, maxPrice, year, format, sortBy, order },
+    });
+  } catch (err) {
+    console.error('Marketplace search error:', err.message);
+    res.status(500).json({ error: 'Search failed' });
+  }
+});
+
+// ── Feature F44: Record Condition Verification Workflow ───────────────────────
+
+const CONDITION_GRADES = ['Mint', 'Near Mint', 'Very Good Plus', 'Very Good', 'Good Plus', 'Good', 'Fair', 'Poor'];
+
+// POST /api/marketplace/condition-verification — submit record for condition verification
+app.post('/api/marketplace/condition-verification', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { recordId, sellerGrade, photos = [], notes = '' } = req.body;
+    if (!recordId || !sellerGrade) return res.status(400).json({ error: 'recordId and sellerGrade required' });
+    if (!CONDITION_GRADES.includes(sellerGrade)) return res.status(400).json({ error: 'Invalid condition grade', validGrades: CONDITION_GRADES });
+
+    const record = await pool.query('SELECT * FROM records WHERE id = $1 AND user_id = $2', [recordId, req.user.id]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found or not owned by you' });
+
+    const result = await pool.query(
+      `INSERT INTO condition_verifications (record_id, seller_id, seller_grade, photos, notes, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, 'pending', now()) RETURNING *`,
+      [recordId, req.user.id, sellerGrade, JSON.stringify(photos), notes]
+    );
+
+    res.status(201).json({ success: true, verification: result.rows[0] });
+  } catch (err) {
+    console.error('Condition verification error:', err.message);
+    res.status(500).json({ error: 'Failed to submit condition verification' });
+  }
+});
+
+// PUT /api/marketplace/condition-verification/:id/review — reviewer grades the record
+app.put('/api/marketplace/condition-verification/:id/review', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const verificationId = parseInt(req.params.id);
+    const { reviewerGrade, reviewerNotes = '' } = req.body;
+    if (!reviewerGrade || !CONDITION_GRADES.includes(reviewerGrade)) {
+      return res.status(400).json({ error: 'Valid reviewerGrade required', validGrades: CONDITION_GRADES });
+    }
+
+    const result = await pool.query(
+      `UPDATE condition_verifications SET reviewer_id = $1, reviewer_grade = $2, reviewer_notes = $3,
+       status = 'reviewed', reviewed_at = now() WHERE id = $4 AND status = 'pending' RETURNING *`,
+      [req.user.id, reviewerGrade, reviewerNotes, verificationId]
+    );
+
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Verification not found or already reviewed' });
+
+    // Update the record's condition to the verified grade
+    await pool.query('UPDATE records SET condition = $1, condition_verified = true WHERE id = $2',
+      [reviewerGrade, result.rows[0].record_id]);
+
+    res.json({ success: true, verification: result.rows[0] });
+  } catch (err) {
+    console.error('Condition review error:', err.message);
+    res.status(500).json({ error: 'Failed to review condition' });
+  }
+});
+
+// ── Feature F45: Automated Price Drop Notifications ───────────────────────────
+
+// POST /api/marketplace/price-watches — watch a record for price drops
+app.post('/api/marketplace/price-watches', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { recordId, targetPrice } = req.body;
+    if (!recordId || !targetPrice || targetPrice <= 0) {
+      return res.status(400).json({ error: 'recordId and targetPrice (> 0) required' });
+    }
+
+    const record = await pool.query('SELECT id, title, artist, price FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+
+    const result = await pool.query(
+      `INSERT INTO price_watches (user_id, record_id, target_price, current_price, status, created_at)
+       VALUES ($1, $2, $3, $4, 'active', now())
+       ON CONFLICT (user_id, record_id) DO UPDATE SET target_price = $3, status = 'active'
+       RETURNING *`,
+      [req.user.id, recordId, targetPrice, record.rows[0].price]
+    );
+
+    res.status(201).json({ success: true, priceWatch: result.rows[0], record: record.rows[0] });
+  } catch (err) {
+    console.error('Price watch error:', err.message);
+    res.status(500).json({ error: 'Failed to create price watch' });
+  }
+});
+
+// GET /api/marketplace/price-watches — get user's price watches with alert status
+app.get('/api/marketplace/price-watches', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      `SELECT pw.*, r.title, r.artist, r.price as current_price, r.for_sale,
+              CASE WHEN r.price <= pw.target_price THEN true ELSE false END as price_met
+       FROM price_watches pw JOIN records r ON pw.record_id = r.id
+       WHERE pw.user_id = $1 AND pw.status = 'active' ORDER BY pw.created_at DESC`,
+      [req.user.id]
+    );
+
+    const alerts = result.rows.filter(pw => pw.price_met);
+    res.json({ success: true, priceWatches: result.rows, alerts, alertCount: alerts.length });
+  } catch (err) {
+    console.error('Price watches error:', err.message);
+    res.status(500).json({ error: 'Failed to load price watches' });
+  }
+});
+
+// ── Feature F46: Seller Vacation Mode ─────────────────────────────────────────
+
+// POST /api/marketplace/sellers/:id/vacation — toggle seller vacation mode
+app.post('/api/marketplace/sellers/:id/vacation', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const sellerId = parseInt(req.params.id);
+    if (req.user.id !== sellerId) return res.status(403).json({ error: 'Access denied' });
+
+    const { enabled, returnDate = null, autoReply = 'Seller is currently on vacation. Orders will resume soon.' } = req.body;
+    if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled (boolean) required' });
+
+    await pool.query(
+      `UPDATE users SET vacation_mode = $1, vacation_return_date = $2, vacation_auto_reply = $3 WHERE id = $4`,
+      [enabled, returnDate, autoReply, sellerId]
+    );
+
+    // Hide/show all listings based on vacation mode
+    if (enabled) {
+      await pool.query(
+        `UPDATE records SET vacation_hidden = true WHERE user_id = $1 AND for_sale = true`, [sellerId]
+      );
+    } else {
+      await pool.query(
+        `UPDATE records SET vacation_hidden = false WHERE user_id = $1`, [sellerId]
+      );
+    }
+
+    const hiddenCount = enabled
+      ? (await pool.query('SELECT COUNT(*) as cnt FROM records WHERE user_id = $1 AND vacation_hidden = true', [sellerId])).rows[0].cnt
+      : 0;
+
+    res.json({
+      success: true,
+      vacationMode: { enabled, returnDate, autoReply, listingsHidden: parseInt(hiddenCount) || 0 },
+    });
+  } catch (err) {
+    console.error('Vacation mode error:', err.message);
+    res.status(500).json({ error: 'Failed to update vacation mode' });
+  }
+});
+
+// ── Feature F47: Bulk Listing Management ──────────────────────────────────────
+
+// POST /api/marketplace/bulk-listings — create or update multiple listings at once
+app.post('/api/marketplace/bulk-listings', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { action, recordIds, updates } = req.body;
+    if (!action || !Array.isArray(recordIds) || recordIds.length === 0) {
+      return res.status(400).json({ error: 'action and recordIds[] required' });
+    }
+    if (recordIds.length > 200) return res.status(400).json({ error: 'Maximum 200 records per bulk operation' });
+
+    const results = { processed: 0, errors: [] };
+
+    if (action === 'activate') {
+      const r = await pool.query(
+        `UPDATE records SET for_sale = true WHERE id = ANY($1) AND user_id = $2 RETURNING id`, [recordIds, req.user.id]
+      );
+      results.processed = r.rowCount;
+    } else if (action === 'deactivate') {
+      const r = await pool.query(
+        `UPDATE records SET for_sale = false WHERE id = ANY($1) AND user_id = $2 RETURNING id`, [recordIds, req.user.id]
+      );
+      results.processed = r.rowCount;
+    } else if (action === 'update_price' && updates?.price) {
+      const r = await pool.query(
+        `UPDATE records SET price = $1 WHERE id = ANY($2) AND user_id = $3 RETURNING id`,
+        [parseFloat(updates.price), recordIds, req.user.id]
+      );
+      results.processed = r.rowCount;
+    } else if (action === 'adjust_price' && updates?.percentChange) {
+      const pct = parseFloat(updates.percentChange);
+      if (pct < -90 || pct > 500) return res.status(400).json({ error: 'percentChange must be between -90 and 500' });
+      const r = await pool.query(
+        `UPDATE records SET price = ROUND((price * (1 + $1 / 100.0))::numeric, 2)
+         WHERE id = ANY($2) AND user_id = $3 AND price > 0 RETURNING id, price`,
+        [pct, recordIds, req.user.id]
+      );
+      results.processed = r.rowCount;
+      results.updatedPrices = r.rows;
+    } else if (action === 'delete') {
+      const r = await pool.query(
+        `DELETE FROM records WHERE id = ANY($1) AND user_id = $2 AND for_sale = false RETURNING id`, [recordIds, req.user.id]
+      );
+      results.processed = r.rowCount;
+    } else {
+      return res.status(400).json({ error: 'Invalid action. Use: activate, deactivate, update_price, adjust_price, delete' });
+    }
+
+    res.json({ success: true, action, results });
+  } catch (err) {
+    console.error('Bulk listing error:', err.message);
+    res.status(500).json({ error: 'Bulk operation failed' });
+  }
+});
+
+// ── Feature F48: Marketplace Categories Management ────────────────────────────
+
+const DEFAULT_CATEGORIES = [
+  { slug: 'rock', name: 'Rock', subcategories: ['Classic Rock', 'Punk', 'Alternative', 'Indie', 'Grunge', 'Psychedelic'] },
+  { slug: 'jazz', name: 'Jazz', subcategories: ['Bebop', 'Fusion', 'Cool Jazz', 'Free Jazz', 'Swing', 'Modal'] },
+  { slug: 'electronic', name: 'Electronic', subcategories: ['House', 'Techno', 'Ambient', 'IDM', 'Drum & Bass', 'Synthwave'] },
+  { slug: 'hip-hop', name: 'Hip-Hop', subcategories: ['Boom Bap', 'Trap', 'Conscious', 'Instrumental', 'Lo-Fi'] },
+  { slug: 'soul-funk', name: 'Soul / Funk', subcategories: ['Northern Soul', 'Deep Funk', 'Neo Soul', 'Motown', 'P-Funk'] },
+  { slug: 'classical', name: 'Classical', subcategories: ['Baroque', 'Romantic', 'Contemporary', 'Opera', 'Chamber Music'] },
+  { slug: 'reggae', name: 'Reggae', subcategories: ['Roots', 'Dub', 'Ska', 'Dancehall', 'Lovers Rock'] },
+  { slug: 'country', name: 'Country', subcategories: ['Outlaw Country', 'Bluegrass', 'Americana', 'Honky Tonk'] },
+  { slug: 'blues', name: 'Blues', subcategories: ['Delta Blues', 'Chicago Blues', 'Electric Blues', 'Boogie'] },
+  { slug: 'world', name: 'World', subcategories: ['Afrobeat', 'Latin', 'Bossa Nova', 'Highlife', 'Cumbia'] },
+];
+
+// GET /api/marketplace/categories — list all categories with listing counts
+app.get('/api/marketplace/categories', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const genreCounts = await pool.query(
+      `SELECT genre, COUNT(*) as listing_count FROM records WHERE for_sale = true AND genre IS NOT NULL GROUP BY genre`
+    );
+    const countMap = {};
+    genreCounts.rows.forEach(r => { countMap[r.genre.toLowerCase()] = parseInt(r.listing_count); });
+
+    const categories = DEFAULT_CATEGORIES.map(cat => ({
+      ...cat,
+      listingCount: countMap[cat.slug] || countMap[cat.name.toLowerCase()] || 0,
+    }));
+
+    const totalListings = Object.values(countMap).reduce((sum, c) => sum + c, 0);
+    res.json({ success: true, categories, totalListings });
+  } catch (err) {
+    console.error('Categories error:', err.message);
+    res.status(500).json({ error: 'Failed to load categories' });
+  }
+});
+
+// ── Feature F49: Seasonal Promotion Scheduler ─────────────────────────────────
+
+// POST /api/marketplace/promotions — schedule a seasonal promotion
+app.post('/api/marketplace/promotions', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { name, discountPercent, startsAt, endsAt, targetGenres = [], targetConditions = [], minPurchaseAmount = 0 } = req.body;
+    if (!name || !discountPercent || !startsAt || !endsAt) {
+      return res.status(400).json({ error: 'name, discountPercent, startsAt, endsAt required' });
+    }
+    if (discountPercent <= 0 || discountPercent > 80) return res.status(400).json({ error: 'discountPercent must be 1-80' });
+    if (new Date(endsAt) <= new Date(startsAt)) return res.status(400).json({ error: 'endsAt must be after startsAt' });
+
+    const result = await pool.query(
+      `INSERT INTO promotions (seller_id, name, discount_percent, starts_at, ends_at, target_genres, target_conditions, min_purchase_amount, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'scheduled', now()) RETURNING *`,
+      [req.user.id, name, discountPercent, startsAt, endsAt, JSON.stringify(targetGenres), JSON.stringify(targetConditions), minPurchaseAmount]
+    );
+
+    res.status(201).json({ success: true, promotion: result.rows[0] });
+  } catch (err) {
+    console.error('Promotion create error:', err.message);
+    res.status(500).json({ error: 'Failed to create promotion' });
+  }
+});
+
+// GET /api/marketplace/promotions/active — list active promotions
+app.get('/api/marketplace/promotions/active', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      `SELECT pr.*, p.username as seller_username
+       FROM promotions pr LEFT JOIN profiles p ON pr.seller_id = p.id
+       WHERE pr.starts_at <= now() AND pr.ends_at > now() AND pr.status != 'cancelled'
+       ORDER BY pr.discount_percent DESC LIMIT 50`
+    );
+    res.json({ success: true, promotions: result.rows });
+  } catch (err) {
+    console.error('Active promotions error:', err.message);
+    res.status(500).json({ error: 'Failed to load promotions' });
+  }
+});
+
+// ── Feature F50: Customer Support Ticket System ───────────────────────────────
+
+// POST /api/support/tickets — create a support ticket
+app.post('/api/support/tickets', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { subject, category, description, orderId = null, priority = 'normal' } = req.body;
+    if (!subject || !category || !description) {
+      return res.status(400).json({ error: 'subject, category, description required' });
+    }
+    const validCategories = ['order_issue', 'shipping', 'refund', 'account', 'listing', 'technical', 'other'];
+    if (!validCategories.includes(category)) {
+      return res.status(400).json({ error: 'Invalid category', validCategories });
+    }
+
+    const ticketNumber = `TKT-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+
+    const result = await pool.query(
+      `INSERT INTO support_tickets (ticket_number, user_id, subject, category, description, order_id, priority, status, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', now()) RETURNING *`,
+      [ticketNumber, req.user.id, subject, category, description, orderId, priority]
+    );
+
+    res.status(201).json({ success: true, ticket: result.rows[0] });
+  } catch (err) {
+    console.error('Create ticket error:', err.message);
+    res.status(500).json({ error: 'Failed to create support ticket' });
+  }
+});
+
+// GET /api/support/tickets — get user's support tickets
+app.get('/api/support/tickets', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const status = req.query.status || null;
+    let query = 'SELECT * FROM support_tickets WHERE user_id = $1';
+    const params = [req.user.id];
+    if (status) { query += ' AND status = $2'; params.push(status); }
+    query += ' ORDER BY created_at DESC LIMIT 50';
+
+    const result = await pool.query(query, params);
+    res.json({ success: true, tickets: result.rows });
+  } catch (err) {
+    console.error('List tickets error:', err.message);
+    res.status(500).json({ error: 'Failed to load tickets' });
+  }
+});
+
+// POST /api/support/tickets/:id/reply — reply to a support ticket
+app.post('/api/support/tickets/:id/reply', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const ticketId = parseInt(req.params.id);
+    const { message } = req.body;
+    if (!message) return res.status(400).json({ error: 'message required' });
+
+    const ticket = await pool.query('SELECT * FROM support_tickets WHERE id = $1 AND user_id = $2', [ticketId, req.user.id]);
+    if (ticket.rows.length === 0) return res.status(404).json({ error: 'Ticket not found' });
+
+    const reply = await pool.query(
+      `INSERT INTO support_ticket_replies (ticket_id, user_id, message, created_at)
+       VALUES ($1, $2, $3, now()) RETURNING *`,
+      [ticketId, req.user.id, message]
+    );
+
+    await pool.query('UPDATE support_tickets SET updated_at = now(), status = $1 WHERE id = $2',
+      ['awaiting_response', ticketId]);
+
+    res.status(201).json({ success: true, reply: reply.rows[0] });
+  } catch (err) {
+    console.error('Ticket reply error:', err.message);
+    res.status(500).json({ error: 'Failed to reply to ticket' });
+  }
+});
+
+// ── Feature F51: Order Fulfillment Tracking ───────────────────────────────────
+
+// POST /api/marketplace/orders/:id/fulfillment — update order fulfillment status
+app.post('/api/marketplace/orders/:id/fulfillment', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const orderId = parseInt(req.params.id);
+    const { status, trackingNumber = null, carrier = null, notes = '' } = req.body;
+    const validStatuses = ['processing', 'packaged', 'shipped', 'in_transit', 'out_for_delivery', 'delivered', 'exception'];
+    if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status', validStatuses });
+
+    // Verify seller owns this order
+    const order = await pool.query('SELECT * FROM purchases WHERE id = $1 AND seller_id = $2', [orderId, req.user.id]);
+    if (order.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+
+    const result = await pool.query(
+      `INSERT INTO fulfillment_events (order_id, status, tracking_number, carrier, notes, created_by, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING *`,
+      [orderId, status, trackingNumber, carrier, notes, req.user.id]
+    );
+
+    // Update purchase status for key milestones
+    if (status === 'shipped' || status === 'delivered') {
+      await pool.query('UPDATE purchases SET status = $1, tracking_number = $2, carrier = $3 WHERE id = $4',
+        [status, trackingNumber, carrier, orderId]);
+    }
+
+    res.json({ success: true, fulfillmentEvent: result.rows[0] });
+  } catch (err) {
+    console.error('Fulfillment error:', err.message);
+    res.status(500).json({ error: 'Failed to update fulfillment' });
+  }
+});
+
+// GET /api/marketplace/orders/:id/fulfillment — get fulfillment timeline
+app.get('/api/marketplace/orders/:id/fulfillment', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const orderId = parseInt(req.params.id);
+    const order = await pool.query(
+      'SELECT * FROM purchases WHERE id = $1 AND (seller_id = $2 OR buyer_id = $2)', [orderId, req.user.id]
+    );
+    if (order.rows.length === 0) return res.status(404).json({ error: 'Order not found' });
+
+    const events = await pool.query(
+      'SELECT * FROM fulfillment_events WHERE order_id = $1 ORDER BY created_at ASC', [orderId]
+    );
+
+    res.json({
+      success: true,
+      order: order.rows[0],
+      fulfillmentTimeline: events.rows,
+      currentStatus: events.rows.length > 0 ? events.rows[events.rows.length - 1].status : 'pending',
+    });
+  } catch (err) {
+    console.error('Fulfillment timeline error:', err.message);
+    res.status(500).json({ error: 'Failed to load fulfillment timeline' });
+  }
+});
+
+// ── Feature F52: Inventory Forecasting ────────────────────────────────────────
+
+// GET /api/marketplace/inventory-forecast — predict inventory needs based on sales velocity
+app.get('/api/marketplace/inventory-forecast', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const sellerId = req.user.id;
+    const forecastDays = parseInt(req.query.days) || 30;
+
+    const [inventory, salesVelocity, topMovers] = await Promise.all([
+      pool.query(
+        `SELECT genre, COUNT(*) as in_stock FROM records WHERE user_id = $1 AND for_sale = true GROUP BY genre ORDER BY in_stock DESC`,
+        [sellerId]
+      ),
+      pool.query(
+        `SELECT r.genre, COUNT(*) as sold_last_30d,
+                ROUND(COUNT(*)::numeric / 30, 2) as daily_velocity
+         FROM purchases p JOIN records r ON p.record_id = r.id
+         WHERE p.seller_id = $1 AND p.status IN ('completed', 'paid') AND p.created_at >= now() - interval '30 days'
+         GROUP BY r.genre ORDER BY sold_last_30d DESC`, [sellerId]
+      ),
+      pool.query(
+        `SELECT r.artist, r.genre, COUNT(*) as sold FROM purchases p JOIN records r ON p.record_id = r.id
+         WHERE p.seller_id = $1 AND p.status IN ('completed', 'paid') AND p.created_at >= now() - interval '60 days'
+         GROUP BY r.artist, r.genre ORDER BY sold DESC LIMIT 10`, [sellerId]
+      ),
+    ]);
+
+    // Build forecast per genre
+    const velocityMap = {};
+    salesVelocity.rows.forEach(v => { velocityMap[v.genre] = parseFloat(v.daily_velocity); });
+
+    const forecast = inventory.rows.map(inv => {
+      const velocity = velocityMap[inv.genre] || 0;
+      const daysUntilEmpty = velocity > 0 ? Math.round(parseInt(inv.in_stock) / velocity) : null;
+      return {
+        genre: inv.genre,
+        currentStock: parseInt(inv.in_stock),
+        dailySalesVelocity: velocity,
+        projectedSalesNextPeriod: Math.round(velocity * forecastDays),
+        daysUntilStockout: daysUntilEmpty,
+        restockRecommended: daysUntilEmpty !== null && daysUntilEmpty < forecastDays,
+      };
+    });
+
+    res.json({
+      success: true,
+      forecast: {
+        sellerId,
+        forecastDays,
+        byGenre: forecast,
+        topMovingArtists: topMovers.rows,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Inventory forecast error:', err.message);
+    res.status(500).json({ error: 'Failed to generate inventory forecast' });
+  }
+});
+
+// ── Feature F53: Marketplace Reviews Aggregation ──────────────────────────────
+
+// GET /api/marketplace/reviews/aggregate — aggregated review stats and recent reviews
+app.get('/api/marketplace/reviews/aggregate', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { sellerId, recordId } = req.query;
+    if (!sellerId && !recordId) return res.status(400).json({ error: 'sellerId or recordId required' });
+
+    const filterCol = sellerId ? 'seller_id' : 'record_id';
+    const filterVal = parseInt(sellerId || recordId);
+
+    const [stats, distribution, recent, helpful] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) as total_reviews, COALESCE(AVG(rating), 0) as avg_rating,
+                COUNT(*) FILTER (WHERE rating >= 4) as positive,
+                COUNT(*) FILTER (WHERE rating <= 2) as negative
+         FROM reviews WHERE ${filterCol} = $1`, [filterVal]
+      ),
+      pool.query(
+        `SELECT rating, COUNT(*) as count FROM reviews WHERE ${filterCol} = $1 GROUP BY rating ORDER BY rating DESC`,
+        [filterVal]
+      ),
+      pool.query(
+        `SELECT rv.*, p.username as reviewer_username FROM reviews rv
+         LEFT JOIN profiles p ON rv.reviewer_id = p.id
+         WHERE rv.${filterCol} = $1 ORDER BY rv.created_at DESC LIMIT 20`, [filterVal]
+      ),
+      pool.query(
+        `SELECT rv.*, p.username as reviewer_username FROM reviews rv
+         LEFT JOIN profiles p ON rv.reviewer_id = p.id
+         WHERE rv.${filterCol} = $1 ORDER BY rv.helpful_count DESC NULLS LAST LIMIT 5`, [filterVal]
+      ),
+    ]);
+
+    const totalReviews = parseInt(stats.rows[0].total_reviews);
+    res.json({
+      success: true,
+      reviews: {
+        totalReviews,
+        averageRating: Math.round(parseFloat(stats.rows[0].avg_rating) * 100) / 100,
+        positiveCount: parseInt(stats.rows[0].positive),
+        negativeCount: parseInt(stats.rows[0].negative),
+        ratingDistribution: distribution.rows,
+        recentReviews: recent.rows,
+        mostHelpful: helpful.rows,
+      },
+    });
+  } catch (err) {
+    console.error('Reviews aggregation error:', err.message);
+    res.status(500).json({ error: 'Failed to aggregate reviews' });
+  }
+});
+
+// ── Feature F54: Cross-Marketplace Price Comparison ───────────────────────────
+
+// GET /api/marketplace/price-comparison/:recordId — compare prices across sellers
+app.get('/api/marketplace/price-comparison/:recordId', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const recordId = parseInt(req.params.recordId);
+    const record = await pool.query('SELECT title, artist, year, genre FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+    const { title, artist } = record.rows[0];
+
+    // Find similar listings from other sellers
+    const [exactMatches, similarListings, priceHistory] = await Promise.all([
+      pool.query(
+        `SELECT r.id, r.title, r.artist, r.price, r.condition, r.format, p.username as seller_username,
+                COALESCE(rv.avg_rating, 0) as seller_rating
+         FROM records r
+         LEFT JOIN profiles p ON r.user_id = p.id
+         LEFT JOIN (SELECT seller_id, AVG(rating) as avg_rating FROM reviews GROUP BY seller_id) rv ON rv.seller_id = r.user_id
+         WHERE r.for_sale = true AND r.title ILIKE $1 AND r.artist ILIKE $2
+         ORDER BY r.price ASC LIMIT 20`,
+        [`%${title}%`, `%${artist}%`]
+      ),
+      pool.query(
+        `SELECT r.id, r.title, r.artist, r.price, r.condition, p.username as seller_username
+         FROM records r LEFT JOIN profiles p ON r.user_id = p.id
+         WHERE r.for_sale = true AND r.artist ILIKE $1 AND r.id != $2
+         ORDER BY r.price ASC LIMIT 10`,
+        [`%${artist}%`, recordId]
+      ),
+      pool.query(
+        `SELECT amount as price, created_at as sold_at FROM purchases
+         WHERE record_id IN (SELECT id FROM records WHERE title ILIKE $1 AND artist ILIKE $2)
+         AND status IN ('completed', 'paid') ORDER BY created_at DESC LIMIT 10`,
+        [`%${title}%`, `%${artist}%`]
+      ),
+    ]);
+
+    const prices = exactMatches.rows.map(r => parseFloat(r.price));
+    res.json({
+      success: true,
+      comparison: {
+        record: record.rows[0],
+        exactMatches: exactMatches.rows,
+        similarByArtist: similarListings.rows,
+        recentSales: priceHistory.rows,
+        priceRange: prices.length > 0 ? { low: Math.min(...prices), high: Math.max(...prices), median: prices.sort((a, b) => a - b)[Math.floor(prices.length / 2)] } : null,
+      },
+    });
+  } catch (err) {
+    console.error('Price comparison error:', err.message);
+    res.status(500).json({ error: 'Failed to compare prices' });
+  }
+});
+
+// ── Feature F55: Automated Listing Expiration ─────────────────────────────────
+
+// POST /api/marketplace/listing-expiration/configure — set auto-expiration rules
+app.post('/api/marketplace/listing-expiration/configure', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { expirationDays = 90, autoRenew = false, notifyBeforeDays = 7 } = req.body;
+    if (expirationDays < 7 || expirationDays > 365) {
+      return res.status(400).json({ error: 'expirationDays must be between 7 and 365' });
+    }
+
+    await pool.query(
+      `UPDATE users SET listing_expiration_days = $1, listing_auto_renew = $2, listing_notify_before_days = $3 WHERE id = $4`,
+      [expirationDays, autoRenew, notifyBeforeDays, req.user.id]
+    );
+
+    res.json({
+      success: true,
+      config: { expirationDays, autoRenew, notifyBeforeDays },
+    });
+  } catch (err) {
+    console.error('Listing expiration config error:', err.message);
+    res.status(500).json({ error: 'Failed to configure listing expiration' });
+  }
+});
+
+// GET /api/marketplace/listing-expiration/expiring — get listings about to expire
+app.get('/api/marketplace/listing-expiration/expiring', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      `SELECT r.id, r.title, r.artist, r.price, r.created_at,
+              u.listing_expiration_days,
+              r.created_at + (COALESCE(u.listing_expiration_days, 90) || ' days')::interval as expires_at
+       FROM records r JOIN users u ON r.user_id = u.id
+       WHERE r.user_id = $1 AND r.for_sale = true
+         AND r.created_at + (COALESCE(u.listing_expiration_days, 90) || ' days')::interval <= now() + interval '14 days'
+       ORDER BY expires_at ASC LIMIT 50`,
+      [req.user.id]
+    );
+
+    res.json({
+      success: true,
+      expiringListings: result.rows,
+      count: result.rows.length,
+    });
+  } catch (err) {
+    console.error('Expiring listings error:', err.message);
+    res.status(500).json({ error: 'Failed to load expiring listings' });
+  }
+});
+
+// ── Feature F56: Marketplace Referral Tracking ────────────────────────────────
+
+// POST /api/marketplace/referrals — create a referral link
+app.post('/api/marketplace/referrals', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const referralCode = `REF-${req.user.id}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+
+    const result = await pool.query(
+      `INSERT INTO referrals (referrer_id, referral_code, clicks, signups, purchases, commission_earned, status, created_at)
+       VALUES ($1, $2, 0, 0, 0, 0, 'active', now()) RETURNING *`,
+      [req.user.id, referralCode]
+    );
+
+    res.status(201).json({
+      success: true,
+      referral: result.rows[0],
+      shareUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/join?ref=${referralCode}`,
+    });
+  } catch (err) {
+    console.error('Create referral error:', err.message);
+    res.status(500).json({ error: 'Failed to create referral' });
+  }
+});
+
+// GET /api/marketplace/referrals — get user's referral stats
+app.get('/api/marketplace/referrals', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      `SELECT * FROM referrals WHERE referrer_id = $1 ORDER BY created_at DESC`, [req.user.id]
+    );
+
+    const totals = result.rows.reduce((acc, r) => ({
+      clicks: acc.clicks + parseInt(r.clicks || 0),
+      signups: acc.signups + parseInt(r.signups || 0),
+      purchases: acc.purchases + parseInt(r.purchases || 0),
+      commissionEarned: acc.commissionEarned + parseFloat(r.commission_earned || 0),
+    }), { clicks: 0, signups: 0, purchases: 0, commissionEarned: 0 });
+
+    res.json({ success: true, referrals: result.rows, totals });
+  } catch (err) {
+    console.error('Referrals error:', err.message);
+    res.status(500).json({ error: 'Failed to load referrals' });
+  }
+});
+
+// ── Feature F57: Seller Badge System ──────────────────────────────────────────
+
+const SELLER_BADGES = [
+  { id: 'verified_seller', name: 'Verified Seller', description: 'Identity and store verified.', icon: 'shield-check', tier: 'standard' },
+  { id: 'top_rated', name: 'Top Rated', description: '4.8+ average with 50+ reviews.', icon: 'star', tier: 'gold' },
+  { id: 'fast_shipper', name: 'Fast Shipper', description: 'Average ship time under 24 hours.', icon: 'zap', tier: 'silver' },
+  { id: 'power_seller', name: 'Power Seller', description: '100+ completed sales.', icon: 'trending-up', tier: 'gold' },
+  { id: 'rare_finds', name: 'Rare Finds Specialist', description: 'Specializes in rare and collectible records.', icon: 'gem', tier: 'platinum' },
+  { id: 'community_pillar', name: 'Community Pillar', description: 'Active community contributor.', icon: 'users', tier: 'silver' },
+  { id: 'grading_expert', name: 'Grading Expert', description: 'Consistently accurate condition grading.', icon: 'check-circle', tier: 'gold' },
+  { id: 'trusted_new', name: 'Trusted Newcomer', description: 'First 10 sales with positive reviews.', icon: 'thumbs-up', tier: 'bronze' },
+];
+
+// GET /api/marketplace/sellers/:id/badges — get a seller's earned badges
+app.get('/api/marketplace/sellers/:id/badges', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const sellerId = parseInt(req.params.id);
+
+    const [salesCount, avgRating, reviewCount, avgShipTime] = await Promise.all([
+      pool.query(`SELECT COUNT(*) as cnt FROM purchases WHERE seller_id = $1 AND status IN ('completed', 'paid')`, [sellerId]),
+      pool.query(`SELECT COALESCE(AVG(rating), 0) as avg FROM reviews WHERE seller_id = $1`, [sellerId]),
+      pool.query(`SELECT COUNT(*) as cnt FROM reviews WHERE seller_id = $1`, [sellerId]),
+      pool.query(
+        `SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (shipped_at - created_at)) / 3600), 999) as avg_hours
+         FROM purchases WHERE seller_id = $1 AND shipped_at IS NOT NULL`, [sellerId]
+      ),
+    ]);
+
+    const sales = parseInt(salesCount.rows[0].cnt);
+    const rating = parseFloat(avgRating.rows[0].avg);
+    const reviews = parseInt(reviewCount.rows[0].cnt);
+    const shipHours = parseFloat(avgShipTime.rows[0].avg_hours);
+
+    const earned = [];
+    if (sales >= 1) earned.push('verified_seller');
+    if (rating >= 4.8 && reviews >= 50) earned.push('top_rated');
+    if (shipHours < 24 && sales >= 10) earned.push('fast_shipper');
+    if (sales >= 100) earned.push('power_seller');
+    if (sales >= 10 && rating >= 4.0) earned.push('trusted_new');
+    if (reviews >= 20 && rating >= 4.5) earned.push('community_pillar');
+
+    const badges = SELLER_BADGES.map(b => ({
+      ...b,
+      earned: earned.includes(b.id),
+    }));
+
+    res.json({
+      success: true,
+      sellerId,
+      badges,
+      earnedCount: earned.length,
+      totalBadges: SELLER_BADGES.length,
+    });
+  } catch (err) {
+    console.error('Seller badges error:', err.message);
+    res.status(500).json({ error: 'Failed to load seller badges' });
+  }
+});
+
+// ── Feature F58: Buyer Verification Levels ────────────────────────────────────
+
+const BUYER_LEVELS = [
+  { level: 0, name: 'Unverified', requirements: 'Create an account.', perks: [] },
+  { level: 1, name: 'Verified', requirements: 'Verify email and complete profile.', perks: ['Can make offers', 'Basic buyer protection'] },
+  { level: 2, name: 'Trusted Buyer', requirements: '5+ purchases with no disputes.', perks: ['Priority offer visibility', 'Extended return window'] },
+  { level: 3, name: 'Premium Buyer', requirements: '25+ purchases, 0 disputes, account age 6+ months.', perks: ['Seller priority', 'Exclusive listings access', 'Reduced fees'] },
+  { level: 4, name: 'Collector Elite', requirements: '100+ purchases, top community standing.', perks: ['VIP support', 'Early access to auctions', 'Fee waivers', 'Beta features'] },
+];
+
+// GET /api/marketplace/buyers/:id/verification — get buyer verification level
+app.get('/api/marketplace/buyers/:id/verification', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const buyerId = parseInt(req.params.id);
+
+    const [user, purchaseStats, disputeCount] = await Promise.all([
+      pool.query('SELECT id, email_verified, created_at, bio FROM users WHERE id = $1', [buyerId]),
+      pool.query(
+        `SELECT COUNT(*) as total_purchases FROM purchases WHERE buyer_id = $1 AND status IN ('completed', 'paid')`, [buyerId]
+      ),
+      pool.query(
+        `SELECT COUNT(*) as disputes FROM disputes WHERE (buyer_id = $1 OR seller_id = $1) AND status = 'resolved_against'`, [buyerId]
+      ),
+    ]);
+
+    if (user.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+
+    const u = user.rows[0];
+    const purchases = parseInt(purchaseStats.rows[0].total_purchases);
+    const disputes = parseInt(disputeCount.rows[0].disputes);
+    const accountAgeDays = Math.floor((Date.now() - new Date(u.created_at).getTime()) / (1000 * 60 * 60 * 24));
+
+    let currentLevel = 0;
+    if (u.email_verified && u.bio) currentLevel = 1;
+    if (currentLevel >= 1 && purchases >= 5 && disputes === 0) currentLevel = 2;
+    if (currentLevel >= 2 && purchases >= 25 && disputes === 0 && accountAgeDays >= 180) currentLevel = 3;
+    if (currentLevel >= 3 && purchases >= 100) currentLevel = 4;
+
+    const levelInfo = BUYER_LEVELS[currentLevel];
+    const nextLevel = currentLevel < 4 ? BUYER_LEVELS[currentLevel + 1] : null;
+
+    res.json({
+      success: true,
+      buyerId,
+      verification: {
+        currentLevel: levelInfo,
+        nextLevel,
+        stats: { purchases, disputes, accountAgeDays, emailVerified: !!u.email_verified },
+      },
+    });
+  } catch (err) {
+    console.error('Buyer verification error:', err.message);
+    res.status(500).json({ error: 'Failed to load buyer verification' });
+  }
+});
+
+// ── Feature F59: Marketplace Notification Preferences ─────────────────────────
+
+const NOTIFICATION_TYPES = [
+  { key: 'order_updates', label: 'Order Updates', description: 'Shipping, delivery, and order status changes.', defaultEnabled: true },
+  { key: 'price_drops', label: 'Price Drops', description: 'Alerts when watched items drop in price.', defaultEnabled: true },
+  { key: 'new_listings', label: 'New Listings', description: 'Notifications for new listings matching your interests.', defaultEnabled: true },
+  { key: 'offers', label: 'Offers & Negotiations', description: 'New offers on your listings or counter-offers.', defaultEnabled: true },
+  { key: 'reviews', label: 'Reviews', description: 'When someone reviews you or your listings.', defaultEnabled: true },
+  { key: 'promotions', label: 'Promotions & Sales', description: 'Flash sales, seasonal promotions, and deals.', defaultEnabled: false },
+  { key: 'community', label: 'Community Activity', description: 'Follows, likes, and social interactions.', defaultEnabled: false },
+  { key: 'system', label: 'System Announcements', description: 'Platform updates and maintenance notices.', defaultEnabled: true },
+  { key: 'weekly_digest', label: 'Weekly Digest', description: 'Weekly summary of marketplace activity.', defaultEnabled: false },
+  { key: 'referral_activity', label: 'Referral Activity', description: 'Updates on your referral links and commissions.', defaultEnabled: true },
+];
+
+// GET /api/marketplace/notification-preferences — get notification preferences
+app.get('/api/marketplace/notification-preferences', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const result = await pool.query(
+      'SELECT preferences FROM notification_preferences WHERE user_id = $1', [req.user.id]
+    );
+
+    let prefs = {};
+    if (result.rows.length > 0 && result.rows[0].preferences) {
+      prefs = typeof result.rows[0].preferences === 'string' ? JSON.parse(result.rows[0].preferences) : result.rows[0].preferences;
+    }
+
+    const preferences = NOTIFICATION_TYPES.map(nt => ({
+      ...nt,
+      enabled: prefs[nt.key] !== undefined ? prefs[nt.key] : nt.defaultEnabled,
+    }));
+
+    res.json({ success: true, preferences });
+  } catch (err) {
+    console.error('Notification prefs error:', err.message);
+    res.status(500).json({ error: 'Failed to load notification preferences' });
+  }
+});
+
+// PUT /api/marketplace/notification-preferences — update notification preferences
+app.put('/api/marketplace/notification-preferences', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { preferences } = req.body;
+    if (!preferences || typeof preferences !== 'object') {
+      return res.status(400).json({ error: 'preferences object required' });
+    }
+
+    // Validate keys
+    const validKeys = NOTIFICATION_TYPES.map(nt => nt.key);
+    const cleanedPrefs = {};
+    for (const [key, val] of Object.entries(preferences)) {
+      if (validKeys.includes(key) && typeof val === 'boolean') {
+        cleanedPrefs[key] = val;
+      }
+    }
+
+    await pool.query(
+      `INSERT INTO notification_preferences (user_id, preferences, updated_at)
+       VALUES ($1, $2, now())
+       ON CONFLICT (user_id) DO UPDATE SET preferences = $2, updated_at = now()`,
+      [req.user.id, JSON.stringify(cleanedPrefs)]
+    );
+
+    res.json({ success: true, preferences: cleanedPrefs });
+  } catch (err) {
+    console.error('Update notification prefs error:', err.message);
+    res.status(500).json({ error: 'Failed to update notification preferences' });
+  }
+});
+
+// ── Feature F60: Platform Revenue Reporting ───────────────────────────────────
+
+// GET /api/admin/revenue-report — platform-wide revenue reporting (admin only)
+app.get('/api/admin/revenue-report', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { period = '30d' } = req.query;
+    const intervalMap = { '7d': '7 days', '30d': '30 days', '90d': '90 days', '1y': '1 year' };
+    const interval = intervalMap[period] || '30 days';
+
+    const [totalRevenue, revenueByDay, revenueByGenre, topSellers, platformFees, orderMetrics] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) as total_orders, COALESCE(SUM(amount), 0) as gross_revenue,
+                COALESCE(AVG(amount), 0) as avg_order_value
+         FROM purchases WHERE status IN ('completed', 'paid') AND created_at >= now() - $1::interval`,
+        [interval]
+      ),
+      pool.query(
+        `SELECT DATE_TRUNC('day', created_at) as day, COUNT(*) as orders, COALESCE(SUM(amount), 0) as revenue
+         FROM purchases WHERE status IN ('completed', 'paid') AND created_at >= now() - $1::interval
+         GROUP BY day ORDER BY day`, [interval]
+      ),
+      pool.query(
+        `SELECT r.genre, COUNT(*) as orders, COALESCE(SUM(p.amount), 0) as revenue
+         FROM purchases p JOIN records r ON p.record_id = r.id
+         WHERE p.status IN ('completed', 'paid') AND p.created_at >= now() - $1::interval AND r.genre IS NOT NULL
+         GROUP BY r.genre ORDER BY revenue DESC LIMIT 15`, [interval]
+      ),
+      pool.query(
+        `SELECT p.seller_id, pr.username, COUNT(*) as sales, COALESCE(SUM(p.amount), 0) as revenue
+         FROM purchases p LEFT JOIN profiles pr ON p.seller_id = pr.id
+         WHERE p.status IN ('completed', 'paid') AND p.created_at >= now() - $1::interval
+         GROUP BY p.seller_id, pr.username ORDER BY revenue DESC LIMIT 10`, [interval]
+      ),
+      pool.query(
+        `SELECT COALESCE(SUM(platform_fee), 0) as total_fees,
+                COALESCE(AVG(platform_fee), 0) as avg_fee
+         FROM purchases WHERE status IN ('completed', 'paid') AND created_at >= now() - $1::interval`, [interval]
+      ),
+      pool.query(
+        `SELECT status, COUNT(*) as count FROM purchases
+         WHERE created_at >= now() - $1::interval GROUP BY status`, [interval]
+      ),
+    ]);
+
+    const grossRevenue = parseFloat(totalRevenue.rows[0].gross_revenue);
+    const totalFees = parseFloat(platformFees.rows[0].total_fees);
+
+    res.json({
+      success: true,
+      report: {
+        period,
+        summary: {
+          totalOrders: parseInt(totalRevenue.rows[0].total_orders),
+          grossRevenue: Math.round(grossRevenue * 100) / 100,
+          platformFees: Math.round(totalFees * 100) / 100,
+          netRevenue: Math.round((grossRevenue - totalFees) * 100) / 100,
+          averageOrderValue: Math.round(parseFloat(totalRevenue.rows[0].avg_order_value) * 100) / 100,
+        },
+        dailyRevenue: revenueByDay.rows,
+        revenueByGenre: revenueByGenre.rows,
+        topSellers: topSellers.rows,
+        ordersByStatus: orderMetrics.rows,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Revenue report error:', err.message);
+    res.status(500).json({ error: 'Failed to generate revenue report' });
+  }
+});
+
 // ── Feature 20: Server startup banner with configuration summary ──────────────
 
 const PORT = process.env.PORT || process.env.SERVER_PORT || 3001;
