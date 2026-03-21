@@ -1,12 +1,14 @@
 // Full profile page for viewing any user — matches ProfileScreen's design language.
 // Shows header banner, avatar, bio, stats, Follow/Unfollow, and tabs for their content.
-// Tabs: Posts, Listening, Records, For Sale, Wishlist, Activity.
+// Tabs: Posts, Listening, Records, For Sale, Wishlist, Activity, Reviews.
 // Includes Message button, Make Offer button, mutual followers, follow animation,
 // member-since date, skeleton loading state, achievement badges, genre chart,
 // collection showcase, trading history, block/report, online status, profile share,
 // verified seller badge, collection value, tenure badge, endorsements, similarity score,
-// gift record, social proof, and user highlight reel.
-import { useState, useMemo, useCallback } from 'react';
+// gift record, social proof, user highlight reel, parallax cover photo, badges gallery,
+// auto-scrolling highlights reel, trading feedback/reviews, profile QR code,
+// availability status, mutual connections, community ranking, and action history.
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import Avatar from '../ui/Avatar';
 import AlbumArt from '../ui/AlbumArt';
 import Badge from '../ui/Badge';
@@ -267,6 +269,339 @@ function ProfileShareButton({ username }) {
   );
 }
 
+// ── #1 Parallax cover photo ──────────────────────────────────────────
+function ParallaxCover({ headerUrl, accent, username }) {
+  const coverRef = useRef(null);
+  const [offset, setOffset] = useState(0);
+
+  useEffect(() => {
+    const handler = () => {
+      if (coverRef.current) {
+        const rect = coverRef.current.getBoundingClientRect();
+        setOffset(Math.round(rect.top * -0.35));
+      }
+    };
+    window.addEventListener('scroll', handler, { passive: true });
+    return () => window.removeEventListener('scroll', handler);
+  }, []);
+
+  const bg = headerUrl
+    ? { backgroundImage: `url(${headerUrl})`, backgroundPosition: `center ${offset}px`, backgroundSize: 'cover' }
+    : { background: `linear-gradient(135deg,${accent || '#0ea5e9'}44,#6366f133,${accent || '#0ea5e9'}22)` };
+
+  return (
+    <div ref={coverRef} className="h-[140px] relative overflow-hidden" style={bg}>
+      {/* Gradient overlay for readability */}
+      <div className="absolute inset-0 bg-gradient-to-t from-gs-card/90 via-transparent to-transparent" />
+      {/* Username watermark */}
+      <div className="absolute bottom-2 right-3 text-[10px] font-mono text-white/20 select-none">
+        @{username}
+      </div>
+    </div>
+  );
+}
+
+// ── #2 User badges gallery ──────────────────────────────────────────
+function BadgesGallery({ recordCount, postCount, listenCount, forSaleCount, followerCount, endorsementCount }) {
+  const allBadges = [];
+  if (recordCount >= 1) allBadges.push({ icon: '💿', label: 'Collector', tier: recordCount >= 15 ? 'gold' : recordCount >= 5 ? 'silver' : 'bronze', desc: `${recordCount} records` });
+  if (postCount >= 1) allBadges.push({ icon: '✍️', label: 'Contributor', tier: postCount >= 10 ? 'gold' : postCount >= 3 ? 'silver' : 'bronze', desc: `${postCount} posts` });
+  if (listenCount >= 1) allBadges.push({ icon: '🎧', label: 'Listener', tier: listenCount >= 20 ? 'gold' : listenCount >= 10 ? 'silver' : 'bronze', desc: `${listenCount} sessions` });
+  if (forSaleCount >= 1) allBadges.push({ icon: '🏪', label: 'Seller', tier: forSaleCount >= 5 ? 'gold' : forSaleCount >= 2 ? 'silver' : 'bronze', desc: `${forSaleCount} listings` });
+  if (followerCount >= 1) allBadges.push({ icon: '⭐', label: 'Popular', tier: followerCount >= 10 ? 'gold' : followerCount >= 3 ? 'silver' : 'bronze', desc: `${followerCount} followers` });
+  if (endorsementCount >= 1) allBadges.push({ icon: '🤝', label: 'Trusted', tier: endorsementCount >= 5 ? 'gold' : endorsementCount >= 2 ? 'silver' : 'bronze', desc: `${endorsementCount} endorsements` });
+
+  if (allBadges.length === 0) return null;
+  const tierColor = { gold: 'text-amber-400 border-amber-500/30 bg-amber-500/10', silver: 'text-gray-300 border-gray-400/30 bg-gray-400/10', bronze: 'text-orange-400 border-orange-500/30 bg-orange-500/10' };
+  return (
+    <div className="mb-4">
+      <div className="text-[11px] font-bold text-gs-dim mb-2 uppercase tracking-wider">Badges</div>
+      <div className="flex flex-wrap gap-2">
+        {allBadges.map(b => (
+          <div key={b.label} title={`${b.label} (${b.tier}) — ${b.desc}`} className={`inline-flex items-center gap-1.5 text-[10px] font-semibold border rounded-lg px-2.5 py-1.5 ${tierColor[b.tier]}`}>
+            <span className="text-sm">{b.icon}</span>
+            <div>
+              <div>{b.label}</div>
+              <div className="text-[8px] opacity-60 capitalize">{b.tier}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── #3 Collection highlights reel (auto-scrolling) ──────────────────
+function HighlightsReel({ records, accent }) {
+  const scrollRef = useRef(null);
+  const [paused, setPaused] = useState(false);
+  const top8 = [...records].sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 8);
+
+  useEffect(() => {
+    if (top8.length < 3 || paused) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const interval = setInterval(() => {
+      if (el.scrollLeft >= el.scrollWidth - el.clientWidth - 2) {
+        el.scrollTo({ left: 0, behavior: 'smooth' });
+      } else {
+        el.scrollBy({ left: 90, behavior: 'smooth' });
+      }
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [top8.length, paused]);
+
+  if (top8.length === 0) return null;
+  return (
+    <div className="mb-4" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[11px] font-bold text-gs-dim uppercase tracking-wider">Highlights Reel</div>
+        <div className="text-[9px] text-gs-faint">{paused ? 'Paused' : 'Auto-scrolling'}</div>
+      </div>
+      <div ref={scrollRef} className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+        {top8.map(r => (
+          <div key={r.id} className="shrink-0 w-[72px]">
+            <div className="rounded-lg overflow-hidden border border-gs-border hover:border-gs-accent/40 transition-colors">
+              <AlbumArt album={r.album} artist={r.artist} accent={r.accent || accent} size={72} />
+            </div>
+            <div className="text-[8px] font-bold text-gs-text mt-1 truncate text-center">{r.album}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── #4 Trading feedback / reviews section ───────────────────────────
+function TradingReviews({ username, currentUser, isOwn }) {
+  const [reviews, setReviews] = useState(() => {
+    // Seed deterministic reviews from username hash
+    const hash = username.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    const seedReviews = [];
+    if (hash % 3 === 0) seedReviews.push({ from: 'vinyl.sam', rating: 5, text: 'Smooth transaction, great packaging!', ts: Date.now() - 86400000 * 3 });
+    if (hash % 4 === 0) seedReviews.push({ from: 'crate.digger', rating: 4, text: 'Record arrived in excellent condition.', ts: Date.now() - 86400000 * 7 });
+    return seedReviews;
+  });
+  const [newReview, setNewReview] = useState('');
+  const [newRating, setNewRating] = useState(5);
+
+  const handleSubmit = () => {
+    if (!newReview.trim() || isOwn) return;
+    setReviews(prev => [{ from: currentUser, rating: newRating, text: newReview.trim(), ts: Date.now() }, ...prev]);
+    setNewReview('');
+    setNewRating(5);
+  };
+
+  const avgRating = reviews.length > 0 ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : null;
+
+  return (
+    <div className="mb-4 p-4 bg-[#111] border border-gs-border rounded-xl">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[11px] font-bold text-gs-dim uppercase tracking-wider">Trading Reviews</div>
+        {avgRating && (
+          <div className="flex items-center gap-1 text-[11px]">
+            <span className="text-amber-400 font-bold">{avgRating}</span>
+            <span className="text-amber-400">{'★'.repeat(Math.round(parseFloat(avgRating)))}</span>
+            <span className="text-gs-faint">({reviews.length})</span>
+          </div>
+        )}
+      </div>
+      {reviews.length > 0 && (
+        <div className="flex flex-col gap-2 mb-3 max-h-[180px] overflow-y-auto">
+          {reviews.map((r, i) => (
+            <div key={i} className="bg-gs-card border border-gs-border rounded-lg p-2.5">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-semibold text-gs-muted">@{r.from}</span>
+                <span className="text-amber-400 text-[10px]">{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</span>
+              </div>
+              <p className="text-[11px] text-gs-muted leading-relaxed">{r.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {!isOwn && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-gs-dim">Rating:</span>
+            <div className="flex gap-0.5">
+              {[1, 2, 3, 4, 5].map(n => (
+                <button key={n} onClick={() => setNewRating(n)} className={`bg-transparent border-none cursor-pointer text-sm ${n <= newRating ? 'text-amber-400' : 'text-gs-faint'}`}>
+                  {n <= newRating ? '★' : '☆'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newReview}
+              onChange={e => setNewReview(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+              placeholder="Write a trading review..."
+              className="flex-1 bg-gs-card border border-gs-border rounded-lg px-3 py-2 text-xs text-gs-text placeholder:text-gs-faint outline-none focus:border-gs-accent/40"
+              maxLength={200}
+            />
+            <button onClick={handleSubmit} disabled={!newReview.trim()} className="gs-btn-gradient py-2 px-4 rounded-lg text-xs font-bold border-none cursor-pointer disabled:opacity-40 disabled:cursor-default">
+              Submit
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── #6 Profile QR code ──────────────────────────────────────────────
+function ProfileQRCode({ username, accent }) {
+  const [showQR, setShowQR] = useState(false);
+  // Generate a simple visual QR placeholder using username hash
+  const cells = useMemo(() => {
+    const grid = [];
+    const seed = username.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    for (let row = 0; row < 9; row++) {
+      for (let col = 0; col < 9; col++) {
+        // Corner anchors
+        const isCorner = (row < 3 && col < 3) || (row < 3 && col > 5) || (row > 5 && col < 3);
+        const filled = isCorner || ((seed * (row + 1) * (col + 1) + row * 7 + col * 13) % 3 !== 0);
+        grid.push(filled);
+      }
+    }
+    return grid;
+  }, [username]);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setShowQR(!showQR)}
+        className="bg-transparent border border-gs-border text-gs-dim cursor-pointer p-1.5 rounded-lg hover:text-gs-muted hover:border-gs-border-hover transition-colors"
+        title="Profile QR code"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="4" height="4"/><line x1="22" y1="14" x2="22" y2="22"/><line x1="14" y1="22" x2="22" y2="22"/></svg>
+      </button>
+      {showQR && (
+        <div className="absolute right-0 top-full mt-2 bg-white rounded-xl p-3 shadow-2xl z-50 border border-gs-border">
+          <div className="grid grid-cols-9 gap-px w-[108px] h-[108px] mx-auto">
+            {cells.map((filled, i) => (
+              <div key={i} className="rounded-[1px]" style={{ background: filled ? (accent || '#0ea5e9') : '#f0f0f0' }} />
+            ))}
+          </div>
+          <div className="text-center mt-2 text-[9px] font-mono text-gray-600">@{username}</div>
+          <div className="text-center text-[8px] text-gray-400 mt-0.5">Scan to view profile</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── #7 User availability status ─────────────────────────────────────
+function AvailabilityStatus({ username }) {
+  const hash = username.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  const statuses = [
+    { label: 'Available to trade', color: 'bg-emerald-500', text: 'text-emerald-400' },
+    { label: 'Busy — slow replies', color: 'bg-amber-500', text: 'text-amber-400' },
+    { label: 'Away', color: 'bg-gray-500', text: 'text-gray-400' },
+  ];
+  const status = statuses[hash % 3];
+  return (
+    <div className="inline-flex items-center gap-1.5 text-[10px] font-semibold bg-[#111] border border-gs-border rounded-full px-2.5 py-1">
+      <span className={`inline-block w-1.5 h-1.5 rounded-full ${status.color}`} />
+      <span className={status.text}>{status.label}</span>
+    </div>
+  );
+}
+
+// ── #8 Mutual connections with viewer ───────────────────────────────
+function MutualConnections({ mutualFollowers, onViewUser }) {
+  if (mutualFollowers.length === 0) return null;
+  return (
+    <div className="mb-4 p-3 bg-[#111] border border-gs-border rounded-xl">
+      <div className="text-[10px] font-bold text-gs-dim mb-2 uppercase tracking-wider">Mutual Connections</div>
+      <div className="flex flex-wrap gap-2">
+        {mutualFollowers.slice(0, 8).map(f => {
+          const fp = getProfile(f);
+          return (
+            <button key={f} onClick={() => onViewUser(f)} className="flex items-center gap-1.5 bg-gs-card border border-gs-border rounded-lg px-2 py-1.5 cursor-pointer hover:border-gs-accent/40 transition-colors">
+              <Avatar username={f} size={18} />
+              <div className="text-left">
+                <div className="text-[10px] font-semibold text-gs-text leading-tight">{fp.displayName || f}</div>
+                <div className="text-[8px] text-gs-faint font-mono">@{f}</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {mutualFollowers.length > 8 && (
+        <div className="text-[9px] text-gs-faint mt-2">+{mutualFollowers.length - 8} more mutual connections</div>
+      )}
+    </div>
+  );
+}
+
+// ── #9 User ranking in community ────────────────────────────────────
+function CommunityRanking({ userRecords, userPosts, userListens, followerCount, accent }) {
+  // Calculate a composite score for ranking
+  const score = (userRecords.length * 10) + (userPosts.length * 5) + (userListens.length * 2) + (followerCount * 8);
+  const tier = score >= 200 ? { label: 'Diamond', icon: '💎', color: 'text-cyan-400 border-cyan-500/30 bg-cyan-500/10' }
+    : score >= 100 ? { label: 'Gold', icon: '🥇', color: 'text-amber-400 border-amber-500/30 bg-amber-500/10' }
+    : score >= 50 ? { label: 'Silver', icon: '🥈', color: 'text-gray-300 border-gray-400/30 bg-gray-400/10' }
+    : { label: 'Bronze', icon: '🥉', color: 'text-orange-400 border-orange-500/30 bg-orange-500/10' };
+
+  return (
+    <div className="mb-4 p-3 bg-[#111] border border-gs-border rounded-xl">
+      <div className="text-[10px] font-bold text-gs-dim mb-2 uppercase tracking-wider">Community Rank</div>
+      <div className="flex items-center gap-3">
+        <div className={`w-12 h-12 rounded-full border-2 flex items-center justify-center text-xl ${tier.color}`}>
+          {tier.icon}
+        </div>
+        <div>
+          <div className="text-sm font-extrabold text-gs-text">{tier.label} Tier</div>
+          <div className="text-[10px] text-gs-faint">{score} community points</div>
+          <div className="mt-1 h-1.5 w-32 bg-[#222] rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, (score / 200) * 100)}%`, background: accent || '#0ea5e9' }} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── #10 Profile action history ──────────────────────────────────────
+function ActionHistory({ userRecords, userPosts, userListens }) {
+  const actions = useMemo(() => {
+    const items = [];
+    userPosts.slice(0, 3).forEach(p => items.push({ type: 'post', label: `Wrote a post${p.taggedRecord ? ` about "${p.taggedRecord.album}"` : ''}`, ts: p.createdAt, icon: '📝' }));
+    userListens.slice(0, 3).forEach(s => items.push({ type: 'listen', label: `Listened to "${s.track.title}" by ${s.track.artist}`, ts: s.timestampMs, icon: '🎧' }));
+    userRecords.slice(0, 2).forEach(r => items.push({ type: 'record', label: `Added "${r.album}" by ${r.artist}`, ts: Date.now() - 86400000 * (r.id?.length || 1), icon: '💿' }));
+    return items.sort((a, b) => b.ts - a.ts).slice(0, 8);
+  }, [userRecords, userPosts, userListens]);
+
+  if (actions.length === 0) return null;
+
+  const relTime = ts => {
+    const d = Date.now() - ts; const m = Math.floor(d / 60000);
+    if (m < 1) return 'just now'; if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+    const dy = Math.floor(h / 24); return dy === 1 ? 'yesterday' : `${dy}d ago`;
+  };
+
+  return (
+    <div className="mb-4">
+      <div className="text-[11px] font-bold text-gs-dim mb-2 uppercase tracking-wider">Action History</div>
+      <div className="relative pl-4 border-l border-gs-border">
+        {actions.map((a, i) => (
+          <div key={i} className="relative mb-3 last:mb-0">
+            <div className="absolute -left-[21px] top-0.5 w-3 h-3 rounded-full bg-gs-surface border border-gs-border flex items-center justify-center text-[8px]">
+              {a.icon}
+            </div>
+            <div className="text-[11px] text-gs-text">{a.label}</div>
+            <div className="text-[9px] text-gs-faint font-mono">{relTime(a.ts)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Skeleton loading placeholder ────────────────────────────────────────
 function ProfileSkeleton() {
   return (
@@ -310,6 +645,8 @@ export default function UserProfilePage({ username, records, currentUser, follow
   const [endorsements, setEndorsements] = useState([]);
   // Improvement 13: Compare view toggle
   const [showCompare, setShowCompare] = useState(false);
+  // #5: Reviews tab state — tracks if user is viewing the reviews content tab
+  const [reviewsCount, setReviewsCount] = useState(0);
 
   const isOwn = username ? username === currentUser : false;
   const p = username
@@ -420,6 +757,8 @@ export default function UserProfilePage({ username, records, currentUser, follow
     { id: "wishlist", label: "Wishlist", count: userWishlist.length },
     // Improvement 17: Activity tab
     { id: "activity", label: "Activity", count: recentActivity.length },
+    // #5: Reviews content tab
+    { id: "reviews", label: "Reviews", count: reviewsCount },
   ];
 
   const display = tab === "records" ? userRecords : tab === "for sale" ? forSale : [];
@@ -441,8 +780,8 @@ export default function UserProfilePage({ username, records, currentUser, follow
 
       {/* Profile card */}
       <div className="gs-card mb-6">
-        {/* Header banner */}
-        <div className="h-[100px]" style={p.headerUrl ? { background: `url(${p.headerUrl}) center/cover` } : { background: `linear-gradient(135deg,${p.accent || "#0ea5e9"}33,#6366f122)` }} />
+        {/* #1: Parallax cover photo */}
+        <ParallaxCover headerUrl={p.headerUrl} accent={p.accent} username={username} />
 
         <div className="px-6 pb-6 -mt-8">
           <div className="flex justify-between items-end mb-3.5">
@@ -459,6 +798,8 @@ export default function UserProfilePage({ username, records, currentUser, follow
               <div className="flex gap-2 items-center">
                 {/* Improvement 10: Share profile button */}
                 <ProfileShareButton username={username} />
+                {/* #6: Profile QR code */}
+                <ProfileQRCode username={username} accent={p.accent} />
                 {/* Improvement 9: Block/report menu */}
                 <BlockReportMenu username={username} />
                 {/* Message button */}
@@ -538,6 +879,8 @@ export default function UserProfilePage({ username, records, currentUser, follow
             <span className="text-xs font-mono" style={{ color: p.accent || "#0ea5e9" }}>@{username}</span>
             {/* Improvement 1: Online status indicator */}
             <OnlineIndicator username={username} />
+            {/* #7: Availability status */}
+            <AvailabilityStatus username={username} />
           </div>
 
           {/* Improvement 3: Member since + tenure badge + location/genre row */}
@@ -561,6 +904,16 @@ export default function UserProfilePage({ username, records, currentUser, follow
             postCount={userPosts.length}
             listenCount={userListens.length}
             forSaleCount={forSale.length}
+          />
+
+          {/* #2: User badges gallery */}
+          <BadgesGallery
+            recordCount={userRecords.length}
+            postCount={userPosts.length}
+            listenCount={userListens.length}
+            forSaleCount={forSale.length}
+            followerCount={followerCount}
+            endorsementCount={endorsements.length}
           />
 
           {/* Improvement 8: Profile similarity score + Improvement 16: Social proof */}
@@ -606,6 +959,18 @@ export default function UserProfilePage({ username, records, currentUser, follow
             </div>
           )}
 
+          {/* #8: Mutual connections with viewer */}
+          {!isOwn && <MutualConnections mutualFollowers={mutualFollowers} onViewUser={onViewUser} />}
+
+          {/* #9: User ranking in community */}
+          <CommunityRanking
+            userRecords={userRecords}
+            userPosts={userPosts}
+            userListens={userListens}
+            followerCount={followerCount}
+            accent={p.accent}
+          />
+
           {/* Improvement 7: Collection value */}
           <CollectionValue records={userRecords} accent={p.accent} />
 
@@ -629,6 +994,9 @@ export default function UserProfilePage({ username, records, currentUser, follow
           </div>
         </div>
       </div>
+
+      {/* #3: Auto-scrolling highlights reel */}
+      <HighlightsReel records={userRecords} accent={p.accent} />
 
       {/* Improvement 6: Collection showcase */}
       <CollectionShowcase records={userRecords} onDetail={onDetail} accent={p.accent} />
@@ -899,6 +1267,15 @@ export default function UserProfilePage({ username, records, currentUser, follow
           </div>
         )
       )}
+
+      {/* #5: Reviews tab content */}
+      {tab === "reviews" && (
+        <TradingReviews username={username} currentUser={currentUser} isOwn={isOwn} />
+      )}
+
+      {/* #4: Trading feedback/reviews section (always visible below tabs) + #10: Action history */}
+      {!isOwn && tab !== "reviews" && <TradingReviews username={username} currentUser={currentUser} isOwn={isOwn} />}
+      <ActionHistory userRecords={userRecords} userPosts={userPosts} userListens={userListens} />
 
       {/* Improvement 12: User endorsements / testimonials */}
       {!isOwn && (

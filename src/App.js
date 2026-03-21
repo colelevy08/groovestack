@@ -203,6 +203,53 @@ export default function App() {
   const renderCount = useRef(0);
   renderCount.current += 1;
 
+  // ── NEW Improvement #S1: Seasonal themes (auto-switch colors by time of year) ──
+  const [seasonalTheme, setSeasonalTheme] = useState(() => {
+    const month = new Date().getMonth();
+    if (month >= 2 && month <= 4) return 'spring';
+    if (month >= 5 && month <= 7) return 'summer';
+    if (month >= 8 && month <= 10) return 'autumn';
+    return 'winter';
+  });
+
+  // ── NEW Improvement #S2: Record of the day (daily highlighted record) ──
+  const [recordOfTheDay, setRecordOfTheDay] = useState(null);
+
+  // ── NEW Improvement #S3: Streak tracking (consecutive days using the app) ──
+  const [streakData, setStreakData] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_streakData')) || { count: 0, lastDate: null }; } catch { return { count: 0, lastDate: null }; }
+  });
+
+  // ── NEW Improvement #S4: Quick actions floating button state ──
+  const [fabOpen, setFabOpen] = useState(false);
+
+  // ── NEW Improvement #S5: Notification grouping by type ──
+  const [groupedNotifications, setGroupedNotifications] = useState({ social: [], marketplace: [], system: [] }); // eslint-disable-line no-unused-vars
+
+  // ── NEW Improvement #S7: Drag-and-drop file upload for record images ──
+  const [dragUploadActive, setDragUploadActive] = useState(false);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState(null); // eslint-disable-line no-unused-vars
+
+  // ── NEW Improvement #S9: Tutorial video placeholder links ──
+  const TUTORIAL_VIDEOS = [
+    { id: 'getting-started', title: 'Getting Started with GrooveStack', url: '#tutorial-getting-started', duration: '3:45' },
+    { id: 'adding-records', title: 'How to Add Records', url: '#tutorial-adding-records', duration: '2:30' },
+    { id: 'marketplace', title: 'Buying & Selling on the Marketplace', url: '#tutorial-marketplace', duration: '4:15' },
+    { id: 'vinyl-buddy', title: 'Setting Up Vinyl Buddy', url: '#tutorial-vinyl-buddy', duration: '5:00' },
+    { id: 'social', title: 'Connecting with Other Collectors', url: '#tutorial-social', duration: '3:10' },
+  ];
+  const [showTutorials, setShowTutorials] = useState(false);
+
+  // ── NEW Improvement #S11: Battery saver mode (reduce animations) ──
+  const [batterySaverMode, setBatterySaverMode] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_batterySaver')) || false; } catch { return false; }
+  });
+
+  // ── NEW Improvement #S12: Auto-dark mode based on system preference ──
+  const [autoThemeEnabled, setAutoThemeEnabled] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_autoTheme')) || false; } catch { return false; }
+  });
+
   // ── Improvement #22: Recent searches history ──────────────────────────────
   const [recentSearches, setRecentSearches] = useState(() => {
     try { return JSON.parse(localStorage.getItem('gs_recentSearches')) || []; } catch { return []; }
@@ -493,6 +540,151 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('gs_userPreferences', JSON.stringify(userPreferences));
   }, [userPreferences]);
+
+  // ── NEW Improvement #S1: Seasonal theme effect — apply seasonal CSS vars ──
+  useEffect(() => {
+    const SEASONAL_COLORS = {
+      spring: { accent: '#10b981', bg: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)' },
+      summer: { accent: '#f59e0b', bg: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)' },
+      autumn: { accent: '#f97316', bg: 'linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)' },
+      winter: { accent: '#6366f1', bg: 'linear-gradient(135deg, #eef2ff 0%, #e0e7ff 100%)' },
+    };
+    const colors = SEASONAL_COLORS[seasonalTheme];
+    if (colors && theme === 'light') {
+      document.documentElement.style.setProperty('--gs-seasonal-accent', colors.accent);
+    } else {
+      document.documentElement.style.removeProperty('--gs-seasonal-accent');
+    }
+    document.documentElement.setAttribute('data-season', seasonalTheme);
+    return () => { document.documentElement.removeProperty('--gs-seasonal-accent'); document.documentElement.removeAttribute('data-season'); };
+  }, [seasonalTheme, theme]);
+
+  // ── NEW Improvement #S2: Record of the day — pick daily based on date seed ──
+  useEffect(() => {
+    if (records.length === 0) return;
+    const today = new Date();
+    const seed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
+    const idx = seed % records.length;
+    setRecordOfTheDay(records[idx]);
+  }, [records]);
+
+  // ── NEW Improvement #S3: Streak tracking — update on mount ──
+  useEffect(() => {
+    const today = new Date().toDateString();
+    setStreakData(prev => {
+      if (prev.lastDate === today) return prev;
+      const yesterday = new Date(Date.now() - 86400000).toDateString();
+      const newCount = prev.lastDate === yesterday ? prev.count + 1 : 1;
+      const next = { count: newCount, lastDate: today };
+      try { localStorage.setItem('gs_streakData', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── NEW Improvement #S5: Notification grouping by type ──
+  useEffect(() => {
+    // Group notifications when offers/purchases/following change
+    const social = following.slice(-3).map(u => ({ type: 'social', text: `Started following @${u}`, time: Date.now() }));
+    const marketplace = purchases.slice(0, 3).map(p => ({ type: 'marketplace', text: `Purchased ${p.album}`, time: Date.now() }));
+    const system = [{ type: 'system', text: `${seasonalTheme.charAt(0).toUpperCase() + seasonalTheme.slice(1)} theme active`, time: Date.now() }];
+    setGroupedNotifications({ social, marketplace, system });
+  }, [following, purchases, seasonalTheme]);
+
+  // ── NEW Improvement #S6: Smart search with filters (prefix: artist:, genre:, year:, price:) ──
+  const smartSearchResults = useMemo(() => {
+    const q = debouncedGlobalSearch.trim().toLowerCase();
+    if (!q) return null;
+    // Check for prefix filters
+    const artistMatch = q.match(/^artist:\s*(.+)/);
+    const genreMatch = q.match(/^genre:\s*(.+)/);
+    const yearMatch = q.match(/^year:\s*(\d{4})/);
+    const priceMatch = q.match(/^price:\s*(\d+)-?(\d*)/);
+    if (artistMatch) {
+      const term = artistMatch[1].trim();
+      return { type: 'artist', results: records.filter(r => r.artist?.toLowerCase().includes(term)) };
+    }
+    if (genreMatch) {
+      const term = genreMatch[1].trim();
+      return { type: 'genre', results: records.filter(r => r.genre?.toLowerCase().includes(term)) };
+    }
+    if (yearMatch) {
+      const yr = parseInt(yearMatch[1], 10);
+      return { type: 'year', results: records.filter(r => r.year === yr) };
+    }
+    if (priceMatch) {
+      const min = parseInt(priceMatch[1], 10);
+      const max = priceMatch[2] ? parseInt(priceMatch[2], 10) : Infinity;
+      return { type: 'price', results: records.filter(r => r.forSale && r.price >= min && r.price <= max) };
+    }
+    return null; // fallback to normal search
+  }, [debouncedGlobalSearch, records]);
+
+  // ── NEW Improvement #S7: Drag-and-drop file upload handler ──
+  const handleFileDrop = useCallback((e) => {
+    e.preventDefault();
+    setDragUploadActive(false);
+    const files = Array.from(e.dataTransfer?.files || []);
+    const imageFile = files.find(f => f.type.startsWith('image/'));
+    if (imageFile) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setUploadedImageUrl(event.target.result);
+        showToast(`Image "${imageFile.name}" ready for upload`);
+      };
+      reader.readAsDataURL(imageFile);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleDragOverGlobal = useCallback((e) => {
+    e.preventDefault();
+    if (e.dataTransfer?.types?.includes('Files')) {
+      setDragUploadActive(true);
+    }
+  }, []);
+
+  const handleDragLeaveGlobal = useCallback(() => {
+    setDragUploadActive(false);
+  }, []);
+
+  // ── NEW Improvement #S8: Share app / invite friends handler ──
+  const shareApp = useCallback(async () => {
+    const shareData = {
+      title: 'GrooveStack',
+      text: `Check out GrooveStack — the ultimate vinyl record community! Join me @${currentUser}`,
+      url: window.location.origin,
+    };
+    if (navigator.share) {
+      try { await navigator.share(shareData); showToast('Shared successfully!'); } catch { /* cancelled */ }
+    } else {
+      navigator.clipboard?.writeText(`${shareData.text} ${shareData.url}`).then(
+        () => showToast('Invite link copied to clipboard!'),
+        () => showToast('Could not copy link')
+      );
+    }
+  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── NEW Improvement #S11: Battery saver mode persistence + effect ──
+  useEffect(() => {
+    localStorage.setItem('gs_batterySaver', JSON.stringify(batterySaverMode));
+    document.documentElement.classList.toggle('battery-saver', batterySaverMode);
+    if (batterySaverMode) {
+      document.documentElement.style.setProperty('--gs-transition-speed', '0s');
+    } else {
+      document.documentElement.style.removeProperty('--gs-transition-speed');
+    }
+    return () => { document.documentElement.classList.remove('battery-saver'); document.documentElement.style.removeProperty('--gs-transition-speed'); };
+  }, [batterySaverMode]);
+
+  // ── NEW Improvement #S12: Auto-dark mode based on system preference ──
+  useEffect(() => {
+    localStorage.setItem('gs_autoTheme', JSON.stringify(autoThemeEnabled));
+    if (!autoThemeEnabled) return;
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e) => setTheme(e.matches ? 'dark' : 'light');
+    handler(mql); // apply immediately
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, [autoThemeEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Improvement #4: Auto-save all user data to localStorage periodically ──
   useEffect(() => {
@@ -1667,7 +1859,7 @@ export default function App() {
         <filter id="tritanopia-filter"><feColorMatrix type="matrix" values="0.95,0.05,0,0,0 0,0.433,0.567,0,0 0,0.475,0.525,0,0 0,0,0,1,0"/></filter>
       </defs>
     </svg>
-    <div className={`min-h-screen bg-gs-bg font-sans text-gs-text ${printMode ? 'print-friendly' : ''} ${isFullScreen ? 'fullscreen-mode' : ''} ${compactMode ? 'compact-mode' : ''}`} data-theme={theme} data-cb-mode={colorBlindMode}>
+    <div className={`min-h-screen bg-gs-bg font-sans text-gs-text ${printMode ? 'print-friendly' : ''} ${isFullScreen ? 'fullscreen-mode' : ''} ${compactMode ? 'compact-mode' : ''}`} data-theme={theme} data-cb-mode={colorBlindMode} onDragOver={handleDragOverGlobal} onDragLeave={handleDragLeaveGlobal} onDrop={handleFileDrop}>
       {/* Accessibility: skip-to-content link (#1) */}
       <SkipToContent />
 
@@ -1921,6 +2113,20 @@ export default function App() {
           { id: "Wishlist", label: "Wishlist", icon: "heart", shortcut: "9" },
         ]}
         onCommandPalette={() => { setShowCommandPalette(true); setCommandQuery(''); }}
+        /* NEW props for 8 Sidebar improvements */
+        audioPlayer={audioPlayer}
+        onStopPreview={stopPreview}
+        salesCount={purchases.length}
+        recentSearches={recentSearches}
+        onSelectRecentSearch={(q) => { setGlobalSearch(q); }}
+        seasonalTheme={seasonalTheme}
+        streakCount={streakData.count}
+        onShowTutorials={() => setShowTutorials(true)}
+        onShareApp={shareApp}
+        batterySaverMode={batterySaverMode}
+        onToggleBatterySaver={() => setBatterySaverMode(b => !b)}
+        autoThemeEnabled={autoThemeEnabled}
+        onToggleAutoTheme={() => setAutoThemeEnabled(a => !a)}
       />
 
       <main id="main-content" className={`gs-main ml-[196px] px-10 py-[26px] max-w-[1400px] ${isFullScreen ? 'ml-0' : ''}`} role="main">
@@ -2078,6 +2284,78 @@ export default function App() {
             <button onClick={() => { setBatchMode(false); setBatchSelected([]); }} className="ml-auto text-xs text-gs-dim hover:text-gs-text transition-colors">
               Exit Batch Mode
             </button>
+          </div>
+        )}
+
+        {/* NEW #S3: Streak tracking display */}
+        {!isGuest && streakData.count > 0 && (
+          <div className="mb-3 flex items-center gap-2 print:hidden">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-400 font-medium flex items-center gap-1">
+              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 23c-4.97 0-9-2.69-9-6v-.01C3 13.17 5 9.5 8 6.5S12 2 12 2s1 1.5 4 4.5 5 6.67 5 10.49V17c0 3.31-4.03 6-9 6zm0-2c3.31 0 6-1.79 6-4 0-2.21-1.79-6-6-10-4.21 4-6 7.79-6 10 0 2.21 2.69 4 6 4z"/></svg>
+              {streakData.count} day streak
+            </span>
+          </div>
+        )}
+
+        {/* NEW #S2: Record of the Day feature */}
+        {!isGuest && recordOfTheDay && nav === 'Social' && !viewingUserProfile && (
+          <div className="mb-4 p-3 bg-gradient-to-r from-gs-accent/10 to-transparent border border-gs-accent/20 rounded-lg flex items-center gap-4 print:hidden animate-fade-in">
+            <div className="w-12 h-12 rounded-lg flex-shrink-0 shadow" style={{ background: recordOfTheDay.accent || '#666' }} />
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] text-gs-accent font-semibold uppercase tracking-wider mb-0.5">Record of the Day</div>
+              <div className="text-sm text-gs-text font-medium truncate">{recordOfTheDay.album}</div>
+              <div className="text-xs text-gs-dim truncate">{recordOfTheDay.artist} &middot; {recordOfTheDay.year}</div>
+            </div>
+            <button onClick={() => onDetail(recordOfTheDay)} className="px-3 py-1.5 text-xs bg-gs-accent/20 text-gs-accent rounded-lg hover:bg-gs-accent/30 transition-colors flex-shrink-0">
+              View
+            </button>
+          </div>
+        )}
+
+        {/* NEW #S10: Marketplace summary widget on home */}
+        {!isGuest && nav === 'Social' && !viewingUserProfile && (
+          <div className="mb-4 p-3 bg-gs-surface border border-gs-border rounded-lg print:hidden">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-semibold text-gs-muted uppercase tracking-wider">Marketplace Snapshot</span>
+              <button onClick={() => setNav('Marketplace')} className="text-[10px] text-gs-accent hover:underline">View all</button>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="text-center">
+                <div className="text-lg font-bold text-gs-text">{records.filter(r => r.forSale).length}</div>
+                <div className="text-[9px] text-gs-dim">Listed</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-gs-text">{purchases.length}</div>
+                <div className="text-[9px] text-gs-dim">Purchases</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-gs-text">{offers.filter(o => o.status === 'pending').length}</div>
+                <div className="text-[9px] text-gs-dim">Pending Offers</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* NEW #S6: Smart search results with filters */}
+        {smartSearchResults && smartSearchResults.results.length > 0 && (
+          <div className="mb-4 p-3 bg-gs-surface border border-gs-border rounded-lg print:hidden animate-fade-in">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-semibold text-gs-accent uppercase tracking-wider">
+                Filtered by {smartSearchResults.type}: {smartSearchResults.results.length} results
+              </span>
+              <span className="text-[9px] text-gs-dim">Try artist:, genre:, year:, price:</span>
+            </div>
+            <div className="space-y-1 max-h-[200px] overflow-y-auto">
+              {smartSearchResults.results.slice(0, 8).map(r => (
+                <button key={r.id} onClick={() => onDetail(r)} className="w-full flex items-center gap-2 text-left px-2 py-1.5 hover:bg-gs-border/50 rounded transition-colors">
+                  <div className="w-6 h-6 rounded flex-shrink-0" style={{ background: r.accent || '#666' }} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs text-gs-text truncate">{r.album}</div>
+                    <div className="text-[10px] text-gs-dim truncate">{r.artist} &middot; {r.year} {r.forSale ? `&middot; $${r.price}` : ''}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -2482,6 +2760,96 @@ export default function App() {
           .print-friendly .gs-sidebar-mobile { display: none !important; }
           .print-friendly .gs-main { margin-left: 0 !important; }
         `}</style>
+      )}
+
+      {/* NEW #S11: Battery saver mode styles */}
+      {batterySaverMode && (
+        <style>{`
+          .battery-saver * { animation: none !important; transition: none !important; }
+          .battery-saver .animate-pulse, .battery-saver .animate-spin, .battery-saver .animate-fade-in { animation: none !important; }
+          .battery-saver [class*="backdrop-blur"] { backdrop-filter: none !important; }
+        `}</style>
+      )}
+
+      {/* NEW #S7: Drag-and-drop file upload overlay */}
+      {dragUploadActive && (
+        <div
+          className="fixed inset-0 z-[2500] bg-gs-accent/10 border-4 border-dashed border-gs-accent/50 flex items-center justify-center backdrop-blur-sm"
+          onDragOver={handleDragOverGlobal}
+          onDragLeave={handleDragLeaveGlobal}
+          onDrop={handleFileDrop}
+        >
+          <div className="text-center">
+            <svg className="w-16 h-16 mx-auto text-gs-accent mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5"><path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+            <div className="text-lg font-semibold text-gs-text">Drop image to upload</div>
+            <div className="text-sm text-gs-muted mt-1">Supports JPG, PNG, WebP</div>
+          </div>
+        </div>
+      )}
+
+      {/* NEW #S4: Quick Actions Floating Action Button (mobile FAB) */}
+      {!isGuest && session && (
+        <div className="gs-mobile-fab fixed bottom-20 right-4 z-[1050] hidden print:hidden">
+          {fabOpen && (
+            <div className="mb-2 space-y-2 animate-fade-in">
+              <button onClick={() => { setFabOpen(false); setShowAdd(true); }} className="flex items-center gap-2 bg-gs-surface border border-gs-border rounded-full px-3 py-2 shadow-lg text-xs text-gs-text hover:bg-gs-border transition-colors">
+                <svg className="w-4 h-4 text-gs-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+                Add Record
+              </button>
+              <button onClick={() => { setFabOpen(false); setShowCreatePost(true); }} className="flex items-center gap-2 bg-gs-surface border border-gs-border rounded-full px-3 py-2 shadow-lg text-xs text-gs-text hover:bg-gs-border transition-colors">
+                <svg className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                New Post
+              </button>
+              <button onClick={() => { setFabOpen(false); shareApp(); }} className="flex items-center gap-2 bg-gs-surface border border-gs-border rounded-full px-3 py-2 shadow-lg text-xs text-gs-text hover:bg-gs-border transition-colors">
+                <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/></svg>
+                Invite Friends
+              </button>
+              <button onClick={() => { setFabOpen(false); setShowDMs(true); }} className="flex items-center gap-2 bg-gs-surface border border-gs-border rounded-full px-3 py-2 shadow-lg text-xs text-gs-text hover:bg-gs-border transition-colors">
+                <svg className="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                Messages
+              </button>
+            </div>
+          )}
+          <button
+            onClick={() => setFabOpen(f => !f)}
+            className={`w-14 h-14 rounded-full bg-gs-accent text-white shadow-xl flex items-center justify-center transition-transform duration-200 ${fabOpen ? 'rotate-45' : ''}`}
+            aria-label="Quick actions"
+          >
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </div>
+      )}
+
+      {/* NEW #S9: Tutorial videos modal */}
+      {showTutorials && (
+        <div className="fixed inset-0 bg-black/70 z-[1800] flex items-center justify-center backdrop-blur-sm animate-fade-in" onClick={e => { if (e.target === e.currentTarget) setShowTutorials(false); }}>
+          <div className="bg-gs-bg border border-gs-border rounded-xl w-full max-w-[500px] p-6 shadow-2xl max-h-[70vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-gs-text mb-4 flex items-center gap-2">
+              <svg className="w-5 h-5 text-gs-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+              Tutorials & Guides
+            </h3>
+            <div className="space-y-2">
+              {TUTORIAL_VIDEOS.map(video => (
+                <a
+                  key={video.id}
+                  href={video.url}
+                  className="flex items-center gap-3 p-3 bg-gs-surface border border-gs-border rounded-lg hover:border-gs-accent/40 transition-colors group"
+                  onClick={e => { e.preventDefault(); showToast(`Tutorial "${video.title}" coming soon!`); }}
+                >
+                  <div className="w-10 h-10 rounded-lg bg-gs-accent/10 flex items-center justify-center flex-shrink-0 group-hover:bg-gs-accent/20 transition-colors">
+                    <svg className="w-5 h-5 text-gs-accent" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-gs-text font-medium truncate">{video.title}</div>
+                    <div className="text-xs text-gs-dim">{video.duration}</div>
+                  </div>
+                  <svg className="w-4 h-4 text-gs-dim group-hover:text-gs-accent transition-colors flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
+                </a>
+              ))}
+            </div>
+            <button onClick={() => setShowTutorials(false)} className="mt-4 w-full px-4 py-2 text-sm text-gs-muted hover:text-gs-text transition-colors text-center">Close</button>
+          </div>
+        </div>
       )}
     </div>
     </ErrorBoundary>

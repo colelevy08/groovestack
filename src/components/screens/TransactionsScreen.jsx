@@ -494,12 +494,126 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
     URL.revokeObjectURL(url);
   }, [purchases, selectedCurrency, convertPrice]);
 
+  // Micro-improvement 15: Transaction summary email generator
+  const generateSummaryEmail = useCallback(() => {
+    const totalPurchases = (purchases || []).length;
+    const totalSpent = totals.spent.toFixed(2);
+    const totalOffers = sentOffers.length + receivedOffers.length;
+    const accepted = [...sentOffers, ...receivedOffers].filter(o => o.status === 'accepted').length;
+    const email = [
+      `Subject: Groovestack Transaction Summary - ${new Date().toLocaleDateString()}`,
+      '',
+      `Hi @${currentUser},`,
+      '',
+      'Here is your transaction summary:',
+      '',
+      `Purchases: ${totalPurchases} (Total: $${totalSpent})`,
+      `Offers: ${totalOffers} (${accepted} accepted)`,
+      `Cart Items: ${(cart || []).length}`,
+      '',
+      'Top purchases:',
+      ...(purchases || []).slice(0, 5).map(p => `  - ${p.album} by ${p.artist} ($${p.price})`),
+      '',
+      'Thanks for being part of the Groovestack community!',
+    ].join('\n');
+    const blob = new Blob([email], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `transaction-summary-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [purchases, sentOffers, receivedOffers, cart, totals.spent, currentUser]);
+
+  // Micro-improvement 16: Spending limit warnings
+  const spendingLimitWarning = useMemo(() => {
+    const monthlyBudget = 200; // Simulated monthly budget
+    const thisMonthSpent = (purchases || []).reduce((sum, p) => {
+      return sum + (parseFloat(p.price) || 0);
+    }, 0);
+    const pct = Math.round((thisMonthSpent / monthlyBudget) * 100);
+    return {
+      budget: monthlyBudget,
+      spent: thisMonthSpent,
+      pct: Math.min(pct, 100),
+      overBudget: thisMonthSpent > monthlyBudget,
+      nearLimit: pct >= 80 && pct < 100,
+    };
+  }, [purchases]);
+
+  // Micro-improvement 17: Tax summary for year-end
+  const [showTaxSummary, setShowTaxSummary] = useState(false);
+  const taxSummary = useMemo(() => {
+    const year = new Date().getFullYear();
+    const totalPurchases = (purchases || []).reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0);
+    const totalFees = totalPurchases * 0.05;
+    const totalShipping = (purchases || []).length * 6;
+    const totalEarnings = sentOffers.filter(o => o.status === 'accepted').reduce((sum, o) => sum + (parseFloat(o.price) || 0), 0);
+    return {
+      year,
+      purchases: totalPurchases,
+      fees: totalFees,
+      shipping: totalShipping,
+      totalDeductible: totalFees + totalShipping,
+      earnings: totalEarnings,
+      netSpend: totalPurchases + totalFees + totalShipping - totalEarnings,
+    };
+  }, [purchases, sentOffers]);
+
   return (
     <div>
       <div className="mb-4">
         <h1 className="text-[22px] font-extrabold tracking-tight text-gs-text mb-0.5">Activity</h1>
         <p className="text-xs text-gs-dim">Your transactions, offers, and cart</p>
       </div>
+
+      {/* Micro-improvement 16: Spending limit warning bar */}
+      <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-3">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] font-mono text-gs-dim uppercase tracking-wider">Monthly Budget</span>
+          <span className="text-[10px] font-mono" style={{ color: spendingLimitWarning.overBudget ? '#ef4444' : spendingLimitWarning.nearLimit ? '#f59e0b' : '#22c55e' }}>
+            ${spendingLimitWarning.spent.toFixed(0)} / ${spendingLimitWarning.budget}
+          </span>
+        </div>
+        <div className="h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${spendingLimitWarning.pct}%`, background: spendingLimitWarning.overBudget ? '#ef4444' : spendingLimitWarning.nearLimit ? '#f59e0b' : '#22c55e' }} />
+        </div>
+        {spendingLimitWarning.overBudget && <div className="text-[9px] text-red-400 mt-1 font-mono">Over budget this month!</div>}
+        {spendingLimitWarning.nearLimit && !spendingLimitWarning.overBudget && <div className="text-[9px] text-amber-400 mt-1 font-mono">Approaching budget limit</div>}
+      </div>
+
+      {/* Micro-improvement 15 & 17: Summary email & Tax summary buttons */}
+      <div className="flex gap-2 mb-3">
+        <button
+          onClick={generateSummaryEmail}
+          className="flex-1 text-[10px] py-2 rounded-lg border border-gs-border bg-gs-card text-gs-muted cursor-pointer hover:text-gs-accent hover:border-gs-accent/30 transition-colors font-mono"
+        >
+          Export Summary Email
+        </button>
+        <button
+          onClick={() => setShowTaxSummary(!showTaxSummary)}
+          className={`flex-1 text-[10px] py-2 rounded-lg border font-mono cursor-pointer transition-colors ${showTaxSummary ? 'bg-gs-accent/15 border-gs-accent/30 text-gs-accent' : 'border-gs-border bg-gs-card text-gs-muted hover:text-gs-accent hover:border-gs-accent/30'}`}
+        >
+          Tax Summary {new Date().getFullYear()}
+        </button>
+      </div>
+
+      {/* Micro-improvement 17: Tax summary panel */}
+      {showTaxSummary && (
+        <div className="bg-gs-card border border-gs-border rounded-xl p-4 mb-4">
+          <div className="text-[10px] font-mono text-gs-dim uppercase tracking-wider mb-3">Tax Summary - {taxSummary.year}</div>
+          <div className="grid grid-cols-2 gap-2 text-[11px]">
+            <div className="flex justify-between"><span className="text-gs-faint">Total Purchases:</span><span className="text-gs-text font-bold">${taxSummary.purchases.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-gs-faint">Platform Fees:</span><span className="text-gs-text font-bold">${taxSummary.fees.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-gs-faint">Shipping Costs:</span><span className="text-gs-text font-bold">${taxSummary.shipping.toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-gs-faint">Total Earnings:</span><span className="text-green-400 font-bold">${taxSummary.earnings.toFixed(2)}</span></div>
+          </div>
+          <div className="mt-2 pt-2 border-t border-[#1a1a1a] flex justify-between text-xs">
+            <span className="text-gs-dim font-mono">Net Spend:</span>
+            <span className="font-extrabold" style={{ color: taxSummary.netSpend > 0 ? '#ef4444' : '#22c55e' }}>${Math.abs(taxSummary.netSpend).toFixed(2)}</span>
+          </div>
+        </div>
+      )}
 
       {/* Summary cards with running totals */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-3">

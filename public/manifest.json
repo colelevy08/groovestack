@@ -31,5 +31,68 @@
   "dir": "ltr",
   "prefer_related_applications": false,
   "scope": "/",
-  "id": "/"
+  "id": "/",
+
+  "share_target": {
+    "action": "/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "media",
+          "accept": ["image/*", "audio/*"]
+        }
+      ]
+    }
+  },
+
+  "file_handlers": [
+    {
+      "action": "/import",
+      "accept": {
+        "text/csv": [".csv"],
+        "application/json": [".json"],
+        "application/xml": [".xml"]
+      }
+    },
+    {
+      "action": "/open-image",
+      "accept": {
+        "image/jpeg": [".jpg", ".jpeg"],
+        "image/png": [".png"],
+        "image/webp": [".webp"]
+      }
+    }
+  ],
+
+  "protocol_handlers": [
+    {
+      "protocol": "web+groovestack",
+      "url": "/protocol?uri=%s"
+    },
+    {
+      "protocol": "web+vinyl",
+      "url": "/record?uri=%s"
+    }
+  ],
+
+  "related_applications": [
+    {
+      "platform": "play",
+      "url": "https://play.google.com/store/apps/details?id=app.groovestack.android",
+      "id": "app.groovestack.android"
+    },
+    {
+      "platform": "itunes",
+      "url": "https://apps.apple.com/app/groovestack/id0000000000"
+    },
+    {
+      "platform": "webapp",
+      "url": "https://groovestack.app/manifest.json"
+    }
+  ]
 }

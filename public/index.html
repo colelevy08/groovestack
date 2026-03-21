@@ -77,6 +77,10 @@
     </script>
 
     <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+
+    <!-- Improvement 14: Offline fallback page link -->
+    <link rel="prefetch" href="%PUBLIC_URL%/offline.html" />
+
     <title>GrooveStack — Vinyl Record Community</title>
   </head>
   <body>
@@ -88,5 +92,89 @@
       </div>
     </noscript>
     <div id="root"></div>
+
+    <!-- Improvement 13: Service worker registration script -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('%PUBLIC_URL%/service-worker.js')
+            .then(function(registration) {
+              console.log('[GrooveStack] SW registered, scope:', registration.scope);
+              registration.addEventListener('updatefound', function() {
+                var newWorker = registration.installing;
+                if (newWorker) {
+                  newWorker.addEventListener('statechange', function() {
+                    if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                      window.dispatchEvent(new CustomEvent('gs-sw-update-available'));
+                    }
+                  });
+                }
+              });
+            })
+            .catch(function(error) {
+              console.warn('[GrooveStack] SW registration failed:', error);
+            });
+        });
+      }
+    </script>
+
+    <!-- Improvement 15: Performance monitoring script placeholder -->
+    <script>
+      (function() {
+        window.__GS_PERF = {};
+        if ('performance' in window && 'PerformanceObserver' in window) {
+          try {
+            var paintObserver = new PerformanceObserver(function(list) {
+              list.getEntries().forEach(function(entry) {
+                window.__GS_PERF[entry.name] = entry.startTime;
+              });
+            });
+            paintObserver.observe({ type: 'paint', buffered: true });
+
+            var lcpObserver = new PerformanceObserver(function(list) {
+              var entries = list.getEntries();
+              if (entries.length > 0) {
+                window.__GS_PERF.lcp = entries[entries.length - 1].startTime;
+              }
+            });
+            lcpObserver.observe({ type: 'largest-contentful-paint', buffered: true });
+
+            var clsObserver = new PerformanceObserver(function(list) {
+              var clsValue = 0;
+              list.getEntries().forEach(function(entry) {
+                if (!entry.hadRecentInput) {
+                  clsValue += entry.value;
+                }
+              });
+              window.__GS_PERF.cls = clsValue;
+            });
+            clsObserver.observe({ type: 'layout-shift', buffered: true });
+
+            var fidObserver = new PerformanceObserver(function(list) {
+              list.getEntries().forEach(function(entry) {
+                window.__GS_PERF.fid = entry.processingStart - entry.startTime;
+              });
+            });
+            fidObserver.observe({ type: 'first-input', buffered: true });
+          } catch (e) { /* observer not supported */ }
+        }
+      })();
+    </script>
+
+    <!-- Improvement 16: Cookie consent placeholder -->
+    <div id="gs-cookie-consent" style="display:none; position:fixed; bottom:0; left:0; right:0; z-index:9999; padding:1rem 1.5rem; background:#111; border-top:1px solid #222; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:0.875rem; color:#ccc;">
+      <div style="max-width:1200px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
+        <p style="margin:0; flex:1; min-width:200px;">We use cookies to enhance your experience. By continuing to visit this site you agree to our use of cookies. <a href="/privacy" style="color:#0ea5e9; text-decoration:underline;">Learn more</a></p>
+        <div style="display:flex; gap:0.5rem;">
+          <button onclick="document.getElementById('gs-cookie-consent').style.display='none'; localStorage.setItem('gs-cookie-consent','accepted')" style="padding:0.5rem 1.25rem; background:#0ea5e9; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:600; font-size:0.8125rem;">Accept</button>
+          <button onclick="document.getElementById('gs-cookie-consent').style.display='none'; localStorage.setItem('gs-cookie-consent','declined')" style="padding:0.5rem 1.25rem; background:transparent; color:#888; border:1px solid #333; border-radius:8px; cursor:pointer; font-weight:600; font-size:0.8125rem;">Decline</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      if (!localStorage.getItem('gs-cookie-consent')) {
+        document.getElementById('gs-cookie-consent').style.display = 'block';
+      }
+    </script>
   </body>
 </html>

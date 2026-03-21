@@ -1388,6 +1388,34 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
     setShowTemplatesGallery(false);
   };
 
+  // Micro-improvement 9: Virtualized list placeholder for infinite scroll optimization
+  const [virtualizedEnabled, setVirtualizedEnabled] = useState(false);
+  const [scrollPosition, setScrollPosition] = useState(0);
+  const virtualItemHeight = 280; // estimated post card height
+  const virtualBuffer = 5;
+  useEffect(() => {
+    if (!virtualizedEnabled) return;
+    const handleScroll = () => setScrollPosition(window.scrollY);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [virtualizedEnabled]);
+  const virtualStartIdx = virtualizedEnabled ? Math.max(0, Math.floor(scrollPosition / virtualItemHeight) - virtualBuffer) : 0;
+  const virtualEndIdx = virtualizedEnabled ? Math.min(visibleCount, virtualStartIdx + 15 + virtualBuffer * 2) : visibleCount;
+
+  // Micro-improvement 10: Post creation success animation
+  const [showPostSuccess, setShowPostSuccess] = useState(false);
+  const [postSuccessMessage, setPostSuccessMessage] = useState('');
+
+  // Micro-improvement 11: Feed personalization score display
+  const feedPersonalizationScore = useMemo(() => {
+    if (!following || following.length === 0) return 0;
+    const followingPosts = posts.filter(p => following.includes(p.user)).length;
+    const totalPosts = posts.length || 1;
+    const followingRatio = Math.round((followingPosts / totalPosts) * 50);
+    const interactionScore = Math.min(50, posts.filter(p => p.bookmarked || p.liked).length * 5);
+    return Math.min(100, followingRatio + interactionScore);
+  }, [posts, following]);
+
   // Improvement 1: Rich formatting insert
   const handleFormatInsert = (prefix, suffix) => {
     const textarea = composerRef.current;
@@ -1446,6 +1474,10 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
     setExpirationHours('');
     setAltText('');
     setShowComposer(false);
+    // Micro-improvement 10: Trigger post success animation
+    setPostSuccessMessage(scheduledDate ? 'Post scheduled!' : 'Post published!');
+    setShowPostSuccess(true);
+    setTimeout(() => setShowPostSuccess(false), 2500);
   };
 
   // Trending: most-liked posts from last 7 days
@@ -1609,6 +1641,34 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
           </div>
         </div>
       </div>
+
+      {/* Micro-improvement 10: Post creation success animation */}
+      {showPostSuccess && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] px-5 py-3 rounded-xl bg-green-500/90 text-white text-sm font-bold shadow-lg shadow-green-500/30" style={{ animation: 'feedSuccessAnim 0.3s ease-out' }}>
+          <div className="flex items-center gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+            {postSuccessMessage}
+          </div>
+        </div>
+      )}
+
+      {/* Micro-improvement 11: Feed personalization score */}
+      <div className="flex items-center justify-between mb-2 px-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[9px] font-mono text-gs-faint uppercase tracking-wider">Feed Personalization:</span>
+          <div className="w-16 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${feedPersonalizationScore}%`, background: feedPersonalizationScore >= 60 ? '#22c55e' : feedPersonalizationScore >= 30 ? '#f59e0b' : '#ef4444' }} />
+          </div>
+          <span className="text-[9px] font-mono" style={{ color: feedPersonalizationScore >= 60 ? '#22c55e' : feedPersonalizationScore >= 30 ? '#f59e0b' : '#ef4444' }}>{feedPersonalizationScore}%</span>
+        </div>
+        {/* Micro-improvement 9: Virtualized list toggle */}
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <input type="checkbox" checked={virtualizedEnabled} onChange={e => setVirtualizedEnabled(e.target.checked)} className="accent-gs-accent w-3 h-3" />
+          <span className="text-[9px] text-gs-faint font-mono">Perf mode</span>
+        </label>
+      </div>
+
+      <style>{`@keyframes feedSuccessAnim { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }`}</style>
 
       {/* Improvement 25: Feed density toggle */}
       <div className="flex items-center gap-2 mb-3">

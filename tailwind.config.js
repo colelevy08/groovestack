@@ -1,7 +1,34 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ["./src/**/*.{js,jsx}"],
+  /* Improvement 12: Container breakpoints */
   theme: {
+    screens: {
+      'xs': '475px',
+      'sm': '640px',
+      'md': '768px',
+      'lg': '1024px',
+      'xl': '1280px',
+      '2xl': '1536px',
+      '3xl': '1920px',
+    },
+    container: {
+      center: true,
+      padding: {
+        DEFAULT: '1rem',
+        sm: '1.5rem',
+        lg: '2rem',
+        xl: '3rem',
+        '2xl': '4rem',
+      },
+      screens: {
+        sm: '640px',
+        md: '768px',
+        lg: '1024px',
+        xl: '1280px',
+        '2xl': '1400px',
+      },
+    },
     extend: {
       colors: {
         gs: {
@@ -28,6 +55,19 @@ module.exports = {
           'accent-dark': '#0369a1',
           'indigo-light': '#818cf8',
           'indigo-dark': '#4338ca',
+          /* Improvement 9: Light theme color tokens */
+          'light-bg': '#f8f8f8',
+          'light-card': '#ffffff',
+          'light-surface': '#ffffff',
+          'light-sidebar': '#f0f0f0',
+          'light-border': '#e0e0e0',
+          'light-text': '#111111',
+          'light-muted': '#555555',
+          'light-highlight': '#fffbeb',
+          'light-input-bg': '#ffffff',
+          'light-input-border': '#d1d5db',
+          'light-badge-bg': '#f3f4f6',
+          'light-skeleton': '#e5e7eb',
         },
         /* Improvement 12: Chart colors mapped to Tailwind classes */
         chart: {
@@ -45,11 +85,44 @@ module.exports = {
         sans: ["'DM Sans'", '-apple-system', 'sans-serif'],
         mono: ["'DM Mono'", 'monospace'],
       },
+      /* Improvement 11: Typography plugin-like utilities */
+      fontSize: {
+        'xxs': ['0.625rem', { lineHeight: '0.875rem' }],
+        'label': ['0.6875rem', { lineHeight: '1rem', fontWeight: '600', letterSpacing: '0.08em' }],
+        'body-sm': ['0.8125rem', { lineHeight: '1.25rem' }],
+        'body': ['0.875rem', { lineHeight: '1.375rem' }],
+        'body-lg': ['1rem', { lineHeight: '1.5rem' }],
+        'heading-sm': ['1.125rem', { lineHeight: '1.5rem', fontWeight: '700' }],
+        'heading': ['1.5rem', { lineHeight: '2rem', fontWeight: '700' }],
+        'heading-lg': ['2rem', { lineHeight: '2.5rem', fontWeight: '800' }],
+        'display': ['2.5rem', { lineHeight: '3rem', fontWeight: '800' }],
+        'display-lg': ['3.5rem', { lineHeight: '4rem', fontWeight: '800' }],
+      },
+      letterSpacing: {
+        'label': '0.08em',
+        'tight': '-0.01em',
+        'display': '-0.025em',
+      },
       spacing: {
         '18': '4.5rem',
         '88': '22rem',
         '100': '25rem',
         '120': '30rem',
+        /* Improvement 10: Custom spacing for common patterns */
+        'sidebar': '240px',
+        'sidebar-sm': '64px',
+        'header': '64px',
+        'mobile-bar': '72px',
+        'card-gap': '1.25rem',
+        'section-gap': '2.5rem',
+        'page-x': '1.5rem',
+        'page-x-lg': '3rem',
+        'modal-pad': '1.5rem',
+        'input-height': '2.75rem',
+        'btn-height': '2.5rem',
+        'avatar-sm': '2rem',
+        'avatar-md': '2.5rem',
+        'avatar-lg': '3.5rem',
       },
       /* Improvement 13: Aspect ratio extensions */
       aspectRatio: {

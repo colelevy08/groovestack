@@ -125,6 +125,91 @@ export async function getArtistInfo(artist) {
   return promise;
 }
 
+// ---------------------------------------------------------------------------
+// 13. Artist genre classification
+// ---------------------------------------------------------------------------
+
+/**
+ * Classify an artist's genres using MusicBrainz tags.
+ * Returns an array of { genre, weight } sorted by relevance.
+ *
+ * @param {string} artist - The artist name.
+ * @returns {Promise<Object[]|null>} Array of { genre: string, weight: number } or null.
+ */
+export async function getArtistGenres(artist) {
+  if (!artist) return null;
+
+  const key = `genres_${cacheKey(artist)}`;
+  if (memoryCache.has(key)) return memoryCache.get(key);
+
+  const cached = lsGet(key);
+  if (cached !== undefined) {
+    memoryCache.set(key, cached);
+    return cached;
+  }
+
+  if (inFlight.has(key)) return inFlight.get(key);
+
+  const promise = (async () => {
+    try {
+      const searchResp = await fetch(
+        `https://musicbrainz.org/ws/2/artist/?query=artist:${encodeURIComponent(artist)}&fmt=json&limit=1`,
+        { headers: { "User-Agent": "GrooveStack/1.0 (https://groovestack.app)" } }
+      );
+      if (!searchResp.ok) throw new Error(`HTTP ${searchResp.status}`);
+      const searchData = await searchResp.json();
+      const mbid = searchData.artists?.[0]?.id;
+      if (!mbid) return null;
+
+      const tagResp = await fetch(
+        `https://musicbrainz.org/ws/2/artist/${mbid}?inc=tags&fmt=json`,
+        { headers: { "User-Agent": "GrooveStack/1.0 (https://groovestack.app)" } }
+      );
+      if (!tagResp.ok) throw new Error(`HTTP ${tagResp.status}`);
+      const tagData = await tagResp.json();
+
+      const genres = (tagData.tags || [])
+        .map(t => ({ genre: t.name, weight: t.count || 0 }))
+        .sort((a, b) => b.weight - a.weight);
+
+      memoryCache.set(key, genres);
+      lsSet(key, genres);
+      return genres;
+    } catch {
+      memoryCache.set(key, null);
+      return null;
+    } finally {
+      inFlight.delete(key);
+    }
+  })();
+
+  inFlight.set(key, promise);
+  return promise;
+}
+
+// ---------------------------------------------------------------------------
+// 14. Artist biography summary
+// ---------------------------------------------------------------------------
+
+/**
+ * Get a short biography summary for an artist (first 2-3 sentences).
+ * Extracts from the full Wikipedia bio returned by getArtistInfo.
+ *
+ * @param {string} artist   - The artist name.
+ * @param {number} [maxSentences=3] - Maximum number of sentences.
+ * @returns {Promise<string|null>} Short bio string or null.
+ */
+export async function getArtistBioSummary(artist, maxSentences = 3) {
+  const info = await getArtistInfo(artist);
+  if (!info?.bio) return null;
+
+  // Split on sentence boundaries (period followed by space or end-of-string)
+  const sentences = info.bio.match(/[^.!?]+[.!?]+(\s|$)/g);
+  if (!sentences) return info.bio;
+
+  return sentences.slice(0, maxSentences).join("").trim();
+}
+
 /**
  * Fetch an artist's discography (list of albums) from MusicBrainz.
  * Returns an array of { title, year, type } objects sorted by year.
@@ -198,6 +283,7 @@ export async function getArtistDiscography(artist) {
  * @param {string} artist - The artist name.
  * @returns {Promise<Object[]|null>} Array of related artist objects or null on failure.
  */
+// 12. Artist similar artists lookup (alias for clarity)
 export async function getRelatedArtists(artist) {
   if (!artist) return null;
 

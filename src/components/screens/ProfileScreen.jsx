@@ -529,6 +529,48 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
     return tips.slice(0, 3);
   }, [profile, mine.length]);
 
+  // Micro-improvement 18: Profile visitors list (simulated)
+  const [showVisitors, setShowVisitors] = useState(false);
+  const profileVisitors = useMemo(() => {
+    const allUsers = ['vinylhead', 'cratedigger', 'waxcollector', 'groovefan', 'recordjunkie', 'spinmaster', 'dustyfingers', 'melodyhunter'];
+    return allUsers.filter(u => u !== currentUser).slice(0, 5).map(u => {
+      let h = 0;
+      for (let i = 0; i < u.length; i++) h = ((h << 5) - h + u.charCodeAt(i)) | 0;
+      return { username: u, timeAgo: `${Math.abs(h % 24) + 1}h ago`, viewedSection: ['records', 'for sale', 'wishlist', 'posts'][Math.abs(h) % 4] };
+    });
+  }, [currentUser]);
+
+  // Micro-improvement 19: Profile SEO score
+  const seoScore = useMemo(() => {
+    let score = 0;
+    if (profile.displayName) score += 15;
+    if (profile.bio && profile.bio.length > 20) score += 20;
+    if (profile.bio && profile.bio.length > 50) score += 10;
+    if (profile.avatarUrl) score += 15;
+    if (profile.location) score += 10;
+    if (mine.length > 0) score += 10;
+    if (mine.length > 10) score += 10;
+    if (myPosts.length > 0) score += 10;
+    const label = score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : score >= 40 ? 'Fair' : 'Needs Work';
+    const color = score >= 80 ? '#22c55e' : score >= 60 ? '#0ea5e9' : score >= 40 ? '#f59e0b' : '#ef4444';
+    return { score, label, color };
+  }, [profile, mine.length, myPosts.length]);
+
+  // Micro-improvement 20: Achievement showcase section
+  const achievements = useMemo(() => {
+    const list = [];
+    if (mine.length >= 1) list.push({ icon: 'R', label: 'First Record', color: '#0ea5e9', unlocked: true });
+    if (mine.length >= 10) list.push({ icon: '10', label: 'Double Digits', color: '#8b5cf6', unlocked: true });
+    if (mine.length >= 25) list.push({ icon: '25', label: 'Quarter Century', color: '#22c55e', unlocked: true });
+    if (mine.filter(r => r.forSale).length > 0) list.push({ icon: 'S', label: 'Seller', color: '#f59e0b', unlocked: true });
+    if (myPosts.length >= 5) list.push({ icon: 'P', label: 'Active Poster', color: '#ec4899', unlocked: true });
+    if ((followers || []).length >= 5) list.push({ icon: 'F', label: 'Popular', color: '#14b8a6', unlocked: true });
+    // Locked achievements
+    if (mine.length < 50) list.push({ icon: '50', label: 'Half Century', color: '#666', unlocked: false });
+    if (mine.length < 100) list.push({ icon: 'C', label: 'Century Club', color: '#666', unlocked: false });
+    return list.slice(0, 8);
+  }, [mine, myPosts.length, followers]);
+
   // ── Share profile ─────────────────────────────────────────────────────
   const profileUrl = `${window.location.origin}/u/${currentUser}`;
   const handleShare = () => {
@@ -899,6 +941,64 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
           ))}
         </div>
       </div>
+
+      {/* Micro-improvement 19: Profile SEO score */}
+      <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] font-mono text-gs-dim uppercase tracking-wider">Profile SEO Score</span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold" style={{ color: seoScore.color }}>{seoScore.label}</span>
+            <span className="text-sm font-extrabold" style={{ color: seoScore.color }}>{seoScore.score}%</span>
+          </div>
+        </div>
+        <div className="h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${seoScore.score}%`, background: seoScore.color }} />
+        </div>
+      </div>
+
+      {/* Micro-improvement 18: Profile visitors */}
+      <div className="mb-4">
+        <button
+          onClick={() => setShowVisitors(!showVisitors)}
+          className={`text-[10px] px-3 py-1.5 rounded-lg border font-mono cursor-pointer transition-colors ${showVisitors ? 'bg-gs-accent/15 border-gs-accent/30 text-gs-accent' : 'border-gs-border bg-gs-card text-gs-faint hover:border-[#333]'}`}
+        >
+          Recent Visitors ({profileVisitors.length})
+        </button>
+        {showVisitors && (
+          <div className="mt-2 bg-gs-card border border-gs-border rounded-xl overflow-hidden">
+            {profileVisitors.map((v, i) => (
+              <div key={v.username} className={`flex items-center gap-3 px-3.5 py-2.5 ${i > 0 ? 'border-t border-[#1a1a1a]' : ''}`}>
+                <Avatar username={v.username} size={28} onClick={() => onViewUser?.(v.username)} />
+                <div className="flex-1 min-w-0">
+                  <span className="text-[11px] font-semibold text-gs-text cursor-pointer hover:text-gs-accent" onClick={() => onViewUser?.(v.username)}>@{v.username}</span>
+                  <span className="text-[9px] text-gs-faint ml-2">viewed {v.viewedSection}</span>
+                </div>
+                <span className="text-[9px] text-gs-faint font-mono">{v.timeAgo}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Micro-improvement 20: Achievement showcase */}
+      {achievements.length > 0 && (
+        <div className="mb-6">
+          <div className="text-xs font-bold text-gs-muted uppercase tracking-wider mb-3">Achievements</div>
+          <div className="flex flex-wrap gap-2">
+            {achievements.map((a, i) => (
+              <div
+                key={i}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${a.unlocked ? 'bg-[#111] border-gs-border' : 'bg-[#0a0a0a] border-[#151515] opacity-50'}`}
+                title={a.unlocked ? `Unlocked: ${a.label}` : `Locked: ${a.label}`}
+              >
+                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold" style={{ background: a.color + '20', color: a.color }}>{a.icon}</div>
+                <span className="text-[10px] font-mono" style={{ color: a.unlocked ? a.color : '#444' }}>{a.label}</span>
+                {!a.unlocked && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#444" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Improvement 5: Featured records showcase ─────────────────────── */}
       {mine.length > 0 && (

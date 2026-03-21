@@ -3,10 +3,10 @@
 // "View Full Profile" navigates to their full profile page in the main content area.
 // Includes: online status, verified seller badge, quick message, mutual followers preview,
 // member-since tenure badge, top record showcase, and profile similarity hint.
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import Avatar from '../ui/Avatar';
 import AlbumArt from '../ui/AlbumArt';
-import { getProfile, formatCompact } from '../../utils/helpers';
+import { getProfile, formatCompact, copyToClipboard } from '../../utils/helpers';
 
 export default function UserProfileModal({ username, open, onClose, records, currentUser, following, onFollow, onViewFullProfile, posts, listeningHistory, profile, onMessage }) {
   // Improvement 20: Follow animation in modal
@@ -14,6 +14,11 @@ export default function UserProfileModal({ username, open, onClose, records, cur
   // Improvement 21: Quick message from modal
   const [quickMsg, setQuickMsg] = useState('');
   const [msgSent, setMsgSent] = useState(false);
+  // #12: Quick trade button state
+  const [showTradePanel, setShowTradePanel] = useState(false);
+  // #15: Profile card export state
+  const [exporting, setExporting] = useState(false);
+  const [exported, setExported] = useState(false);
 
   const isOwn = username ? username === currentUser : false;
   const p = username
@@ -47,6 +52,46 @@ export default function UserProfileModal({ username, open, onClose, records, cur
     const d = new Date(earliest);
     return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   }, [userPosts, listeningHistory, username]);
+
+  // #11: Mini collection preview grid — top 6 records
+  const collectionPreview = useMemo(() => {
+    return [...userRecords].sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 6);
+  }, [userRecords]);
+
+  // #13: Compatibility score based on shared artists
+  const compatibilityScore = useMemo(() => {
+    if (isOwn || !username) return null;
+    const myRecs = (records || []).filter(r => r.user === currentUser);
+    const theirArtists = new Set(userRecords.map(r => r.artist?.toLowerCase()));
+    const myArtists = new Set(myRecs.map(r => r.artist?.toLowerCase()));
+    const overlap = [...theirArtists].filter(a => myArtists.has(a)).length;
+    const union = new Set([...theirArtists, ...myArtists]).size;
+    return union > 0 ? Math.round((overlap / union) * 100) : 0;
+  }, [isOwn, username, userRecords, records, currentUser]);
+
+  // #14: Recent activity summary
+  const recentActivitySummary = useMemo(() => {
+    const items = [];
+    userPosts.slice(0, 2).forEach(pp => {
+      items.push({ type: 'post', text: `Posted about ${pp.taggedRecord?.album || 'vinyl'}`, icon: '📝' });
+    });
+    const userListens = (listeningHistory || []).filter(s => s.username === username).slice(0, 2);
+    userListens.forEach(s => {
+      items.push({ type: 'listen', text: `Listened to ${s.track?.title || 'a track'}`, icon: '🎧' });
+    });
+    return items.slice(0, 3);
+  }, [userPosts, listeningHistory, username]);
+
+  // #15: Profile card export handler
+  const handleExportCard = useCallback(() => {
+    setExporting(true);
+    const cardText = `${p.displayName || username} (@${username})\n${p.bio || ''}\nRecords: ${userRecords.length} | For Sale: ${forSale.length} | Followers: ${followerCount}\n${p.location ? 'Location: ' + p.location : ''} ${p.favGenre ? '| Genre: ' + p.favGenre : ''}`.trim();
+    copyToClipboard(cardText).then(() => {
+      setExporting(false);
+      setExported(true);
+      setTimeout(() => setExported(false), 2000);
+    });
+  }, [p, username, userRecords, forSale, followerCount]);
 
   if (!open || !username) return null;
 
@@ -193,6 +238,54 @@ export default function UserProfileModal({ username, open, onClose, records, cur
             </div>
           )}
 
+          {/* #11: Mini collection preview grid */}
+          {collectionPreview.length > 0 && (
+            <div className="mb-3">
+              <div className="text-[9px] font-bold text-gs-dim uppercase tracking-wider mb-1.5">Collection Preview</div>
+              <div className="grid grid-cols-6 gap-1">
+                {collectionPreview.map(r => (
+                  <div key={r.id} className="rounded-md overflow-hidden border border-gs-border hover:border-gs-accent/40 transition-colors" title={`${r.album} — ${r.artist}`}>
+                    <AlbumArt album={r.album} artist={r.artist} accent={r.accent || p.accent} size={52} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* #13: Compatibility score */}
+          {compatibilityScore !== null && compatibilityScore > 0 && (
+            <div className="flex items-center gap-2 mb-3">
+              <div
+                className="w-7 h-7 rounded-full border-2 flex items-center justify-center text-[10px] font-extrabold"
+                style={{
+                  borderColor: compatibilityScore > 60 ? '#10b981' : compatibilityScore > 30 ? '#f59e0b' : '#6b7280',
+                  color: compatibilityScore > 60 ? '#10b981' : compatibilityScore > 30 ? '#f59e0b' : '#6b7280',
+                }}
+              >
+                {compatibilityScore}
+              </div>
+              <div>
+                <div className="text-[10px] font-semibold text-gs-text">Compatibility</div>
+                <div className="text-[8px] text-gs-faint">Based on shared taste</div>
+              </div>
+            </div>
+          )}
+
+          {/* #14: Recent activity summary */}
+          {recentActivitySummary.length > 0 && (
+            <div className="mb-3">
+              <div className="text-[9px] font-bold text-gs-dim uppercase tracking-wider mb-1">Recent Activity</div>
+              <div className="flex flex-col gap-1">
+                {recentActivitySummary.map((a, i) => (
+                  <div key={i} className="flex items-center gap-1.5 text-[10px] text-gs-muted">
+                    <span>{a.icon}</span>
+                    <span>{a.text}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Stats — 5 clean boxes */}
           <div className="grid grid-cols-5 gap-1.5 mb-4">
             {[
@@ -236,6 +329,49 @@ export default function UserProfileModal({ username, open, onClose, records, cur
               )}
             </div>
           )}
+
+          {/* #12: Quick trade button */}
+          {!isOwn && forSale.length > 0 && (
+            <div className="mb-3">
+              <button
+                onClick={() => setShowTradePanel(!showTradePanel)}
+                className="w-full py-2 px-4 rounded-[10px] text-[11px] font-bold cursor-pointer border-none text-white bg-gradient-to-r from-amber-500 to-orange-600 hover:brightness-110 transition-all flex items-center justify-center gap-1.5"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+                Quick Trade ({forSale.length} available)
+              </button>
+              {showTradePanel && (
+                <div className="mt-2 p-2.5 bg-[#111] border border-gs-border rounded-xl max-h-[120px] overflow-y-auto">
+                  {forSale.slice(0, 5).map(r => (
+                    <div key={r.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gs-accent/10 transition-colors cursor-pointer">
+                      <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={24} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[10px] font-bold text-gs-text truncate">{r.album}</div>
+                        <div className="text-[8px] text-gs-faint">{r.artist}</div>
+                      </div>
+                      <span className="text-[10px] font-bold text-amber-400">${r.price}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* #15: Profile card export */}
+          <button
+            onClick={handleExportCard}
+            disabled={exporting}
+            className="w-full p-2 mb-2 bg-[#111] border border-gs-border rounded-[10px] text-[11px] font-semibold text-gs-dim cursor-pointer hover:text-gs-muted hover:border-gs-border-hover transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+          >
+            {exported ? (
+              <span className="text-emerald-400">Copied to clipboard!</span>
+            ) : (
+              <>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                Export Profile Card
+              </>
+            )}
+          </button>
 
           {/* View Full Profile button */}
           <button

@@ -229,6 +229,43 @@ export default function FollowingScreen({ following, records, currentUser, onFol
   }, []);
   const longPressHandlers = useMemo(() => longPressTimerRef(), [longPressTimerRef]);
 
+  // Micro-improvement 12: Follow suggestion refresh button
+  const [suggestionSeed, setSuggestionSeed] = useState(0);
+  const refreshSuggestions = useCallback(() => {
+    setSuggestionSeed(prev => prev + 1);
+  }, []);
+
+  // Micro-improvement 13: Follower activity heatmap
+  const [showActivityHeatmap, setShowActivityHeatmap] = useState(false);
+  const activityHeatmapData = useMemo(() => {
+    const heatmap = {};
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const hours = [0, 4, 8, 12, 16, 20];
+    days.forEach(d => { hours.forEach(h => { heatmap[`${d}-${h}`] = 0; }); });
+    following.forEach(user => {
+      const userRecs = records.filter(r => r.user === user);
+      userRecs.forEach(r => {
+        if (r.createdAt) {
+          const date = new Date(r.createdAt);
+          const day = days[date.getDay()];
+          const hour = Math.floor(date.getHours() / 4) * 4;
+          heatmap[`${day}-${hour}`] = (heatmap[`${day}-${hour}`] || 0) + 1;
+        }
+      });
+    });
+    return { heatmap, days, hours, max: Math.max(...Object.values(heatmap), 1) };
+  }, [following, records]);
+
+  // Micro-improvement 14: Quick DM from following list
+  const [quickDmUser, setQuickDmUser] = useState(null);
+  const [quickDmText, setQuickDmText] = useState('');
+  const handleSendQuickDm = useCallback(() => {
+    if (!quickDmText.trim() || !quickDmUser) return;
+    window.alert(`Message sent to @${quickDmUser}: "${quickDmText}"`);
+    setQuickDmUser(null);
+    setQuickDmText('');
+  }, [quickDmText, quickDmUser]);
+
   // Exclude the current user from the full user list
   const allUsers = Object.keys(USER_PROFILES).filter(u => u !== currentUser);
   // Suggestions are all users not already being followed
@@ -642,13 +679,23 @@ export default function FollowingScreen({ following, records, currentUser, onFol
                   {unfollowConfirm === u ? "Confirm?" : "Unfollow"}
                 </button>
                 {/* Improvement 21: Notification prefs toggle */}
-                <button
-                  onClick={() => setShowNotifPrefsFor(showNotifPrefsFor === u ? null : u)}
-                  className="bg-transparent border-none text-gs-faint hover:text-gs-accent cursor-pointer p-0 text-[10px]"
-                  title="Notification preferences"
-                >
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setShowNotifPrefsFor(showNotifPrefsFor === u ? null : u)}
+                    className="bg-transparent border-none text-gs-faint hover:text-gs-accent cursor-pointer p-0 text-[10px]"
+                    title="Notification preferences"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                  </button>
+                  {/* Micro-improvement 14: Quick DM button */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setQuickDmUser(u); setQuickDmText(''); }}
+                    className="bg-transparent border-none text-gs-faint hover:text-gs-accent cursor-pointer p-0 text-[10px]"
+                    title="Quick message"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  </button>
+                </div>
               </>
             ) : (
               <button onClick={() => onFollow(u)} className="gs-btn-gradient px-4 py-2 rounded-lg text-white text-xs font-bold cursor-pointer shrink-0">
@@ -918,6 +965,57 @@ export default function FollowingScreen({ following, records, currentUser, onFol
         </div>
       </div>
       <p className="text-xs text-gs-dim mb-3">Following {following.length} collector{following.length !== 1 ? "s" : ""}</p>
+
+      {/* Micro-improvement 13: Follower activity heatmap toggle */}
+      {following.length > 0 && (
+        <div className="mb-3">
+          <button
+            onClick={() => setShowActivityHeatmap(!showActivityHeatmap)}
+            className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-mono cursor-pointer transition-colors ${showActivityHeatmap ? 'bg-gs-accent/15 border-gs-accent/30 text-gs-accent' : 'bg-gs-card border-gs-border text-gs-faint hover:border-[#333]'}`}
+          >
+            Activity Heatmap
+          </button>
+          {showActivityHeatmap && (
+            <div className="mt-2 bg-gs-card border border-gs-border rounded-xl p-3">
+              <div className="text-[9px] font-mono text-gs-dim mb-2 uppercase tracking-wider">Follower Activity (by day &amp; time)</div>
+              <div className="grid gap-0.5" style={{ gridTemplateColumns: 'auto repeat(6, 1fr)' }}>
+                <div />
+                {activityHeatmapData.hours.map(h => (
+                  <div key={h} className="text-[7px] text-gs-faint text-center font-mono">{h}:00</div>
+                ))}
+                {activityHeatmapData.days.flatMap(d => [
+                  <div key={`label-${d}`} className="text-[7px] text-gs-faint font-mono pr-1">{d}</div>,
+                  ...activityHeatmapData.hours.map(h => {
+                    const val = activityHeatmapData.heatmap[`${d}-${h}`] || 0;
+                    const intensity = val / activityHeatmapData.max;
+                    return <div key={`${d}-${h}`} className="w-full aspect-square rounded-sm" style={{ background: val > 0 ? `rgba(14,165,233,${0.15 + intensity * 0.75})` : '#111' }} title={`${d} ${h}:00 - ${val} activities`} />;
+                  }),
+                ])}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Micro-improvement 14: Quick DM modal */}
+      {quickDmUser && (
+        <div className="mb-3 bg-gs-card border border-gs-accent/30 rounded-xl p-3">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] font-bold text-gs-text">Quick Message to @{quickDmUser}</span>
+            <button onClick={() => setQuickDmUser(null)} className="text-gs-faint hover:text-gs-text bg-transparent border-none cursor-pointer">&times;</button>
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={quickDmText}
+              onChange={e => setQuickDmText(e.target.value)}
+              placeholder="Type a message..."
+              className="flex-1 bg-[#111] border border-gs-border rounded-lg px-3 py-2 text-xs text-gs-text outline-none focus:border-gs-accent/30"
+              onKeyDown={e => { if (e.key === 'Enter') handleSendQuickDm(); }}
+            />
+            <button onClick={handleSendQuickDm} className="px-3 py-2 rounded-lg bg-gs-accent text-white text-xs font-bold border-none cursor-pointer hover:bg-gs-accent/80">Send</button>
+          </div>
+        </div>
+      )}
 
       {/* Improvement 16 & 23: Tab navigation (Following / Activity / Discover) */}
       <div className="flex gap-1 bg-gs-card border border-gs-border rounded-[10px] p-[3px] mb-4">
@@ -1322,8 +1420,19 @@ export default function FollowingScreen({ following, records, currentUser, onFol
           )}
 
           {/* All other suggestions */}
-          <div className="text-[11px] font-bold text-gs-dim tracking-widest font-mono mb-2.5">
-            {scoredSuggestions.some(s => s.sharedGenre) ? "MORE COLLECTORS" : "SUGGESTED COLLECTORS"}
+          <div className="flex items-center justify-between mb-2.5">
+            <div className="text-[11px] font-bold text-gs-dim tracking-widest font-mono">
+              {scoredSuggestions.some(s => s.sharedGenre) ? "MORE COLLECTORS" : "SUGGESTED COLLECTORS"}
+            </div>
+            {/* Micro-improvement 12: Refresh suggestions button */}
+            <button
+              onClick={refreshSuggestions}
+              className="text-[10px] px-2 py-1 rounded-lg border border-gs-border bg-gs-card text-gs-faint cursor-pointer hover:text-gs-accent hover:border-gs-accent/30 transition-colors font-mono flex items-center gap-1"
+              title="Shuffle suggestions"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+              Refresh
+            </button>
           </div>
           <div className={viewMode === "grid" ? "grid grid-cols-2 sm:grid-cols-3 gap-2.5" : "flex flex-col gap-2"}>
             {(scoredSuggestions.some(s => s.sharedGenre)

@@ -38,7 +38,7 @@
   transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
-/* ── Light theme (prepared, toggle-ready) ───────────────────── */
+/* ── Light theme complete color scheme (Improvement 1) ───────── */
 [data-theme="light"] {
   --gs-bg: #f8f8f8;
   --gs-card: #ffffff;
@@ -54,6 +54,33 @@
   --gs-dim: #888888;
   --gs-faint: #aaaaaa;
   --gs-subtle: #cccccc;
+
+  /* ── Extended light palette ── */
+  --gs-success: #059669;
+  --gs-warning: #d97706;
+  --gs-danger: #dc2626;
+  --gs-info: #0891b2;
+  --gs-overlay-bg: rgba(0, 0, 0, 0.4);
+  --gs-shadow-color: rgba(0, 0, 0, 0.08);
+  --gs-highlight: #fffbeb;
+  --gs-input-bg: #ffffff;
+  --gs-input-border: #d1d5db;
+  --gs-input-focus: #0284c7;
+  --gs-badge-bg: #f3f4f6;
+  --gs-tooltip-bg: #1f2937;
+  --gs-tooltip-text: #f9fafb;
+  --gs-skeleton-base: #e5e7eb;
+  --gs-skeleton-shine: #f3f4f6;
+
+  /* ── Chart colors (light-optimized) ── */
+  --gs-chart-1: #0284c7;
+  --gs-chart-2: #4f46e5;
+  --gs-chart-3: #059669;
+  --gs-chart-4: #d97706;
+  --gs-chart-5: #dc2626;
+  --gs-chart-6: #7c3aed;
+  --gs-chart-7: #db2777;
+  --gs-chart-8: #0d9488;
 }
 
 @layer base {
@@ -76,7 +103,7 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* ── Selection color styling ── */
+  /* ── Selection color customization per theme (Improvement 3) ── */
   ::selection {
     background: rgba(14, 165, 233, 0.3);
     color: #f5f5f5;
@@ -88,6 +115,27 @@
   [data-theme="light"] ::selection {
     background: rgba(2, 132, 199, 0.25);
     color: #111111;
+  }
+  [data-theme="light"] ::-moz-selection {
+    background: rgba(2, 132, 199, 0.25);
+    color: #111111;
+  }
+  /* Code block selections */
+  code::selection, pre::selection, .font-mono::selection {
+    background: rgba(99, 102, 241, 0.35);
+  }
+  code::-moz-selection, pre::-moz-selection, .font-mono::-moz-selection {
+    background: rgba(99, 102, 241, 0.35);
+  }
+  [data-theme="light"] code::selection,
+  [data-theme="light"] pre::selection,
+  [data-theme="light"] .font-mono::selection {
+    background: rgba(79, 70, 229, 0.2);
+  }
+  [data-theme="light"] code::-moz-selection,
+  [data-theme="light"] pre::-moz-selection,
+  [data-theme="light"] .font-mono::-moz-selection {
+    background: rgba(79, 70, 229, 0.2);
   }
 
   /* ── Smooth scrollbar styling (dark theme) ── */
@@ -101,13 +149,35 @@
     scrollbar-width: thin;
     scrollbar-color: var(--gs-border-hover, #2a2a2a) var(--gs-bg, #0a0a0a);
   }
-  /* ── Light theme scrollbar ── */
-  [data-theme="light"] ::-webkit-scrollbar-track { background: #f0f0f0; }
-  [data-theme="light"] ::-webkit-scrollbar-thumb { background: #c0c0c0; }
-  [data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #999999; }
-  [data-theme="light"] ::-webkit-scrollbar-corner { background: #f0f0f0; }
+  /* ── Custom scrollbar for light theme (Improvement 4) ── */
+  [data-theme="light"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+  [data-theme="light"] ::-webkit-scrollbar-track {
+    background: #f5f5f5;
+    border-radius: 4px;
+  }
+  [data-theme="light"] ::-webkit-scrollbar-thumb {
+    background: #c0c0c0;
+    border-radius: 4px;
+    border: 2px solid #f5f5f5;
+  }
+  [data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+    background: #999999;
+  }
+  [data-theme="light"] ::-webkit-scrollbar-thumb:active {
+    background: #777777;
+  }
+  [data-theme="light"] ::-webkit-scrollbar-corner { background: #f5f5f5; }
   [data-theme="light"] {
-    scrollbar-color: #c0c0c0 #f0f0f0;
+    scrollbar-color: #c0c0c0 #f5f5f5;
+  }
+  /* Thin scrollbar for nested panels in light theme */
+  [data-theme="light"] .gs-modal-box::-webkit-scrollbar,
+  [data-theme="light"] .gs-card::-webkit-scrollbar {
+    width: 5px;
+  }
+  [data-theme="light"] .gs-modal-box::-webkit-scrollbar-thumb,
+  [data-theme="light"] .gs-card::-webkit-scrollbar-thumb {
+    border: none;
   }
 
   select option { background: #111; }
@@ -474,7 +544,7 @@
   .gs-modal-body { padding: 16px !important; }
 }
 
-/* ── Reduced motion — disable animations for users who prefer it ── */
+/* ── Reduced motion media query enhancements (Improvement 5) ── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -485,9 +555,24 @@
   .gs-card:hover { transform: none !important; }
   .gs-btn-gradient:active { transform: none !important; }
   .gs-back-to-top:hover { transform: none !important; }
+  .gs-card-lift:hover { transform: none !important; box-shadow: none !important; }
+  .gs-touch-feedback:active { transform: none !important; }
+  .gs-link-underline::after { transition: none !important; }
+  .gs-page-enter, .gs-page-exit { animation: none !important; }
+  .gs-overlay { animation: none !important; backdrop-filter: none !important; }
+  .gs-modal-box { animation: none !important; }
+  .gs-skeleton { animation: none !important; background: var(--gs-border) !important; }
+  .gs-loading-dots span { animation: none !important; opacity: 1 !important; }
+  .gs-badge-pulse::after { animation: none !important; }
+  .gs-pulse { animation: none !important; }
+  .gs-toast-progress { animation: none !important; }
+  .gs-gradient-text {
+    background: none !important;
+    -webkit-text-fill-color: var(--gs-accent) !important;
+  }
 }
 
-/* ── Print styles — hide sidebar, nav, and non-essential UI ── */
+/* ── Print styles — improved (Improvement 2) ─────────────────── */
 @media print {
   .gs-sidebar-desktop,
   .gs-mobile-bar,
@@ -498,7 +583,17 @@
   [aria-live],
   button,
   .gs-btn-gradient,
-  .gs-btn-secondary {
+  .gs-btn-secondary,
+  .gs-toast-progress,
+  .gs-loading-dots,
+  .gs-skeleton,
+  .gs-badge-pulse,
+  .gs-pulse,
+  footer,
+  .gs-kbd,
+  video,
+  audio,
+  iframe {
     display: none !important;
   }
   .gs-main {
@@ -509,14 +604,45 @@
   body {
     background: white !important;
     color: black !important;
+    font-size: 12pt !important;
+    line-height: 1.5 !important;
+  }
+  * {
+    color-adjust: exact !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
   .gs-card {
     break-inside: avoid;
     border: 1px solid #ccc !important;
     box-shadow: none !important;
+    page-break-inside: avoid;
   }
-  a { text-decoration: underline; }
-  a[href]::after { content: " (" attr(href) ")"; font-size: 0.8em; }
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+  img {
+    max-width: 100% !important;
+    page-break-inside: avoid;
+  }
+  table {
+    border-collapse: collapse !important;
+  }
+  table td, table th {
+    border: 1px solid #ddd !important;
+    padding: 4px 8px !important;
+  }
+  a { text-decoration: underline; color: #0284c7 !important; }
+  a[href^="http"]::after { content: " (" attr(href) ")"; font-size: 0.8em; color: #666; }
+  a[href^="#"]::after, a[href^="javascript"]::after { content: ""; }
+  @page {
+    margin: 1.5cm;
+    size: A4;
+  }
+  @page :first {
+    margin-top: 2cm;
+  }
 }
 
 /* ── Loading dots keyframe ── */
@@ -541,7 +667,7 @@
   animation: slideDown 0.3s ease-out;
 }
 
-/* ── Improvement 9: High contrast mode support ── */
+/* ── High contrast focus indicators (Improvement 6) ── */
 @media (prefers-contrast: high) {
   :root {
     --gs-border: #444444;
@@ -551,12 +677,34 @@
     --gs-dim: #999999;
     --gs-faint: #777777;
   }
+  *:focus-visible {
+    outline-width: 3px !important;
+    outline-offset: 3px !important;
+    outline-color: #ffffff !important;
+    box-shadow: 0 0 0 5px rgba(14, 165, 233, 0.6) !important;
+  }
+  [data-theme="light"] *:focus-visible {
+    outline-color: #000000 !important;
+    box-shadow: 0 0 0 5px rgba(2, 132, 199, 0.5) !important;
+  }
   .gs-btn-gradient,
   .gs-btn-secondary {
     border: 2px solid currentColor !important;
   }
   .gs-card {
     border-width: 2px !important;
+  }
+  .gs-nav-item-active {
+    border-width: 2px !important;
+    border-color: var(--gs-accent) !important;
+  }
+  a:focus-visible {
+    outline-style: solid !important;
+    text-decoration: underline !important;
+  }
+  .gs-pill, .gs-badge-featured, .gs-badge-new {
+    border-width: 2px !important;
+    font-weight: 700 !important;
   }
 }
 
@@ -588,4 +736,88 @@
 @keyframes progressStripe {
   0% { background-position: 1rem 0; }
   100% { background-position: 0 0; }
+}
+
+/* ── Container query utilities (Improvement 7) ────────────── */
+.gs-container {
+  container-type: inline-size;
+}
+.gs-container-name-card {
+  container-name: card;
+  container-type: inline-size;
+}
+.gs-container-name-sidebar {
+  container-name: sidebar;
+  container-type: inline-size;
+}
+.gs-container-name-main {
+  container-name: main;
+  container-type: inline-size;
+}
+
+@container (min-width: 320px) {
+  .gs-cq-row { display: flex; flex-direction: row; }
+  .gs-cq-gap-4 { gap: 1rem; }
+}
+@container (min-width: 480px) {
+  .gs-cq-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); }
+  .gs-cq-text-lg { font-size: 1.125rem; }
+}
+@container (min-width: 640px) {
+  .gs-cq-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .gs-cq-text-xl { font-size: 1.25rem; }
+}
+@container (min-width: 768px) {
+  .gs-cq-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); }
+  .gs-cq-hide { display: none; }
+  .gs-cq-show { display: block; }
+}
+
+@container card (min-width: 300px) {
+  .gs-card-horizontal { display: flex; flex-direction: row; }
+  .gs-card-horizontal > :first-child { flex: 0 0 120px; }
+}
+
+/* ── Animated gradient backgrounds (Improvement 8) ────────── */
+.gs-gradient-bg-animated {
+  background: linear-gradient(-45deg, #0ea5e9, #6366f1, #8b5cf6, #0ea5e9);
+  background-size: 400% 400%;
+  animation: gradientShift 15s ease infinite;
+}
+.gs-gradient-bg-subtle {
+  background: linear-gradient(-45deg,
+    var(--gs-bg),
+    color-mix(in srgb, var(--gs-accent) 5%, var(--gs-bg)),
+    var(--gs-bg),
+    color-mix(in srgb, var(--gs-indigo) 5%, var(--gs-bg))
+  );
+  background-size: 400% 400%;
+  animation: gradientShift 20s ease infinite;
+}
+.gs-gradient-bg-accent {
+  background: linear-gradient(135deg, var(--gs-accent), var(--gs-indigo));
+  background-size: 200% 200%;
+  animation: gradientPulse 4s ease-in-out infinite;
+}
+.gs-gradient-bg-mesh {
+  background:
+    radial-gradient(at 20% 30%, rgba(14, 165, 233, 0.15) 0%, transparent 50%),
+    radial-gradient(at 80% 70%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+    var(--gs-bg);
+  animation: meshMove 25s ease-in-out infinite alternate;
+}
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes gradientPulse {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+@keyframes meshMove {
+  0% { background-position: 0% 0%, 100% 100%, 50% 50%; }
+  100% { background-position: 100% 100%, 0% 0%, 50% 50%; }
 }

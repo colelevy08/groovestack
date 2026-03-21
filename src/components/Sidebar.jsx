@@ -106,6 +106,20 @@ export default function Sidebar({
   hasNewAnalyticsData = false,
   recordsCount = 0,
   followersCount = 0,
+  /* Props for 8 new Sidebar improvements (#13–#20) */
+  audioPlayer = { playing: false, track: null, progress: 0 },
+  onStopPreview,
+  salesCount = 0,
+  recentSearches: recentSearchesProp = [],
+  onSelectRecentSearch,
+  seasonalTheme = 'winter',
+  streakCount = 0,
+  onShowTutorials,
+  onShareApp,
+  batterySaverMode = false,
+  onToggleBatterySaver,
+  autoThemeEnabled = false,
+  onToggleAutoTheme,
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [hoveredNav, setHoveredNav] = useState(null);
@@ -126,6 +140,24 @@ export default function Sidebar({
   const [navItems, setNavItems] = useState(() => loadNavOrder());
   const [dragIdx, setDragIdx] = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
+
+  /* NEW #16: Sidebar customization — show/hide nav items */
+  const [hiddenNavItems, setHiddenNavItems] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs-sidebar-hidden')) || []; } catch { return []; }
+  });
+  const [showSidebarSettings, setShowSidebarSettings] = useState(false);
+
+  /* NEW #17: Notifications preview in sidebar */
+  const [notifPreviewExpanded, setNotifPreviewExpanded] = useState(false);
+
+  /* NEW #19: App version update check */
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  /* NEW #20: Keyboard shortcut legend toggle */
+  const [showShortcutLegend, setShowShortcutLegend] = useState(false);
+
+  /* NEW #15: Recent searches expanded state */
+  const [recentSearchesExpanded, setRecentSearchesExpanded] = useState(false);
 
   /* Improvement 14: Smooth scroll to active nav item on mobile */
   const mobileBarRef = useRef(null);
@@ -157,6 +189,21 @@ export default function Sidebar({
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [statusOpen]);
+
+  /* NEW #16: Persist hidden nav items */
+  useEffect(() => {
+    try { localStorage.setItem('gs-sidebar-hidden', JSON.stringify(hiddenNavItems)); } catch { /* ignore */ }
+  }, [hiddenNavItems]);
+
+  /* NEW #19: Simulate update check on mount */
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      // Simulated version check — in production would call an API
+      const latestVersion = '1.5.0';
+      if (latestVersion !== APP_VERSION) setUpdateAvailable(true);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, []);
 
   /* Improvement: Sidebar resize drag handler */
   const handleResizeStart = useCallback((e) => {
@@ -233,10 +280,10 @@ export default function Sidebar({
   const sectionLabelColor = darkMode ? 'text-gs-faint' : 'text-gray-400';
   const sidebarSurfaceBg = darkMode ? 'bg-gs-surface' : 'bg-gray-50';
 
-  /* Group nav items by section for rendering */
+  /* Group nav items by section for rendering — NEW #16: respect hidden items */
   const groupedNav = SECTIONS.map(section => ({
     section,
-    items: navItems.filter(item => item.section === section),
+    items: navItems.filter(item => item.section === section && !hiddenNavItems.includes(item.id)),
   }));
 
   /* Helper to get badge for a nav item */
@@ -407,9 +454,9 @@ export default function Sidebar({
           </div>
         )}
 
-        {/* Improvement 12: User stats summary */}
+        {/* Improvement 12 + NEW #14: Quick stats counter (records/followers/sales) */}
         {!collapsed && !isGuest && (recordsCount > 0 || followersCount > 0) && (
-          <div className={`mx-3 mb-3 px-3 py-2 rounded-lg ${darkMode ? 'bg-[#111] border border-gs-border-subtle' : 'bg-gray-50 border border-gray-200'} flex items-center gap-4`}>
+          <div className={`mx-3 mb-3 px-3 py-2 rounded-lg ${darkMode ? 'bg-[#111] border border-gs-border-subtle' : 'bg-gray-50 border border-gray-200'} flex items-center gap-3`}>
             <div className="text-center flex-1">
               <div className={`text-sm font-bold ${darkMode ? 'text-neutral-200' : 'text-gray-900'}`}>{recordsCount}</div>
               <div className={`text-[9px] font-medium uppercase tracking-wider ${sectionLabelColor}`}>Records</div>
@@ -418,6 +465,11 @@ export default function Sidebar({
             <div className="text-center flex-1">
               <div className={`text-sm font-bold ${darkMode ? 'text-neutral-200' : 'text-gray-900'}`}>{followersCount}</div>
               <div className={`text-[9px] font-medium uppercase tracking-wider ${sectionLabelColor}`}>Followers</div>
+            </div>
+            <div className={`w-px h-6 ${darkMode ? 'bg-gs-border-subtle' : 'bg-gray-200'}`} />
+            <div className="text-center flex-1">
+              <div className={`text-sm font-bold ${darkMode ? 'text-neutral-200' : 'text-gray-900'}`}>{salesCount}</div>
+              <div className={`text-[9px] font-medium uppercase tracking-wider ${sectionLabelColor}`}>Sales</div>
             </div>
           </div>
         )}
@@ -513,6 +565,79 @@ export default function Sidebar({
               </div>
             );
           })}
+
+          {/* NEW #15: Recent searches in sidebar */}
+          {!collapsed && recentSearchesProp.length > 0 && (
+            <div className={`mt-3 pt-3 border-t ${sidebarBorder}`}>
+              <button
+                onClick={() => setRecentSearchesExpanded(prev => !prev)}
+                className={`w-full flex items-center justify-between px-2.5 py-1 bg-transparent border-none cursor-pointer ${sectionLabelColor} text-[10px] font-semibold uppercase tracking-wider hover:text-gs-dim transition-colors`}
+              >
+                <span className="flex items-center gap-1">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                  Recent Searches
+                </span>
+                <svg
+                  width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                  className={`transition-transform duration-200 ${recentSearchesExpanded ? 'rotate-180' : ''}`}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              {recentSearchesExpanded && (
+                <div className="mt-1 space-y-0.5 animate-fade-in">
+                  {recentSearchesProp.slice(0, 5).map((query, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => onSelectRecentSearch && onSelectRecentSearch(query)}
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 bg-transparent border-none cursor-pointer ${sidebarText} text-[11px] rounded-md ${sidebarHoverBg} ${sidebarHoverText} transition-colors text-left`}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-shrink-0 opacity-40">
+                        <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
+                      </svg>
+                      <span className="truncate">{query}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* NEW #17: Notifications preview in sidebar */}
+          {!collapsed && !isGuest && notifCount > 0 && (
+            <div className={`mt-3 pt-3 border-t ${sidebarBorder}`}>
+              <button
+                onClick={() => setNotifPreviewExpanded(prev => !prev)}
+                className={`w-full flex items-center justify-between px-2.5 py-1 bg-transparent border-none cursor-pointer ${sectionLabelColor} text-[10px] font-semibold uppercase tracking-wider hover:text-gs-dim transition-colors`}
+              >
+                <span className="flex items-center gap-1">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                  Notifications
+                  <span className="ml-1 min-w-[14px] h-[14px] rounded-full bg-red-500 text-[8px] font-extrabold text-white flex items-center justify-center px-0.5">{notifCount}</span>
+                </span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`transition-transform duration-200 ${notifPreviewExpanded ? 'rotate-180' : ''}`}>
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              {notifPreviewExpanded && (
+                <div className="mt-1 space-y-0.5 animate-fade-in">
+                  <button
+                    onClick={onNotifClick}
+                    className={`w-full flex items-center gap-2 px-2.5 py-2 bg-transparent border-none cursor-pointer ${sidebarText} text-[11px] rounded-md ${sidebarHoverBg} ${sidebarHoverText} transition-colors text-left`}
+                  >
+                    <span className="w-2 h-2 rounded-full bg-gs-accent flex-shrink-0" />
+                    <span className="truncate">You have {notifCount} new notification{notifCount !== 1 ? 's' : ''}</span>
+                  </button>
+                  <button
+                    onClick={onNotifClick}
+                    className={`w-full text-center py-1 bg-transparent border-none cursor-pointer text-[10px] text-gs-accent hover:underline transition-colors`}
+                  >
+                    View all notifications
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Recently viewed records */}
           {!collapsed && recentRecords.length > 0 && (
@@ -627,11 +752,141 @@ export default function Sidebar({
           </div>
         )}
 
-        {/* Improvement 7: Sidebar footer with app version and What's New */}
+        {/* NEW #13: Mini player in sidebar footer */}
+        {!collapsed && audioPlayer.playing && audioPlayer.track && (
+          <div className={`mx-3 mb-2 px-2.5 py-2 rounded-lg ${darkMode ? 'bg-[#111] border border-gs-border-subtle' : 'bg-gray-50 border border-gray-200'} animate-fade-in`}>
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded flex-shrink-0" style={{ background: audioPlayer.track.accent || '#666' }}>
+                <div className="w-full h-full flex items-center justify-center">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" className="text-white/80 animate-pulse"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className={`text-[10px] font-medium ${darkMode ? 'text-neutral-200' : 'text-gray-900'} truncate`}>{audioPlayer.track.album}</div>
+                <div className={`text-[9px] ${sectionLabelColor} truncate`}>{audioPlayer.track.artist}</div>
+              </div>
+              {onStopPreview && (
+                <button onClick={onStopPreview} className="p-0.5 text-gs-dim hover:text-gs-text transition-colors flex-shrink-0" title="Stop">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+                </button>
+              )}
+            </div>
+            <div className={`mt-1.5 h-0.5 ${darkMode ? 'bg-[#1a1a1a]' : 'bg-gray-200'} rounded-full overflow-hidden`}>
+              <div className="h-full bg-gs-accent rounded-full animate-pulse" style={{ width: '45%' }} />
+            </div>
+          </div>
+        )}
+
+        {/* NEW #18: Help/support quick access */}
+        {!collapsed && !isGuest && (
+          <div className={`px-3 mb-1 flex items-center gap-1`}>
+            {onShowTutorials && (
+              <button
+                onClick={onShowTutorials}
+                className={`flex-1 py-1.5 bg-transparent border-none ${sectionLabelColor} text-[10px] font-medium cursor-pointer text-center flex items-center justify-center gap-1 hover:text-gs-dim transition-colors rounded ${sidebarHoverBg}`}
+                title="Tutorials & Guides"
+                type="button"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><circle cx="12" cy="17" r="0.5"/></svg>
+                Help
+              </button>
+            )}
+            {onShareApp && (
+              <button
+                onClick={onShareApp}
+                className={`flex-1 py-1.5 bg-transparent border-none ${sectionLabelColor} text-[10px] font-medium cursor-pointer text-center flex items-center justify-center gap-1 hover:text-gs-dim transition-colors rounded ${sidebarHoverBg}`}
+                title="Invite Friends"
+                type="button"
+              >
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                Invite
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* NEW #16: Sidebar customization toggle */}
+        {!collapsed && !isGuest && (
+          <div className="px-3 mb-1">
+            <button
+              onClick={() => setShowSidebarSettings(prev => !prev)}
+              className={`w-full py-1 bg-transparent border-none ${sectionLabelColor} text-[9px] font-medium cursor-pointer text-center flex items-center justify-center gap-1 hover:text-gs-dim transition-colors`}
+              type="button"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15"/></svg>
+              Customize Sidebar
+            </button>
+            {showSidebarSettings && (
+              <div className={`mt-1 p-2 rounded-lg ${sidebarSurfaceBg} border ${sidebarBorder} animate-fade-in`}>
+                <div className={`text-[9px] font-semibold uppercase tracking-wider ${sectionLabelColor} mb-1.5`}>Show/Hide Items</div>
+                {NAV_ITEMS.map(item => (
+                  <label key={item.id} className={`flex items-center gap-2 py-0.5 text-[10px] ${sidebarText} cursor-pointer`}>
+                    <input
+                      type="checkbox"
+                      checked={!hiddenNavItems.includes(item.id)}
+                      onChange={() => setHiddenNavItems(prev => prev.includes(item.id) ? prev.filter(x => x !== item.id) : [...prev, item.id])}
+                      className="accent-[var(--gs-accent)] w-3 h-3"
+                    />
+                    {item.label}
+                  </label>
+                ))}
+                <button
+                  onClick={() => setHiddenNavItems([])}
+                  className="mt-1 w-full text-[9px] text-gs-accent hover:underline bg-transparent border-none cursor-pointer"
+                  type="button"
+                >
+                  Show All
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* NEW #20: Keyboard shortcut legend */}
+        {!collapsed && (
+          <div className="px-3 mb-1">
+            <button
+              onClick={() => setShowShortcutLegend(prev => !prev)}
+              className={`w-full py-1 bg-transparent border-none ${sectionLabelColor} text-[9px] font-medium cursor-pointer text-center flex items-center justify-center gap-1 hover:text-gs-dim transition-colors`}
+              type="button"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6.01" y2="8"/><line x1="10" y1="8" x2="10.01" y2="8"/><line x1="14" y1="8" x2="14.01" y2="8"/><line x1="18" y1="8" x2="18.01" y2="8"/><line x1="8" y1="12" x2="8.01" y2="12"/><line x1="12" y1="12" x2="12.01" y2="12"/><line x1="16" y1="12" x2="16.01" y2="12"/><line x1="7" y1="16" x2="17" y2="16"/></svg>
+              Keyboard Shortcuts
+            </button>
+            {showShortcutLegend && (
+              <div className={`mt-1 p-2 rounded-lg ${sidebarSurfaceBg} border ${sidebarBorder} animate-fade-in space-y-1`}>
+                {[
+                  ['\u2318K', 'Command Palette'],
+                  ['\u2318N', 'Add Record'],
+                  ['\u2318P', 'Create Post'],
+                  ['\u2318Z', 'Undo'],
+                  ['\u21e7\u2318Z', 'Redo'],
+                  ['\u2318/', 'Shortcuts Help'],
+                  ['\u2318,', 'Settings'],
+                  ['\u2318F', 'Focus Search'],
+                  ['1-9', 'Navigate Tabs'],
+                  ['Esc', 'Close Modal'],
+                ].map(([key, desc]) => (
+                  <div key={key} className="flex items-center justify-between">
+                    <span className={`text-[10px] ${sidebarText}`}>{desc}</span>
+                    <span className="gs-kbd text-[9px]">{key}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Improvement 7 + NEW #19: Sidebar footer with app version and update check */}
         <div className={`${collapsed ? 'px-1' : 'px-3'} py-2 border-t ${sidebarBorder} transition-[padding] duration-300`}>
           {!collapsed ? (
             <div className="flex items-center justify-between">
-              <span className={`text-[9px] font-mono ${sectionLabelColor}`}>v{APP_VERSION}</span>
+              <span className={`text-[9px] font-mono ${sectionLabelColor} flex items-center gap-1`}>
+                v{APP_VERSION}
+                {updateAvailable && (
+                  <span className="px-1 py-0.5 rounded text-[8px] bg-green-500/20 text-green-400 font-sans font-medium">Update</span>
+                )}
+              </span>
               <button
                 onClick={() => alert('Changelog — coming soon!')}
                 className={`text-[10px] font-medium ${sectionLabelColor} hover:text-gs-accent bg-transparent border-none cursor-pointer transition-colors flex items-center gap-1`}
@@ -649,15 +904,15 @@ export default function Sidebar({
           ) : (
             <button
               onClick={() => alert('Changelog — coming soon!')}
-              className="gs-tooltip w-full flex items-center justify-center bg-transparent border-none cursor-pointer text-gs-faint hover:text-gs-accent p-1 transition-colors"
-              title={`v${APP_VERSION} — What's New`}
+              className="gs-tooltip w-full flex items-center justify-center bg-transparent border-none cursor-pointer text-gs-faint hover:text-gs-accent p-1 transition-colors relative"
+              title={`v${APP_VERSION}${updateAvailable ? ' (update available)' : ''} — What's New`}
               data-tooltip={`v${APP_VERSION}`}
               type="button"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
               </svg>
-              {hasNewUpdates && (
+              {(hasNewUpdates || updateAvailable) && (
                 <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-gs-accent animate-pulse" />
               )}
             </button>

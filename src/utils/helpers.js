@@ -330,3 +330,289 @@ export function getStorageItem(key) {
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// 1. Date formatting utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Format a Date (or date-like value) into a readable string.
+ *
+ * @param {Date|string|number} date - The date to format.
+ * @param {Object} [opts]           - Intl.DateTimeFormat options override.
+ * @returns {string} Formatted date string, e.g. "Mar 20, 2026".
+ */
+export function formatDate(date, opts) {
+  if (!date) return "";
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return "";
+  const defaults = { month: "short", day: "numeric", year: "numeric" };
+  return new Intl.DateTimeFormat("en-US", opts || defaults).format(d);
+}
+
+/**
+ * Format a date range into a concise string.
+ * Collapses shared month/year when possible.
+ *
+ * @param {Date|string|number} start - Start date.
+ * @param {Date|string|number} end   - End date.
+ * @returns {string} e.g. "Mar 5 – 12, 2026" or "Mar 5, 2026 – Apr 1, 2026".
+ */
+export function formatDateRange(start, end) {
+  if (!start || !end) return formatDate(start || end);
+  const s = new Date(start);
+  const e = new Date(end);
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return "";
+
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const sameYear = s.getFullYear() === e.getFullYear();
+  const sameMonth = sameYear && s.getMonth() === e.getMonth();
+
+  if (sameMonth) {
+    return `${months[s.getMonth()]} ${s.getDate()} \u2013 ${e.getDate()}, ${s.getFullYear()}`;
+  }
+  if (sameYear) {
+    return `${months[s.getMonth()]} ${s.getDate()} \u2013 ${months[e.getMonth()]} ${e.getDate()}, ${s.getFullYear()}`;
+  }
+  return `${formatDate(s)} \u2013 ${formatDate(e)}`;
+}
+
+// ---------------------------------------------------------------------------
+// 2. Array utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Return a new array with duplicate values removed.
+ * Accepts an optional key function for object arrays.
+ *
+ * @param {Array} arr      - The source array.
+ * @param {Function} [keyFn] - Optional function to derive a comparison key from each item.
+ * @returns {Array} De-duplicated array.
+ */
+export function unique(arr, keyFn) {
+  if (!arr) return [];
+  const seen = new Set();
+  return arr.filter(item => {
+    const k = keyFn ? keyFn(item) : item;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/**
+ * Group an array of objects by a key derived from each item.
+ *
+ * @param {Array} arr             - The source array.
+ * @param {string|Function} keyOrFn - Property name or function returning the group key.
+ * @returns {Object} Object mapping group keys to arrays of items.
+ */
+export function groupBy(arr, keyOrFn) {
+  if (!arr) return {};
+  const fn = typeof keyOrFn === "function" ? keyOrFn : (item) => item[keyOrFn];
+  const groups = {};
+  for (const item of arr) {
+    const k = fn(item) ?? "__none__";
+    (groups[k] ||= []).push(item);
+  }
+  return groups;
+}
+
+/**
+ * Sort an array by a key, returning a new array.
+ *
+ * @param {Array} arr             - The source array.
+ * @param {string|Function} keyOrFn - Property name or function returning sortable value.
+ * @param {"asc"|"desc"} [order="asc"] - Sort direction.
+ * @returns {Array} Sorted copy.
+ */
+export function sortBy(arr, keyOrFn, order = "asc") {
+  if (!arr) return [];
+  const fn = typeof keyOrFn === "function" ? keyOrFn : (item) => item[keyOrFn];
+  const dir = order === "desc" ? -1 : 1;
+  return [...arr].sort((a, b) => {
+    const va = fn(a);
+    const vb = fn(b);
+    if (va < vb) return -1 * dir;
+    if (va > vb) return 1 * dir;
+    return 0;
+  });
+}
+
+/**
+ * Shuffle an array using the Fisher-Yates algorithm.
+ * Returns a new array; does not mutate the original.
+ *
+ * @param {Array} arr - The source array.
+ * @returns {Array} Shuffled copy.
+ */
+export function shuffle(arr) {
+  if (!arr) return [];
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// 3. String utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Capitalize the first letter of a string.
+ *
+ * @param {string} str - Input string.
+ * @returns {string} Capitalized string.
+ */
+export function capitalize(str) {
+  if (!str) return "";
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+/**
+ * Convert a camelCase string to kebab-case.
+ *
+ * @param {string} str - camelCase or PascalCase string.
+ * @returns {string} kebab-case string.
+ */
+export function camelToKebab(str) {
+  if (!str) return "";
+  return str.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
+}
+
+/**
+ * Extract initials from a name string (first letter of each word, max 2).
+ *
+ * @param {string} name - Full name, e.g. "Miles Davis".
+ * @returns {string} Initials, e.g. "MD".
+ */
+export function initials(name) {
+  if (!name) return "";
+  return name
+    .split(/[\s.]+/)
+    .filter(Boolean)
+    .map(w => w[0].toUpperCase())
+    .slice(0, 2)
+    .join("");
+}
+
+// ---------------------------------------------------------------------------
+// 4. Number utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Clamp a number to a [min, max] range.
+ *
+ * @param {number} value - The value to clamp.
+ * @param {number} min   - Lower bound.
+ * @param {number} max   - Upper bound.
+ * @returns {number} Clamped value.
+ */
+export function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * Linear interpolation between two values.
+ *
+ * @param {number} a - Start value.
+ * @param {number} b - End value.
+ * @param {number} t - Interpolation factor (0 = a, 1 = b).
+ * @returns {number} Interpolated value.
+ */
+export function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+/**
+ * Map a value from one numeric range to another.
+ *
+ * @param {number} value   - Input value.
+ * @param {number} inMin   - Input range minimum.
+ * @param {number} inMax   - Input range maximum.
+ * @param {number} outMin  - Output range minimum.
+ * @param {number} outMax  - Output range maximum.
+ * @returns {number} Mapped value.
+ */
+export function mapRange(value, inMin, inMax, outMin, outMax) {
+  return outMin + ((value - inMin) / (inMax - inMin)) * (outMax - outMin);
+}
+
+// ---------------------------------------------------------------------------
+// 5. Color utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a hex color string to an { r, g, b } object.
+ *
+ * @param {string} hex - Hex color, e.g. "#ff9900" or "ff9900".
+ * @returns {{ r: number, g: number, b: number }|null} RGB object or null if invalid.
+ */
+export function hexToRgb(hex) {
+  if (!hex) return null;
+  const clean = hex.replace(/^#/, "");
+  const full = clean.length === 3
+    ? clean.split("").map(c => c + c).join("")
+    : clean;
+  if (full.length !== 6 || /[^0-9a-fA-F]/.test(full)) return null;
+  return {
+    r: parseInt(full.slice(0, 2), 16),
+    g: parseInt(full.slice(2, 4), 16),
+    b: parseInt(full.slice(4, 6), 16),
+  };
+}
+
+/**
+ * Convert an { r, g, b } object (or three separate args) to a hex string.
+ *
+ * @param {number|Object} rOrObj - Red channel (0-255), or { r, g, b } object.
+ * @param {number} [g]          - Green channel.
+ * @param {number} [b]          - Blue channel.
+ * @returns {string} Hex color string, e.g. "#0ea5e9".
+ */
+export function rgbToHex(rOrObj, g, b) {
+  let r;
+  if (typeof rOrObj === "object" && rOrObj !== null) {
+    ({ r, g, b } = rOrObj);
+  } else {
+    r = rOrObj;
+  }
+  const toHex = (n) => Math.round(clamp(n, 0, 255)).toString(16).padStart(2, "0");
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+/**
+ * Lighten a hex color by a given amount.
+ *
+ * @param {string} hex    - Hex color string.
+ * @param {number} amount - Amount to lighten (0-1, where 1 = white).
+ * @returns {string} Lightened hex color.
+ */
+export function lighten(hex, amount) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  return rgbToHex(
+    rgb.r + (255 - rgb.r) * amount,
+    rgb.g + (255 - rgb.g) * amount,
+    rgb.b + (255 - rgb.b) * amount,
+  );
+}
+
+/**
+ * Darken a hex color by a given amount.
+ *
+ * @param {string} hex    - Hex color string.
+ * @param {number} amount - Amount to darken (0-1, where 1 = black).
+ * @returns {string} Darkened hex color.
+ */
+export function darken(hex, amount) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return hex;
+  return rgbToHex(
+    rgb.r * (1 - amount),
+    rgb.g * (1 - amount),
+    rgb.b * (1 - amount),
+  );
+}

@@ -291,6 +291,36 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
   // Improvement A12: Sound sample preview placeholder
   const [soundPreviewRecordId, setSoundPreviewRecordId] = useState(null);
 
+  // Micro-improvement 1: Lazy image loading with blur-up effect
+  const [loadedImages, setLoadedImages] = useState(new Set());
+  const markImageLoaded = useCallback((recordId) => {
+    setLoadedImages(prev => { const next = new Set(prev); next.add(recordId); return next; });
+  }, []);
+
+  // Micro-improvement 2: Record card skeleton while loading (per-card basis)
+  const [cardLoading, setCardLoading] = useState(true);
+  useEffect(() => {
+    const timer = setTimeout(() => setCardLoading(false), 400);
+    return () => clearTimeout(timer);
+  }, [q, genre, subgenre, condFilter]);
+
+  // Micro-improvement 3: "Back to top" floating button
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  useEffect(() => {
+    const handleScroll = () => setShowBackToTop(window.scrollY > 600);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+  const scrollToTop = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, []);
+
+  // Micro-improvement 4: Grid animation key on filter change
+  const [gridAnimKey, setGridAnimKey] = useState(0);
+  useEffect(() => {
+    setGridAnimKey(prev => prev + 1);
+  }, [genre, subgenre, condFilter, sort, q, newThisWeekOnly]);
+
   // Improvement 10: Color-coded condition indicators (using condColor from helpers)
   // Already available via condColor, but we enhance usage in grid view
 
@@ -1195,7 +1225,7 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
             useInfiniteScroll ? (
               /* Improvement 8: Infinite scroll grid */
               <div>
-                <div className="gs-card-grid grid grid-cols-2 gap-3.5">
+                <div key={gridAnimKey} className="gs-card-grid grid grid-cols-2 gap-3.5" style={{ animation: 'fadeInGrid 0.3s ease-out' }}>
                   {displayRecords.slice(0, visibleCount).map(r => (
                     <div key={r.id} className="gs-card cursor-pointer relative" onClick={() => trackView(r)}>
                       <div className="h-0.5" style={{ background: `linear-gradient(90deg, ${r.accent}, transparent)` }} />
@@ -1215,7 +1245,18 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
                           )}
                         </div>
                         <div className="flex gap-3 mb-3">
-                          <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={68} />
+                          {/* Micro-improvement 1: Blur-up lazy loading wrapper */}
+                          <div
+                            className="shrink-0 transition-all duration-500"
+                            style={{
+                              filter: loadedImages.has(r.id) ? 'blur(0)' : 'blur(4px)',
+                              opacity: loadedImages.has(r.id) ? 1 : 0.6,
+                            }}
+                            onLoad={() => markImageLoaded(r.id)}
+                            ref={(el) => { if (el && !loadedImages.has(r.id)) { setTimeout(() => markImageLoaded(r.id), 150); } }}
+                          >
+                            <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={68} />
+                          </div>
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-bold text-gs-text mb-0.5 truncate">{r.album}</div>
                             <div className="text-xs text-[#777] mb-1 truncate">{r.artist}</div>
@@ -1666,6 +1707,23 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
           </button>
         </div>
       )}
+
+      {/* Micro-improvement 3: Back to top floating button */}
+      {showBackToTop && (
+        <button
+          onClick={scrollToTop}
+          className="fixed bottom-24 right-5 w-10 h-10 rounded-full bg-gs-accent/90 text-white border-none cursor-pointer shadow-lg shadow-gs-accent/30 z-[80] flex items-center justify-center transition-all duration-300 hover:bg-gs-accent"
+          aria-label="Back to top"
+          style={{ animation: 'fadeInGrid 0.3s ease-out' }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="18 15 12 9 6 15"/>
+          </svg>
+        </button>
+      )}
+
+      {/* Micro-improvement 4: Grid animation keyframes */}
+      <style>{`@keyframes fadeInGrid { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
     </div>
   );
 }

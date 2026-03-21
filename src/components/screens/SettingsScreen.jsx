@@ -313,6 +313,48 @@ export default function SettingsScreen({ currentUser, profile, deviceCode, vinyl
   const [autoDeleteMsgDays, setAutoDeleteMsgDays] = useState('90');
   const [anonymizeOldData, setAnonymizeOldData] = useState(false);
 
+  // Micro-improvement 24: Settings search/filter
+  const [settingsSearch, setSettingsSearch] = useState('');
+  const settingsSections = useMemo(() => [
+    { id: 'account', label: 'Account', keywords: 'username email password login' },
+    { id: 'notifications', label: 'Notifications', keywords: 'email push dm alerts quiet hours' },
+    { id: 'privacy', label: 'Privacy', keywords: 'public profile listening activity' },
+    { id: 'appearance', label: 'Appearance', keywords: 'accent color theme font accessibility contrast animations language' },
+    { id: 'shipping', label: 'Shipping', keywords: 'address carrier insurance signature' },
+    { id: 'devices', label: 'Devices', keywords: 'vinyl buddy device connected accounts' },
+    { id: 'data', label: 'Data', keywords: 'export import cache backup storage delete' },
+    { id: 'about', label: 'About', keywords: 'version changelog terms privacy policy' },
+  ], []);
+  const filteredSections = useMemo(() => {
+    if (!settingsSearch.trim()) return null;
+    const q = settingsSearch.toLowerCase();
+    return settingsSections.filter(s => s.label.toLowerCase().includes(q) || s.keywords.includes(q)).map(s => s.id);
+  }, [settingsSearch, settingsSections]);
+  const shouldShowSection = useCallback((sectionId) => {
+    if (!filteredSections) return true;
+    return filteredSections.includes(sectionId);
+  }, [filteredSections]);
+
+  // Micro-improvement 25: Settings reset to defaults button
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetComplete, setResetComplete] = useState(false);
+  const handleResetToDefaults = useCallback(() => {
+    setEmailNotifs(true);
+    setPushNotifs(true);
+    setDmNotifs(true);
+    setPublicProfile(true);
+    setShowListening(true);
+    setAccent('#0ea5e9');
+    setFontSize('medium');
+    setHighContrast(false);
+    setReduceAnimations(false);
+    setLanguage('en');
+    setQuietHoursEnabled(false);
+    setShowResetConfirm(false);
+    setResetComplete(true);
+    setTimeout(() => setResetComplete(false), 2500);
+  }, []);
+
   const handleSaveShipping = useCallback(() => {
     setShippingSaved(true);
     setTimeout(() => setShippingSaved(false), 2000);
@@ -390,8 +432,56 @@ export default function SettingsScreen({ currentUser, profile, deviceCode, vinyl
     <div className="max-w-[640px] gs-page-transition">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-[22px] font-extrabold tracking-tighter text-gs-text mb-1">Settings</h1>
-        <p className="text-xs text-gs-dim">Manage your account, preferences, and connected devices</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-[22px] font-extrabold tracking-tighter text-gs-text mb-1">Settings</h1>
+            <p className="text-xs text-gs-dim">Manage your account, preferences, and connected devices</p>
+          </div>
+          {/* Micro-improvement 25: Reset to defaults button */}
+          <div className="flex items-center gap-2">
+            {resetComplete && (
+              <span className="text-[10px] text-green-400 font-mono">Reset complete!</span>
+            )}
+            {!showResetConfirm ? (
+              <button
+                onClick={() => setShowResetConfirm(true)}
+                className="text-[10px] px-3 py-1.5 rounded-lg border border-red-500/30 bg-transparent text-red-400 cursor-pointer hover:bg-red-500/10 transition-colors font-mono"
+              >
+                Reset Defaults
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-red-400 font-mono">Sure?</span>
+                <button onClick={handleResetToDefaults} className="text-[10px] px-2 py-1 rounded bg-red-500 text-white border-none cursor-pointer font-mono">Yes</button>
+                <button onClick={() => setShowResetConfirm(false)} className="text-[10px] px-2 py-1 rounded bg-[#222] text-gs-dim border border-gs-border cursor-pointer font-mono">No</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Micro-improvement 24: Settings search bar */}
+      <div className="relative mb-5">
+        <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-gs-dim" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+        </svg>
+        <input
+          value={settingsSearch}
+          onChange={e => setSettingsSearch(e.target.value)}
+          placeholder="Search settings..."
+          className="w-full bg-gs-card border border-gs-border rounded-[10px] py-2.5 pl-9 pr-4 text-[#f0f0f0] text-[13px] outline-none font-sans focus:border-gs-accent/30"
+        />
+        {settingsSearch && (
+          <button
+            onClick={() => setSettingsSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-sm"
+          >&times;</button>
+        )}
+        {filteredSections && (
+          <div className="mt-1 text-[10px] text-gs-dim font-mono">
+            Showing {filteredSections.length} section{filteredSections.length !== 1 ? 's' : ''} matching &quot;{settingsSearch}&quot;
+          </div>
+        )}
       </div>
 
       {/* ── Account ──────────────────────────────────────────── */}

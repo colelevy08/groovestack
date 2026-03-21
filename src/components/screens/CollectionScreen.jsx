@@ -468,6 +468,66 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, on
     return Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0]));
   }, [filtered, groupBy]);
 
+  // Micro-improvement 5: Collection health score (diversity, completeness)
+  const healthScore = useMemo(() => {
+    if (mine.length === 0) return { score: 0, diversity: 0, completeness: 0, label: 'Empty' };
+    const genreSet = new Set();
+    const decadeSet = new Set();
+    const condSet = new Set();
+    mine.forEach(r => {
+      (r.tags || []).forEach(t => genreSet.add(t));
+      if (r.year) decadeSet.add(Math.floor(r.year / 10) * 10);
+      if (r.condition) condSet.add(r.condition);
+    });
+    const diversity = Math.min(100, Math.round((genreSet.size * 8) + (decadeSet.size * 10)));
+    const completeness = Math.min(100, Math.round((mine.length / 50) * 60 + (mine.filter(r => r.rating > 0).length / Math.max(mine.length, 1)) * 40));
+    const score = Math.round((diversity + completeness) / 2);
+    const label = score >= 80 ? 'Excellent' : score >= 60 ? 'Great' : score >= 40 ? 'Good' : score >= 20 ? 'Growing' : 'Starting';
+    return { score, diversity, completeness, label };
+  }, [mine]);
+
+  // Micro-improvement 6: "Random record" button
+  const [randomRecord, setRandomRecord] = useState(null);
+  const pickRandomRecord = useCallback(() => {
+    if (mine.length === 0) return;
+    const idx = Math.floor(Math.random() * mine.length);
+    setRandomRecord(mine[idx]);
+  }, [mine]);
+
+  // Micro-improvement 7: Collection comparison share link
+  const [compShareCopied, setCompShareCopied] = useState(false);
+  const shareComparisonLink = useCallback(() => {
+    const genres = [...new Set(mine.flatMap(r => r.tags || []))].slice(0, 5).join(',');
+    const url = `${window.location.origin}?compare=${currentUser}&records=${mine.length}&genres=${encodeURIComponent(genres)}`;
+    navigator.clipboard.writeText(url).catch(() => {});
+    setCompShareCopied(true);
+    setTimeout(() => setCompShareCopied(false), 2000);
+  }, [mine, currentUser]);
+
+  // Micro-improvement 8: Missing album detector per artist
+  const missingAlbums = useMemo(() => {
+    const artistAlbums = {};
+    mine.forEach(r => {
+      if (!artistAlbums[r.artist]) artistAlbums[r.artist] = [];
+      artistAlbums[r.artist].push(r.album);
+    });
+    const suggestions = [];
+    const knownDiscographies = {
+      'Pink Floyd': ['The Dark Side of the Moon', 'Wish You Were Here', 'The Wall', 'Animals', 'Meddle'],
+      'Led Zeppelin': ['Led Zeppelin I', 'Led Zeppelin II', 'Led Zeppelin III', 'Led Zeppelin IV', 'Houses of the Holy', 'Physical Graffiti'],
+      'The Beatles': ["Sgt. Pepper's", 'Abbey Road', 'Revolver', 'Rubber Soul', 'Let It Be', 'The White Album'],
+      'Queen': ['A Night at the Opera', 'News of the World', 'A Day at the Races', 'Jazz', 'Sheer Heart Attack'],
+    };
+    Object.entries(artistAlbums).forEach(([artist, owned]) => {
+      const known = knownDiscographies[artist];
+      if (known) {
+        const missing = known.filter(a => !owned.some(o => o.toLowerCase().includes(a.toLowerCase())));
+        if (missing.length > 0) suggestions.push({ artist, missing: missing.slice(0, 3) });
+      }
+    });
+    return suggestions;
+  }, [mine]);
+
   // Toggle selection
   const toggleSelect = useCallback((id) => {
     setSelected(prev => {
@@ -640,6 +700,71 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, on
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Micro-improvement 5: Collection health score */}
+      {mine.length > 0 && (
+        <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[10px] font-mono text-gs-dim tracking-wider uppercase">Collection Health</div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold" style={{ color: healthScore.score >= 60 ? '#22c55e' : healthScore.score >= 40 ? '#f59e0b' : '#ef4444' }}>{healthScore.label}</span>
+              <span className="text-xs font-extrabold" style={{ color: healthScore.score >= 60 ? '#22c55e' : healthScore.score >= 40 ? '#f59e0b' : '#ef4444' }}>{healthScore.score}%</span>
+            </div>
+          </div>
+          <div className="h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden mb-2">
+            <div className="h-full rounded-full transition-all duration-500" style={{ width: `${healthScore.score}%`, background: healthScore.score >= 60 ? '#22c55e' : healthScore.score >= 40 ? '#f59e0b' : '#ef4444' }} />
+          </div>
+          <div className="flex gap-4 text-[9px] text-gs-faint font-mono">
+            <span>Diversity: {healthScore.diversity}%</span>
+            <span>Completeness: {healthScore.completeness}%</span>
+          </div>
+        </div>
+      )}
+
+      {/* Micro-improvement 6: Random record + Micro-improvement 7: Compare link */}
+      {mine.length > 0 && (
+        <div className="flex gap-2 mb-3">
+          <button
+            onClick={pickRandomRecord}
+            className="flex-1 text-[10px] py-2 rounded-lg border border-gs-border bg-gs-card text-gs-muted cursor-pointer hover:text-gs-accent hover:border-gs-accent/30 transition-colors font-mono"
+          >
+            Surprise Me (Random Record)
+          </button>
+          <button
+            onClick={shareComparisonLink}
+            className="flex-1 text-[10px] py-2 rounded-lg border border-gs-border bg-gs-card text-gs-muted cursor-pointer hover:text-gs-accent hover:border-gs-accent/30 transition-colors font-mono"
+          >
+            {compShareCopied ? 'Link Copied!' : 'Share Comparison Link'}
+          </button>
+        </div>
+      )}
+
+      {/* Micro-improvement 6: Random record display */}
+      {randomRecord && (
+        <div className="bg-gradient-to-r from-gs-accent/10 to-transparent border border-gs-accent/20 rounded-xl p-3 mb-4 flex items-center gap-3">
+          <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0" style={{ background: randomRecord.accent || '#333' }} />
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] text-gs-accent font-mono uppercase tracking-wider mb-0.5">Random Pick</div>
+            <div className="text-xs font-bold text-gs-text truncate">{randomRecord.album}</div>
+            <div className="text-[10px] text-gs-dim truncate">{randomRecord.artist} ({randomRecord.year})</div>
+          </div>
+          <button onClick={() => { handlers.onDetail?.(randomRecord); }} className="text-[10px] px-3 py-1.5 rounded-lg bg-gs-accent/15 text-gs-accent border border-gs-accent/30 cursor-pointer hover:bg-gs-accent/25 transition-colors">View</button>
+          <button onClick={() => setRandomRecord(null)} className="text-gs-faint hover:text-gs-text bg-transparent border-none cursor-pointer text-xs p-1">&times;</button>
+        </div>
+      )}
+
+      {/* Micro-improvement 8: Missing album detector */}
+      {missingAlbums.length > 0 && (
+        <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+          <div className="text-[10px] font-mono text-gs-dim tracking-wider uppercase mb-2">Missing Albums Detector</div>
+          {missingAlbums.map(({ artist, missing }) => (
+            <div key={artist} className="mb-1.5 last:mb-0">
+              <span className="text-[10px] font-bold text-gs-text">{artist}:</span>
+              <span className="text-[10px] text-gs-faint ml-1.5">{missing.join(', ')}</span>
+            </div>
+          ))}
         </div>
       )}
 
