@@ -1,10 +1,17 @@
 // Seed data for the social feed — user-created posts with optional tagged records.
 // Posts are separate from the record catalog; they're social content that can reference any record.
-// Shape: { id, user, type, caption, mediaUrl?, mediaType, taggedRecord?, likes, liked, comments[], bookmarked, timeAgo, createdAt, accent }
+// Shape: { id, user, type, caption, mediaUrl?, mediaType, taggedRecord?, likes, liked, comments[], bookmarked, timeAgo, createdAt, accent, reactions, views }
 
 const now = Date.now();
 const hr = 3600000;
 const day = 86400000;
+
+// Generate deterministic reaction counts and view counts for posts
+const _reactionSeed = (id) => {
+  const base = ((id * 7) % 30) + 2;
+  return { fire: base, heart: Math.floor(base * 0.7), vinyl: Math.floor(base * 0.4) };
+};
+const _viewSeed = (id) => ((id * 13) % 400) + 80;
 
 const INITIAL_POSTS = [
   {
@@ -26,6 +33,8 @@ const INITIAL_POSTS = [
     timeAgo: "4h ago",
     createdAt: now - 4 * hr,
     accent: "#ec4899",
+    reactions: { fire: 12, heart: 8, vinyl: 5 },
+    views: 287,
   },
   {
     id: 2002,
@@ -1804,6 +1813,222 @@ const INITIAL_POSTS = [
     createdAt: now - 108 * hr,
     accent: "#ec4899",
   },
+  {
+    id: 2091,
+    user: "hal.grooves",
+    type: "review",
+    caption: "Robert Johnson recorded 29 songs in two sessions in 1936 and 1937. Those 29 songs created the blueprint for everything we call blues, rock, and roll. This Columbia pressing of King of the Delta Blues Singers is my most treasured possession.",
+    mediaUrl: null,
+    mediaType: "image",
+    taggedRecord: { album: "King of the Delta Blues Singers", artist: "Robert Johnson" },
+    likes: 28,
+    liked: false,
+    comments: [
+      { id: 220, user: "lena.records", text: "The mythology around Robert Johnson is incredible but the music speaks for itself.", time: "5h ago" },
+      { id: 221, user: "dax.wax", text: "Cross Road Blues on vinyl hits different. You can hear the room.", time: "4h ago" },
+    ],
+    bookmarked: false,
+    timeAgo: "5d ago",
+    createdAt: now - 120 * hr,
+    accent: "#2563eb",
+    reactions: { fire: 10, heart: 14, vinyl: 6 },
+    views: 194,
+  },
+  {
+    id: 2092,
+    user: "petra.spins",
+    type: "review",
+    caption: "Glenn Gould recorded the Goldberg Variations twice. The 1955 version is youthful, brash, and revolutionary. The 1981 version is contemplative and profound. Both are essential. This is the 1955 Columbia Masterworks pressing.",
+    mediaUrl: null,
+    mediaType: "image",
+    taggedRecord: { album: "Goldberg Variations", artist: "Glenn Gould" },
+    likes: 22,
+    liked: false,
+    comments: [
+      { id: 222, user: "emi.spins", text: "The 1955 recording changed how people thought about Bach. Gould was only 22!", time: "6h ago" },
+      { id: 223, user: "freya.wax", text: "I prefer the 1981 but both are essential. That is the beauty of vinyl collecting.", time: "5h ago" },
+    ],
+    bookmarked: false,
+    timeAgo: "5d ago",
+    createdAt: now - 122 * hr,
+    accent: "#6366f1",
+    reactions: { fire: 7, heart: 12, vinyl: 4 },
+    views: 168,
+  },
+  {
+    id: 2093,
+    user: "zara.grooves",
+    type: "photo",
+    caption: "Reggae shelf reorganized by label. Island Records on top, Studio One in the middle, Trojan at the bottom. The Heart of the Congos gets pride of place. Lee Scratch Perry was operating on another wavelength entirely.",
+    mediaUrl: null,
+    mediaType: "image",
+    taggedRecord: { album: "Heart of the Congos", artist: "The Congos" },
+    likes: 31,
+    liked: false,
+    comments: [
+      { id: 224, user: "sol.spins", text: "Studio One pressings are getting harder and harder to find in good condition.", time: "7h ago" },
+      { id: 225, user: "mara.vinyl", text: "That Perry production is so far ahead of its time. Dub as architecture.", time: "6h ago" },
+    ],
+    bookmarked: false,
+    timeAgo: "6d ago",
+    createdAt: now - 140 * hr,
+    accent: "#22c55e",
+    reactions: { fire: 14, heart: 9, vinyl: 8 },
+    views: 221,
+  },
+  {
+    id: 2094,
+    user: "sol.spins",
+    type: "review",
+    caption: "Fela Kuti's Expensive Shit is protest music at its most fearless. The Nigerian government tried to plant drugs on him and he literally swallowed the evidence. Then he wrote this album about it. The groove is 13 minutes of pure defiance.",
+    mediaUrl: null,
+    mediaType: "image",
+    taggedRecord: { album: "Expensive Shit", artist: "Fela Kuti" },
+    likes: 35,
+    liked: false,
+    comments: [
+      { id: 226, user: "kofi.grooves", text: "Fela is the most important African musician of the 20th century. No debate.", time: "8h ago" },
+      { id: 227, user: "nadia.rpm", text: "The Afrobeat groove is so infectious. Once you are in it you never want to leave.", time: "7h ago" },
+    ],
+    bookmarked: false,
+    timeAgo: "6d ago",
+    createdAt: now - 145 * hr,
+    accent: "#10b981",
+    reactions: { fire: 18, heart: 11, vinyl: 7 },
+    views: 256,
+  },
+  {
+    id: 2095,
+    user: "elena.rpm",
+    type: "review",
+    caption: "Paco de Lucia changed flamenco guitar forever with Entre dos aguas. He bridged tradition and modernity without losing the soul of either. This Philips pressing from Spain has warmth that later reissues flatten out.",
+    mediaUrl: null,
+    mediaType: "image",
+    taggedRecord: { album: "Fuente y Caudal", artist: "Paco de Lucia" },
+    likes: 19,
+    liked: false,
+    comments: [
+      { id: 228, user: "mateo.spins", text: "Flamenco on vinyl is a transcendent experience. The percussive attack of the guitar comes through perfectly.", time: "9h ago" },
+    ],
+    bookmarked: false,
+    timeAgo: "7d ago",
+    createdAt: now - 160 * hr,
+    accent: "#ca8a04",
+    reactions: { fire: 8, heart: 7, vinyl: 3 },
+    views: 142,
+  },
+  {
+    id: 2096,
+    user: "emi.spins",
+    type: "review",
+    caption: "Stravinsky's Rite of Spring caused a literal riot at its 1913 premiere. This Boulez/Cleveland recording captures that primal energy perfectly. The Sacrificial Dance on vinyl will shake your walls and terrify your neighbors.",
+    mediaUrl: null,
+    mediaType: "image",
+    taggedRecord: { album: "The Rite of Spring", artist: "Igor Stravinsky (Boulez / Cleveland)" },
+    likes: 17,
+    liked: false,
+    comments: [
+      { id: 229, user: "petra.spins", text: "Boulez brings surgical precision AND raw power. The best of both worlds.", time: "10h ago" },
+      { id: 230, user: "freya.wax", text: "Classical music on vinyl is an underrated experience. The dynamics are unmatched.", time: "9h ago" },
+    ],
+    bookmarked: false,
+    timeAgo: "7d ago",
+    createdAt: now - 165 * hr,
+    accent: "#6366f1",
+    reactions: { fire: 6, heart: 9, vinyl: 3 },
+    views: 131,
+  },
+  {
+    id: 2097,
+    user: "hal.grooves",
+    type: "photo",
+    caption: "Blues shelf tour. Delta blues at the top, Chicago blues in the middle, Texas blues at the bottom. Robert Johnson, Muddy Waters, B.B. King, Albert King, SRV. The entire evolution of the blues in one shelf.",
+    mediaUrl: null,
+    mediaType: "image",
+    taggedRecord: { album: "Born Under a Bad Sign", artist: "Albert King" },
+    likes: 24,
+    liked: false,
+    comments: [
+      { id: 231, user: "thomas.wax", text: "The blues shelf is always the most honest section of any collection.", time: "11h ago" },
+      { id: 232, user: "lena.records", text: "Albert King on Stax is peak blues. That Flying V tone!", time: "10h ago" },
+    ],
+    bookmarked: false,
+    timeAgo: "8d ago",
+    createdAt: now - 185 * hr,
+    accent: "#2563eb",
+    reactions: { fire: 11, heart: 8, vinyl: 5 },
+    views: 178,
+  },
+  {
+    id: 2098,
+    user: "mateo.spins",
+    type: "review",
+    caption: "Willie Colon and Ruben Blades made Siembra, the best-selling salsa album of all time. Pedro Navaja is seven minutes of storytelling perfection set to the tightest rhythm section in Latin music history. Original Fania pressing.",
+    mediaUrl: null,
+    mediaType: "image",
+    taggedRecord: { album: "Siembra", artist: "Willie Colon & Ruben Blades" },
+    likes: 26,
+    liked: false,
+    comments: [
+      { id: 233, user: "elena.rpm", text: "Fania Records was the Motown of salsa. Every release is essential.", time: "12h ago" },
+      { id: 234, user: "sol.spins", text: "Latin vinyl is so underappreciated in the collecting world. These pressings deserve more love.", time: "11h ago" },
+    ],
+    bookmarked: false,
+    timeAgo: "8d ago",
+    createdAt: now - 190 * hr,
+    accent: "#b91c1c",
+    reactions: { fire: 13, heart: 7, vinyl: 6 },
+    views: 195,
+  },
+  {
+    id: 2099,
+    user: "zara.grooves",
+    type: "review",
+    caption: "Augustus Pablo and King Tubby created the definitive dub album with King Tubby Meets Rockers Uptown. The melodica floats through vast spaces of echo and reverb. This is music that builds entire worlds from rhythm and empty space.",
+    mediaUrl: null,
+    mediaType: "image",
+    taggedRecord: { album: "King Tubby Meets Rockers Uptown", artist: "Augustus Pablo" },
+    likes: 29,
+    liked: false,
+    comments: [
+      { id: 235, user: "juniper.sounds", text: "Dub is the most underrated genre in vinyl collecting. The production techniques were decades ahead.", time: "1d ago" },
+      { id: 236, user: "beau.plays", text: "King Tubby invented remix culture. Everything electronic owes a debt to this album.", time: "22h ago" },
+    ],
+    bookmarked: false,
+    timeAgo: "9d ago",
+    createdAt: now - 210 * hr,
+    accent: "#22c55e",
+    reactions: { fire: 15, heart: 10, vinyl: 7 },
+    views: 213,
+  },
+  {
+    id: 2100,
+    user: "hal.grooves",
+    type: "review",
+    caption: "Stevie Ray Vaughan's Texas Flood announced a guitar hero for a new generation. Pride and Joy, Love Struck Baby, and the title track are ferocious. This original Epic pressing is in near mint condition and sounds absolutely massive.",
+    mediaUrl: null,
+    mediaType: "image",
+    taggedRecord: { album: "Texas Flood", artist: "Stevie Ray Vaughan" },
+    likes: 33,
+    liked: false,
+    comments: [
+      { id: 237, user: "bjorn.grooves", text: "SRV brought the blues back to the mainstream in the 80s. What a debut.", time: "1d ago" },
+      { id: 238, user: "thomas.wax", text: "That guitar tone could cut through steel. Absolute legend.", time: "20h ago" },
+    ],
+    bookmarked: false,
+    timeAgo: "10d ago",
+    createdAt: now - 235 * hr,
+    accent: "#2563eb",
+    reactions: { fire: 16, heart: 12, vinyl: 5 },
+    views: 247,
+  },
 ];
 
-export default INITIAL_POSTS;
+// Enrich all posts with reactions and views if not already present
+const ENRICHED_POSTS = INITIAL_POSTS.map(post => ({
+  ...post,
+  reactions: post.reactions || _reactionSeed(post.id),
+  views: post.views || _viewSeed(post.id),
+}));
+
+export default ENRICHED_POSTS;

@@ -2,7 +2,7 @@
 // Wrap around any subtree to prevent the entire app from crashing.
 // Improvements: retry countdown timer, error report submission, dev-mode full stack trace,
 // error categorization (network, render, data), suggested recovery actions per error type,
-// and error frequency tracking.
+// error frequency tracking, error screenshot capture, and send error report button.
 import { Component } from 'react';
 
 // --- Error categorization ---
@@ -68,7 +68,6 @@ function categorizeError(error) {
   const msg = error.message?.toLowerCase() || '';
   const name = error.name?.toLowerCase() || '';
 
-  // Network errors
   if (
     name === 'typeerror' && (msg.includes('fetch') || msg.includes('network')) ||
     msg.includes('network') ||
@@ -82,7 +81,6 @@ function categorizeError(error) {
     return 'network';
   }
 
-  // Data errors
   if (
     msg.includes('json') ||
     msg.includes('unexpected token') ||
@@ -112,7 +110,6 @@ function trackErrorFrequency(error) {
     }
     freq[key].count += 1;
     freq[key].lastSeen = new Date().toISOString();
-    // Keep only the top 50 errors
     const entries = Object.entries(freq).sort((a, b) => b[1].count - a[1].count).slice(0, 50);
     localStorage.setItem(ERROR_FREQUENCY_KEY, JSON.stringify(Object.fromEntries(entries)));
     return freq[key];
@@ -132,6 +129,45 @@ function getErrorFrequency(error) {
   }
 }
 
+// --- Improvement 23: Screenshot capture utility ---
+async function captureErrorScreenshot() {
+  try {
+    // Use html2canvas-like approach via canvas API on the document body
+    // For a lightweight approach, capture a simplified screenshot of the visible area
+    if (typeof document === 'undefined') return null;
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const { innerWidth, innerHeight } = window;
+
+    canvas.width = Math.min(innerWidth, 1200);
+    canvas.height = Math.min(innerHeight, 800);
+
+    // Draw a simplified representation
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#333';
+    ctx.font = '14px monospace';
+    ctx.fillText('Error Screenshot Capture', 20, 30);
+    ctx.fillStyle = '#666';
+    ctx.font = '11px monospace';
+    ctx.fillText(`URL: ${window.location.href}`, 20, 50);
+    ctx.fillText(`Time: ${new Date().toISOString()}`, 20, 65);
+    ctx.fillText(`Viewport: ${innerWidth}x${innerHeight}`, 20, 80);
+
+    // Capture DOM structure summary
+    const bodyText = document.body?.innerText?.slice(0, 500) || '';
+    const lines = bodyText.split('\n').filter(l => l.trim()).slice(0, 15);
+    lines.forEach((line, i) => {
+      ctx.fillText(line.slice(0, 80), 20, 110 + i * 16);
+    });
+
+    return canvas.toDataURL('image/png');
+  } catch {
+    return null;
+  }
+}
+
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -143,6 +179,11 @@ export default class ErrorBoundary extends Component {
       reportStatus: null,
       errorCategory: 'render',
       errorFreq: null,
+      screenshot: null,
+      screenshotStatus: null, // null | 'capturing' | 'captured' | 'failed'
+      sendReportExpanded: false,
+      reportEmail: '',
+      reportDescription: '',
     };
     this.countdownTimer = null;
   }
@@ -162,6 +203,21 @@ export default class ErrorBoundary extends Component {
     if (this.countdownTimer) clearInterval(this.countdownTimer);
   }
 
+  // Improvement 23: Capture screenshot
+  handleCaptureScreenshot = async () => {
+    this.setState({ screenshotStatus: 'capturing' });
+    try {
+      const screenshot = await captureErrorScreenshot();
+      if (screenshot) {
+        this.setState({ screenshot, screenshotStatus: 'captured' });
+      } else {
+        this.setState({ screenshotStatus: 'failed' });
+      }
+    } catch {
+      this.setState({ screenshotStatus: 'failed' });
+    }
+  };
+
   handleRetryWithCountdown = () => {
     this.setState({ countdown: 5 });
     this.countdownTimer = setInterval(() => {
@@ -170,7 +226,7 @@ export default class ErrorBoundary extends Component {
         if (next <= 0) {
           clearInterval(this.countdownTimer);
           this.countdownTimer = null;
-          return { hasError: false, error: null, errorInfo: null, countdown: 0, reportStatus: null, errorFreq: null };
+          return { hasError: false, error: null, errorInfo: null, countdown: 0, reportStatus: null, errorFreq: null, screenshot: null, screenshotStatus: null };
         }
         return { countdown: next };
       });
@@ -178,12 +234,11 @@ export default class ErrorBoundary extends Component {
   };
 
   handleRetry = () => {
-    this.setState({ hasError: false, error: null, errorInfo: null, reportStatus: null, errorFreq: null });
+    this.setState({ hasError: false, error: null, errorInfo: null, reportStatus: null, errorFreq: null, screenshot: null, screenshotStatus: null, sendReportExpanded: false });
   };
 
   handleClearCacheAndRetry = () => {
     try {
-      // Clear relevant caches
       localStorage.removeItem('gs_cache');
       sessionStorage.clear();
     } catch { /* ignore */ }
@@ -201,6 +256,9 @@ export default class ErrorBoundary extends Component {
       url: window.location.href,
       timestamp: new Date().toISOString(),
       userAgent: navigator.userAgent,
+      screenshot: this.state.screenshot || null,
+      userEmail: this.state.reportEmail || null,
+      userDescription: this.state.reportDescription || null,
     };
     // Store error report locally for later submission
     try {
@@ -222,7 +280,7 @@ export default class ErrorBoundary extends Component {
         window.location.reload();
         break;
       case 'report':
-        this.handleReportError();
+        this.setState({ sendReportExpanded: true });
         break;
       case 'clearCache':
         this.handleClearCacheAndRetry();
@@ -237,7 +295,7 @@ export default class ErrorBoundary extends Component {
 
   render() {
     if (this.state.hasError) {
-      const { countdown, reportStatus, errorCategory, errorFreq } = this.state;
+      const { countdown, reportStatus, errorCategory, errorFreq, screenshot, screenshotStatus, sendReportExpanded } = this.state;
       const isDev = process.env.NODE_ENV === 'development';
       const categoryInfo = ERROR_CATEGORIES[errorCategory] || ERROR_CATEGORIES.render;
 
@@ -309,8 +367,23 @@ export default class ErrorBoundary extends Component {
             )}
           </div>
 
-          {/* Fallback actions */}
-          <div className="flex gap-2 mb-3">
+          {/* Improvement 23: Screenshot capture button */}
+          <div className="flex gap-2 mb-3 items-center">
+            <button
+              onClick={this.handleCaptureScreenshot}
+              disabled={screenshotStatus === 'capturing' || screenshotStatus === 'captured'}
+              className="text-[11px] text-gs-dim hover:text-gs-muted bg-transparent border border-gs-border rounded-md px-2.5 py-1.5 cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
+                <circle cx="12" cy="13" r="4" />
+              </svg>
+              {screenshotStatus === 'capturing' && 'Capturing...'}
+              {screenshotStatus === 'captured' && 'Screenshot Captured'}
+              {screenshotStatus === 'failed' && 'Capture Failed'}
+              {!screenshotStatus && 'Capture Screenshot'}
+            </button>
+
             {countdown <= 0 && (
               <button
                 onClick={this.handleRetryWithCountdown}
@@ -321,16 +394,78 @@ export default class ErrorBoundary extends Component {
             )}
           </div>
 
-          {/* Error report link (if not already shown in recovery actions) */}
-          {!categoryInfo.recoveryActions.find(a => a.type === 'report') && (
+          {/* Screenshot preview */}
+          {screenshot && (
+            <div className="mb-3 max-w-xs">
+              <img
+                src={screenshot}
+                alt="Error screenshot"
+                className="w-full rounded-lg border border-gs-border shadow-md"
+              />
+            </div>
+          )}
+
+          {/* Improvement 24: Send error report form */}
+          {sendReportExpanded && (
+            <div className="w-full max-w-sm bg-gs-card border border-gs-border rounded-lg p-4 mb-3 text-left animate-fade-in">
+              <h3 className="text-[13px] font-bold text-gs-text mb-3">Send Error Report</h3>
+              <div className="mb-3">
+                <label className="text-[11px] text-gs-dim font-mono uppercase tracking-wider block mb-1">
+                  Email (optional)
+                </label>
+                <input
+                  type="email"
+                  value={this.state.reportEmail}
+                  onChange={(e) => this.setState({ reportEmail: e.target.value })}
+                  placeholder="your@email.com"
+                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-md px-2.5 py-1.5 text-neutral-100 text-[12px] outline-none placeholder:text-gs-faint focus:border-gs-accent/40 transition-colors"
+                />
+              </div>
+              <div className="mb-3">
+                <label className="text-[11px] text-gs-dim font-mono uppercase tracking-wider block mb-1">
+                  What were you doing?
+                </label>
+                <textarea
+                  value={this.state.reportDescription}
+                  onChange={(e) => this.setState({ reportDescription: e.target.value })}
+                  placeholder="Describe what happened..."
+                  rows={3}
+                  className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-md px-2.5 py-1.5 text-neutral-100 text-[12px] outline-none placeholder:text-gs-faint focus:border-gs-accent/40 transition-colors resize-none"
+                />
+              </div>
+              <div className="text-[10px] text-gs-faint mb-3">
+                This report will include: error details, URL, browser info
+                {screenshot ? ', screenshot' : ''}, and your description.
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={() => this.setState({ sendReportExpanded: false })}
+                  className="gs-btn-secondary px-3 py-1.5 rounded-lg text-[12px] font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={this.handleReportError}
+                  disabled={reportStatus === 'sending' || reportStatus === 'sent'}
+                  className="gs-btn-gradient px-3 py-1.5 rounded-lg text-[12px] font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {reportStatus === 'sending' && 'Sending...'}
+                  {reportStatus === 'sent' && 'Sent!'}
+                  {reportStatus === 'failed' && 'Retry Send'}
+                  {!reportStatus && 'Send Report'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Error report link (if not already shown in recovery actions and not expanded) */}
+          {!categoryInfo.recoveryActions.find(a => a.type === 'report') && !sendReportExpanded && (
             <button
-              onClick={this.handleReportError}
-              disabled={reportStatus === 'sending' || reportStatus === 'sent'}
+              onClick={() => this.setState({ sendReportExpanded: true })}
+              disabled={reportStatus === 'sent'}
               className="text-[11px] text-gs-dim hover:text-gs-muted transition-colors bg-transparent border-none cursor-pointer mb-3 disabled:cursor-not-allowed"
             >
-              {reportStatus === 'sending' && 'Submitting report...'}
               {reportStatus === 'sent' && 'Report saved -- thank you!'}
-              {reportStatus === 'failed' && 'Report failed. Click to retry.'}
               {!reportStatus && 'Report this error'}
             </button>
           )}

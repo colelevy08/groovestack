@@ -1,12 +1,13 @@
 // Album art component — drop-in replacement for VinylDisc.
 // Fetches real album cover art via iTunes Search API, falls back to VinylDisc while loading or on error.
 // Supports lazy loading with IntersectionObserver, blur-up placeholder, click to expand, skeleton shimmer,
-// vinyl record peek animation on hover, responsive sizes, and broken image fallback art.
+// vinyl record peek animation on hover, responsive sizes, broken image fallback art,
+// dominant color extraction, and album art comparison slider.
 import { useState, useEffect, useRef, useCallback } from 'react';
 import VinylDisc from './VinylDisc';
 import { getCoverUrl } from '../../utils/coverArt';
 
-// Improvement 1: Responsive size presets for different contexts
+// Responsive size presets for different contexts
 const SIZE_PRESETS = {
   thumb: 48,
   sm: 72,
@@ -15,21 +16,186 @@ const SIZE_PRESETS = {
   xl: 300,
 };
 
-export default function AlbumArt({ album, artist, size = 72, sizePreset, accent = "#555", expandable, priority = false }) {
+// --- Improvement 14: Dominant color extraction from album art ---
+function extractDominantColor(imgSrc, callback) {
+  if (!imgSrc) return;
+  const img = new Image();
+  img.crossOrigin = 'Anonymous';
+  img.onload = () => {
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      // Sample at small size for performance
+      const sampleSize = 10;
+      canvas.width = sampleSize;
+      canvas.height = sampleSize;
+      ctx.drawImage(img, 0, 0, sampleSize, sampleSize);
+      const data = ctx.getImageData(0, 0, sampleSize, sampleSize).data;
+      let r = 0, g = 0, b = 0, count = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        // Skip very dark and very bright pixels
+        const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        if (brightness > 30 && brightness < 230) {
+          r += data[i];
+          g += data[i + 1];
+          b += data[i + 2];
+          count++;
+        }
+      }
+      if (count > 0) {
+        r = Math.round(r / count);
+        g = Math.round(g / count);
+        b = Math.round(b / count);
+        callback({ r, g, b, hex: `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}` });
+      } else {
+        callback(null);
+      }
+    } catch {
+      callback(null);
+    }
+  };
+  img.onerror = () => callback(null);
+  img.src = imgSrc;
+}
+
+// --- Improvement 15: Album art comparison slider ---
+export function AlbumArtComparison({ leftAlbum, leftArtist, rightAlbum, rightArtist, size = 200 }) {
+  const [sliderPos, setSliderPos] = useState(50); // percentage
+  const [dragging, setDragging] = useState(false);
+  const containerRef = useRef(null);
+  const [leftUrl, setLeftUrl] = useState(null);
+  const [rightUrl, setRightUrl] = useState(null);
+  const [leftLoaded, setLeftLoaded] = useState(false);
+  const [rightLoaded, setRightLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (leftAlbum || leftArtist) {
+      getCoverUrl(leftAlbum, leftArtist).then(u => { if (!cancelled) setLeftUrl(u); });
+    }
+    if (rightAlbum || rightArtist) {
+      getCoverUrl(rightAlbum, rightArtist).then(u => { if (!cancelled) setRightUrl(u); });
+    }
+    return () => { cancelled = true; };
+  }, [leftAlbum, leftArtist, rightAlbum, rightArtist]);
+
+  const handleMove = useCallback((clientX) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const pct = Math.max(0, Math.min(100, (x / rect.width) * 100));
+    setSliderPos(pct);
+  }, []);
+
+  const onMouseDown = useCallback(() => setDragging(true), []);
+  const onMouseUp = useCallback(() => setDragging(false), []);
+  const onMouseMove = useCallback((e) => {
+    if (dragging) handleMove(e.clientX);
+  }, [dragging, handleMove]);
+  const onTouchMove = useCallback((e) => {
+    handleMove(e.touches[0].clientX);
+  }, [handleMove]);
+
+  useEffect(() => {
+    if (dragging) {
+      window.addEventListener('mouseup', onMouseUp);
+      window.addEventListener('mousemove', onMouseMove);
+      return () => {
+        window.removeEventListener('mouseup', onMouseUp);
+        window.removeEventListener('mousemove', onMouseMove);
+      };
+    }
+  }, [dragging, onMouseUp, onMouseMove]);
+
+  const radius = Math.round(size * 0.12);
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative overflow-hidden shrink-0 select-none cursor-col-resize"
+      style={{ width: size, height: size, borderRadius: radius }}
+      onMouseDown={onMouseDown}
+      onTouchMove={onTouchMove}
+    >
+      {/* Right image (full, behind) */}
+      {rightUrl && (
+        <img
+          src={rightUrl}
+          alt={`${rightAlbum || 'Album'} cover`}
+          className={`absolute inset-0 w-full h-full object-cover ${rightLoaded ? 'opacity-100' : 'opacity-0'}`}
+          onLoad={() => setRightLoaded(true)}
+        />
+      )}
+      {!rightUrl && (
+        <div className="absolute inset-0 bg-[#1a1a1a] flex items-center justify-center">
+          <VinylDisc size={size * 0.5} />
+        </div>
+      )}
+
+      {/* Left image (clipped) */}
+      <div
+        className="absolute inset-0 overflow-hidden"
+        style={{ width: `${sliderPos}%` }}
+      >
+        {leftUrl && (
+          <img
+            src={leftUrl}
+            alt={`${leftAlbum || 'Album'} cover`}
+            className={`w-full h-full object-cover ${leftLoaded ? 'opacity-100' : 'opacity-0'}`}
+            style={{ width: size, height: size }}
+            onLoad={() => setLeftLoaded(true)}
+          />
+        )}
+        {!leftUrl && (
+          <div className="w-full h-full bg-[#222] flex items-center justify-center" style={{ width: size }}>
+            <VinylDisc size={size * 0.5} />
+          </div>
+        )}
+      </div>
+
+      {/* Slider handle */}
+      <div
+        className="absolute top-0 bottom-0 w-0.5 bg-white shadow-lg"
+        style={{ left: `${sliderPos}%`, transform: 'translateX(-50%)' }}
+      >
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-white shadow-md flex items-center justify-center">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="3" strokeLinecap="round">
+            <polyline points="8 4 4 12 8 20" />
+            <polyline points="16 4 20 12 16 20" />
+          </svg>
+        </div>
+      </div>
+
+      {/* Labels */}
+      <div className="absolute bottom-1 left-1 text-[9px] text-white/80 bg-black/50 rounded px-1 py-0.5 pointer-events-none">
+        {leftAlbum || 'A'}
+      </div>
+      <div className="absolute bottom-1 right-1 text-[9px] text-white/80 bg-black/50 rounded px-1 py-0.5 pointer-events-none">
+        {rightAlbum || 'B'}
+      </div>
+    </div>
+  );
+}
+
+export default function AlbumArt({
+  album, artist, size = 72, sizePreset, accent = "#555", expandable, priority = false,
+  onDominantColor, // Improvement 14: Callback with { r, g, b, hex } dominant color
+  showDominantColor = false, // Show a glow/border with dominant color
+}) {
   const [url, setUrl] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
   const [inView, setInView] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [dominantColor, setDominantColor] = useState(null);
   const containerRef = useRef(null);
 
-  // Improvement 2: Resolve size from preset or raw value
+  // Resolve size from preset or raw value
   const resolvedSize = sizePreset ? (SIZE_PRESETS[sizePreset] || size) : size;
 
-  // Lazy loading with IntersectionObserver (skip for priority/above-the-fold images #16)
+  // Lazy loading with IntersectionObserver (skip for priority/above-the-fold images)
   useEffect(() => {
-    // Priority images (above-the-fold) skip lazy loading and load immediately
     if (priority) {
       setInView(true);
       return;
@@ -38,7 +204,6 @@ export default function AlbumArt({ album, artist, size = 72, sizePreset, accent 
     const el = containerRef.current;
     if (!el) return;
 
-    // If IntersectionObserver is not available, treat as in-view immediately
     if (!('IntersectionObserver' in window)) {
       setInView(true);
       return;
@@ -70,7 +235,6 @@ export default function AlbumArt({ album, artist, size = 72, sizePreset, accent 
       getCoverUrl(album, artist).then(result => {
         if (!cancelled) {
           setUrl(result);
-          // Preload priority images into browser cache (#16)
           if (priority && result) {
             const link = document.createElement('link');
             link.rel = 'preload';
@@ -84,13 +248,26 @@ export default function AlbumArt({ album, artist, size = 72, sizePreset, accent 
     return () => { cancelled = true; };
   }, [album, artist, inView, priority]);
 
+  // Extract dominant color when image loads
+  useEffect(() => {
+    if (!url || !loaded) return;
+    if (!onDominantColor && !showDominantColor) return;
+
+    extractDominantColor(url, (color) => {
+      if (color) {
+        setDominantColor(color);
+        onDominantColor?.(color);
+      }
+    });
+  }, [url, loaded, onDominantColor, showDominantColor]);
+
   const handleClick = useCallback(() => {
     if (expandable && url && loaded) {
       setExpanded(true);
     }
   }, [expandable, url, loaded]);
 
-  // Improvement 3: Keyboard support for expanded lightbox (Escape to close)
+  // Keyboard support for expanded lightbox (Escape to close)
   useEffect(() => {
     if (!expanded) return;
     const handler = (e) => {
@@ -128,7 +305,7 @@ export default function AlbumArt({ album, artist, size = 72, sizePreset, accent 
     );
   }
 
-  // Improvement 3: Broken image fallback with music note icon instead of just VinylDisc
+  // Broken image fallback with music note icon
   if (!url || errored) {
     const radius = Math.round(resolvedSize * 0.18);
     return (
@@ -164,12 +341,18 @@ export default function AlbumArt({ album, artist, size = 72, sizePreset, accent 
 
   const radius = Math.round(resolvedSize * 0.18);
 
+  // Dominant color glow style
+  const dominantGlowStyle = showDominantColor && dominantColor ? {
+    boxShadow: `0 0 ${resolvedSize * 0.15}px ${dominantColor.hex}40, 0 0 ${resolvedSize * 0.3}px ${dominantColor.hex}20`,
+    borderColor: `${dominantColor.hex}60`,
+  } : {};
+
   return (
     <>
       <div
         ref={containerRef}
-        className={`overflow-hidden shrink-0 bg-[#1a1a1a] border border-gs-border-hover relative hover:scale-105 transition-transform duration-200 ${expandable ? 'cursor-pointer' : ''}`}
-        style={{ width: resolvedSize, height: resolvedSize, borderRadius: radius }}
+        className={`overflow-hidden shrink-0 bg-[#1a1a1a] border border-gs-border-hover relative hover:scale-105 transition-all duration-200 ${expandable ? 'cursor-pointer' : ''}`}
+        style={{ width: resolvedSize, height: resolvedSize, borderRadius: radius, ...dominantGlowStyle }}
         onClick={handleClick}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
@@ -197,7 +380,16 @@ export default function AlbumArt({ album, artist, size = 72, sizePreset, accent 
           className={`w-full h-full object-cover transition-opacity duration-[250ms] ${loaded ? "opacity-100" : "opacity-0"}`}
         />
 
-        {/* Improvement 1: Vinyl record peek animation on hover */}
+        {/* Dominant color indicator dot */}
+        {showDominantColor && dominantColor && loaded && (
+          <div
+            className="absolute top-1.5 right-1.5 w-3 h-3 rounded-full border border-black/30 shadow-sm"
+            style={{ background: dominantColor.hex }}
+            title={`Dominant: ${dominantColor.hex}`}
+          />
+        )}
+
+        {/* Vinyl record peek animation on hover */}
         {loaded && hovered && (
           <div
             className="absolute pointer-events-none"
@@ -227,9 +419,7 @@ export default function AlbumArt({ album, artist, size = 72, sizePreset, accent 
                   <stop offset="100%" stopColor="rgba(255,255,255,0)" />
                 </radialGradient>
               </defs>
-              {/* Outer disc */}
               <circle cx="50" cy="50" r="48" fill="#111" stroke="#222" strokeWidth="1" />
-              {/* Vinyl grooves — outer region */}
               <circle cx="50" cy="50" r="46" fill="none" stroke="#1a1a1a" strokeWidth="0.3" />
               <circle cx="50" cy="50" r="44" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
               <circle cx="50" cy="50" r="42" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
@@ -243,9 +433,7 @@ export default function AlbumArt({ album, artist, size = 72, sizePreset, accent 
               <circle cx="50" cy="50" r="26" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
               <circle cx="50" cy="50" r="24" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
               <circle cx="50" cy="50" r="22" fill="none" stroke="#1a1a1a" strokeWidth="0.3" />
-              {/* Label area background */}
               <circle cx="50" cy="50" r="20" fill="#222" />
-              {/* Album art as center label */}
               {url && (
                 <image
                   href={url}
@@ -254,11 +442,8 @@ export default function AlbumArt({ album, artist, size = 72, sizePreset, accent 
                   preserveAspectRatio="xMidYMid slice"
                 />
               )}
-              {/* Label ring border */}
               <circle cx="50" cy="50" r="20" fill="none" stroke="#333" strokeWidth="0.8" />
-              {/* Spindle hole */}
               <circle cx="50" cy="50" r="2.5" fill="#0a0a0a" stroke="#333" strokeWidth="0.5" />
-              {/* Vinyl sheen overlay */}
               <circle cx="50" cy="50" r="48" fill={`url(#vinyl-sheen-${resolvedSize})`} />
             </svg>
             </div>
@@ -283,6 +468,13 @@ export default function AlbumArt({ album, artist, size = 72, sizePreset, accent 
             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent rounded-b-2xl p-4">
               {album && <div className="text-white text-[15px] font-bold">{album}</div>}
               {artist && <div className="text-white/60 text-[13px]">{artist}</div>}
+              {/* Show dominant color swatch in expanded view */}
+              {dominantColor && (
+                <div className="flex items-center gap-1.5 mt-1">
+                  <div className="w-3 h-3 rounded-full border border-white/30" style={{ background: dominantColor.hex }} />
+                  <span className="text-[11px] text-white/50 font-mono">{dominantColor.hex}</span>
+                </div>
+              )}
             </div>
             <button
               onClick={(e) => { e.stopPropagation(); setExpanded(false); }}

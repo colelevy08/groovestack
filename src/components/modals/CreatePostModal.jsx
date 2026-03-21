@@ -615,6 +615,84 @@ export default function CreatePostModal({ open, onClose, onSubmit, records, curr
                 </div>
               )}
 
+              {/* [Improvement #26] AI Caption Suggestions */}
+              <div className="mb-3">
+                <button
+                  onClick={() => {
+                    const suggestions = [
+                      `Just added this gem to the rotation ${taggedRecord ? `-- "${taggedRecord.album}" by ${taggedRecord.artist}` : ''}. The sound quality is incredible! #nowspinning #vinyl`,
+                      `There's nothing like the warmth of vinyl on a ${new Date().toLocaleDateString('en-US', { weekday: 'long' })} evening. What are you spinning tonight? #vinylcommunity`,
+                      `Another day, another crate dig. Found some absolute treasures today! Who else is out hunting this weekend? #cratedigger #vinylrecords`,
+                      `The pressing quality on this one is next level. Every pop and crackle tells a story. #audiophile #hifi #vinyloftheday`,
+                    ];
+                    setCaption(suggestions[Math.floor(Math.random() * suggestions.length)]);
+                  }}
+                  className="w-full py-2 bg-purple-500/10 border border-purple-500/20 rounded-lg text-purple-300 text-[11px] font-semibold cursor-pointer hover:bg-purple-500/15 transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <span>{'\u2728'}</span> AI Suggest Caption
+                </button>
+              </div>
+
+              {/* [Improvement #27] Post Performance Prediction */}
+              {caption.trim().length > 10 && (
+                <div className="mb-3 px-3 py-2 bg-[#111] rounded-lg border border-[#1a1a1a]">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] text-gs-dim font-mono">PREDICTED PERFORMANCE</span>
+                  </div>
+                  {(() => {
+                    let score = 20;
+                    if (caption.length > 50) score += 15;
+                    if (caption.length > 100) score += 10;
+                    if (caption.includes('#')) score += 15;
+                    if (caption.includes('@')) score += 10;
+                    if (taggedRecord) score += 15;
+                    if (uploadedImage) score += 15;
+                    if (pollMode) score += 10;
+                    if (recMode) score += 5;
+                    score = Math.min(score, 99);
+                    const color = score >= 70 ? '#10b981' : score >= 40 ? '#f59e0b' : '#ef4444';
+                    return (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+                            <div className="h-full rounded-full transition-all duration-300" style={{ width: `${score}%`, backgroundColor: color }} />
+                          </div>
+                          <span className="text-[10px] font-bold" style={{ color }}>{score}%</span>
+                        </div>
+                        <div className="flex gap-2 mt-1.5 text-[9px] text-gs-faint">
+                          {!caption.includes('#') && <span>+ Add hashtags</span>}
+                          {!taggedRecord && <span>+ Tag a record</span>}
+                          {!uploadedImage && <span>+ Add image</span>}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {/* [Improvement #28] Audience Targeting Options */}
+              <div className="mb-3">
+                <div className="text-[10px] text-gs-dim font-mono mb-1.5">AUDIENCE</div>
+                <div className="flex gap-1.5">
+                  {[
+                    { label: 'Everyone', icon: '\uD83C\uDF0D', desc: 'All users' },
+                    { label: 'Followers', icon: '\uD83D\uDC65', desc: 'Your followers only' },
+                    { label: 'Genre Fans', icon: '\uD83C\uDFB5', desc: 'Matching genre interests' },
+                    { label: 'Local', icon: '\uD83D\uDCCD', desc: 'Nearby collectors' },
+                  ].map((audience, i) => (
+                    <button
+                      key={audience.label}
+                      className={`flex-1 py-1.5 px-1 rounded-lg border text-center cursor-pointer transition-colors ${
+                        i === 0 ? 'bg-gs-accent/10 border-gs-accent/30 text-gs-accent' : 'bg-[#0d0d0d] border-[#1a1a1a] text-gs-dim hover:text-gs-muted'
+                      }`}
+                    >
+                      <div className="text-sm">{audience.icon}</div>
+                      <div className="text-[9px] font-semibold">{audience.label}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Caption with auto-complete */}
               <div className="relative">
                 <textarea

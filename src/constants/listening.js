@@ -2,7 +2,8 @@
 // When the Vinyl Buddy server is running, real sessions are merged in.
 // Shape matches the server's /api/vinyl-buddy/history/:user response.
 // Includes varied durations, times of day, and genre coverage for streak/achievement support.
-// Each session also includes: room (listening location), mood (emotional tag array), quality (audio fidelity score 1-10).
+// Each session also includes: room (listening location), mood (emotional tag array), quality (audio fidelity score 1-10),
+// side ("A" or "B" indicating which side of the record was playing), and rpm (33, 45, or 78 playback speed).
 
 const now = Date.now();
 const hr = 3600000;
@@ -329,4 +330,11 @@ const INITIAL_LISTENING = [
   { id: "ls-4915", username: "petra.spins", deviceId: "DD0011223355", track: { title: "Moonlight Sonata", artist: "Ludwig van Beethoven", album: "Piano Sonatas", year: 1801 }, genre: "Classical", duration: 435, score: 96, room: "listening_room", mood: ["contemplative", "elevated"], quality: 10, timestamp: new Date(now - 13 * day).toISOString(), timestampMs: now - 13 * day },
 ];
 
-export default INITIAL_LISTENING;
+// Enrich all sessions with side and rpm if not already present
+const ENRICHED_LISTENING = INITIAL_LISTENING.map((session, i) => ({
+  ...session,
+  side: session.side || (i % 2 === 0 ? "A" : "B"),
+  rpm: session.rpm || (session.genre === "Classical" && session.track.year < 1950 ? 78 : (session.duration < 200 ? 45 : 33)),
+}));
+
+export default ENRICHED_LISTENING;

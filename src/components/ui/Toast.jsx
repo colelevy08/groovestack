@@ -1,7 +1,9 @@
 // Notification toast — supports multiple types, auto-dismiss, close button, stacking,
 // keyboard dismiss (Escape), screen reader focus, auto-dismiss countdown progress bar,
-// action buttons, toast grouping, persistence, queue management, and position configuration.
-import { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react';
+// action buttons, toast grouping, persistence, queue management, position configuration,
+// undo action toast, progress toast with live updates, rich media toast (image/avatar),
+// and optional sound notification.
+import { useState, useEffect, useRef, useCallback, createContext, useContext, useMemo } from 'react';
 
 const TYPE_CONFIG = {
   success: {
@@ -46,6 +48,36 @@ const TYPE_CONFIG = {
   },
 };
 
+// --- Sound notification support ---
+const NOTIFICATION_SOUNDS = {
+  default: [440, 0.15], // [frequency, duration]
+  success: [523, 0.12],
+  error: [220, 0.2],
+  warning: [349, 0.15],
+};
+
+function playNotificationSound(type = 'default') {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const [freq, dur] = NOTIFICATION_SOUNDS[type] || NOTIFICATION_SOUNDS.default;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = freq;
+    osc.type = 'sine';
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + dur);
+    setTimeout(() => ctx.close(), dur * 1000 + 100);
+  } catch {
+    // Silently fail if audio context is not available
+  }
+}
+
 // --- Position presets ---
 const POSITION_CLASSES = {
   'bottom-center': 'fixed bottom-7 left-1/2 -translate-x-1/2',
@@ -71,8 +103,20 @@ export function ToastQueueProvider({ children, maxVisible = 5, position = 'botto
     persistent = false,
     groupKey = null,
     actions = [], // Array of { label, onClick }
+    sound = false, // Improvement 20: Play sound notification
+    undoAction = null, // Improvement 4: Undo callback
+    undoDuration = 5000, // How long undo is available
+    progress = null, // Improvement 5: Progress value 0-100 or null
+    image = null, // Improvement 6: Rich media image URL
+    avatar = null, // Improvement 6: Rich media avatar URL
+    subtitle = null, // Improvement 6: Subtitle text
   }) => {
     const id = ++idCounter.current;
+
+    // Play sound if requested
+    if (sound) {
+      playNotificationSound(type);
+    }
 
     setToasts(prev => {
       // Grouping: if groupKey matches an existing toast, collapse into it
@@ -89,10 +133,29 @@ export function ToastQueueProvider({ children, maxVisible = 5, position = 'botto
           return updated;
         }
       }
-      return [...prev, { id, message, type, duration, persistent, groupKey, groupCount: 1, actions, dismissing: false }];
+
+      // If undoAction is provided, auto-add the undo button as an action
+      const resolvedActions = [...actions];
+      if (undoAction) {
+        resolvedActions.unshift({ label: 'Undo', onClick: () => undoAction(id), isUndo: true });
+      }
+
+      return [...prev, {
+        id, message, type,
+        duration: undoAction ? undoDuration : duration,
+        persistent: persistent || !!undoAction,
+        groupKey, groupCount: 1,
+        actions: resolvedActions, dismissing: false,
+        progress, image, avatar, subtitle,
+        isUndo: !!undoAction,
+      }];
     });
 
     return id;
+  }, []);
+
+  const updateToast = useCallback((id, updates) => {
+    setToasts(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
   }, []);
 
   const dismissToast = useCallback((id) => {
@@ -111,7 +174,7 @@ export function ToastQueueProvider({ children, maxVisible = 5, position = 'botto
   const visibleToasts = toasts.slice(-maxVisible);
 
   return (
-    <ToastQueueContext.Provider value={{ addToast, dismissToast, clearAll, toasts }}>
+    <ToastQueueContext.Provider value={{ addToast, updateToast, dismissToast, clearAll, toasts }}>
       {children}
       <ToastContainer toasts={visibleToasts} onDismiss={dismissToast} position={position} />
     </ToastQueueContext.Provider>
@@ -133,6 +196,7 @@ export default function Toast({
   actions = [],
   persistent = false,
   position = 'bottom-center',
+  sound = false,
 }) {
   const config = TYPE_CONFIG[type] || {
     bg: 'bg-gs-accent',
@@ -141,6 +205,7 @@ export default function Toast({
     icon: null,
   };
   const toastRef = useRef(null);
+  const soundPlayed = useRef(false);
   const posClass = POSITION_CLASSES[position] || POSITION_CLASSES['bottom-center'];
 
   // Focus the toast when it becomes visible for screen reader access
@@ -149,6 +214,17 @@ export default function Toast({
       toastRef.current.focus();
     }
   }, [visible]);
+
+  // Play sound when toast becomes visible
+  useEffect(() => {
+    if (visible && sound && !soundPlayed.current) {
+      playNotificationSound(type);
+      soundPlayed.current = true;
+    }
+    if (!visible) {
+      soundPlayed.current = false;
+    }
+  }, [visible, sound, type]);
 
   return (
     <div
@@ -225,17 +301,40 @@ function ToastItem({ toast, onDismiss }) {
     persistent = false,
     actions = [],
     groupCount = 1,
+    progress = null,
+    image = null,
+    avatar = null,
+    subtitle = null,
+    isUndo = false,
   } = toast;
   const config = TYPE_CONFIG[type] || TYPE_CONFIG.info;
   const itemRef = useRef(null);
+  const [undoCountdown, setUndoCountdown] = useState(isUndo ? Math.ceil(duration / 1000) : 0);
 
-  // Auto-dismiss (skip for persistent toasts)
+  // Auto-dismiss (skip for persistent toasts unless it's an undo toast)
   useEffect(() => {
+    if (isUndo && duration && onDismiss) {
+      // Undo toasts auto-dismiss after their duration
+      const timer = setTimeout(onDismiss, duration);
+      return () => clearTimeout(timer);
+    }
     if (duration && onDismiss && !persistent) {
       const timer = setTimeout(onDismiss, duration);
       return () => clearTimeout(timer);
     }
-  }, [duration, onDismiss, persistent]);
+  }, [duration, onDismiss, persistent, isUndo]);
+
+  // Countdown timer for undo toasts
+  useEffect(() => {
+    if (!isUndo || undoCountdown <= 0) return;
+    const interval = setInterval(() => {
+      setUndoCountdown(prev => {
+        if (prev <= 1) { clearInterval(interval); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isUndo, undoCountdown]);
 
   // Keyboard dismiss on Escape
   useEffect(() => {
@@ -249,6 +348,8 @@ function ToastItem({ toast, onDismiss }) {
     }
   }, [onDismiss]);
 
+  const hasMedia = image || avatar;
+
   return (
     <div
       ref={itemRef}
@@ -258,15 +359,55 @@ function ToastItem({ toast, onDismiss }) {
       className={`${config.bg} text-black px-5 py-2.5 rounded-[10px] text-[13px] font-bold shadow-lg ${config.shadow} flex items-center gap-2 overflow-hidden ${
         dismissing ? 'animate-toast-out' : 'animate-toast-in'
       }`}
-      style={{ position: 'relative', outline: 'none' }}
+      style={{ position: 'relative', outline: 'none', maxWidth: hasMedia ? 400 : undefined }}
     >
-      {config.icon}
-      <span>{message}</span>
+      {/* Rich media: avatar */}
+      {avatar && (
+        <img
+          src={avatar}
+          alt=""
+          className="w-7 h-7 rounded-full object-cover shrink-0 border border-black/20"
+        />
+      )}
+      {/* Rich media: image */}
+      {image && !avatar && (
+        <img
+          src={image}
+          alt=""
+          className="w-8 h-8 rounded-md object-cover shrink-0 border border-black/20"
+        />
+      )}
+      {!hasMedia && config.icon}
+      <div className="flex flex-col min-w-0">
+        <span className="truncate">{message}</span>
+        {/* Subtitle for rich media toasts */}
+        {subtitle && (
+          <span className="text-[11px] text-black/60 font-medium truncate">{subtitle}</span>
+        )}
+      </div>
+      {/* Undo countdown badge */}
+      {isUndo && undoCountdown > 0 && (
+        <span className="ml-1 bg-black/20 text-black/80 text-[10px] px-1.5 py-0.5 rounded-full font-bold shrink-0">
+          {undoCountdown}s
+        </span>
+      )}
       {/* Group count badge */}
       {groupCount > 1 && (
         <span className="ml-1 bg-black/20 text-black/80 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
           {groupCount}x
         </span>
+      )}
+      {/* Progress bar for progress toasts */}
+      {progress != null && (
+        <div className="flex items-center gap-1.5 ml-1 shrink-0">
+          <div className="w-16 h-1.5 rounded-full bg-black/20 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-black/40 transition-all duration-300"
+              style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+            />
+          </div>
+          <span className="text-[10px] text-black/70 font-mono">{Math.round(progress)}%</span>
+        </div>
       )}
       {/* Action buttons inside toast */}
       {actions.length > 0 && (
@@ -274,8 +415,15 @@ function ToastItem({ toast, onDismiss }) {
           {actions.map((action, i) => (
             <button
               key={i}
-              onClick={action.onClick}
-              className="px-2 py-0.5 rounded bg-black/15 border-none cursor-pointer text-black/80 text-[11px] font-bold hover:bg-black/25 transition-colors"
+              onClick={() => {
+                action.onClick?.();
+                if (action.isUndo && onDismiss) onDismiss();
+              }}
+              className={`px-2 py-0.5 rounded border-none cursor-pointer text-[11px] font-bold transition-colors ${
+                action.isUndo
+                  ? 'bg-black/25 text-black hover:bg-black/35 underline'
+                  : 'bg-black/15 text-black/80 hover:bg-black/25'
+              }`}
             >
               {action.label}
             </button>
@@ -291,8 +439,8 @@ function ToastItem({ toast, onDismiss }) {
           x
         </button>
       )}
-      {/* Auto-dismiss countdown progress bar (hidden for persistent toasts) */}
-      {!dismissing && duration && !persistent && (
+      {/* Auto-dismiss countdown progress bar (hidden for persistent toasts unless undo) */}
+      {!dismissing && duration && (!persistent || isUndo) && (
         <div
           className={`gs-toast-progress ${config.barColor || 'bg-black/20'}`}
           style={{ animationDuration: `${duration}ms` }}

@@ -81,6 +81,13 @@ export default function DMModal({ open, onClose, currentUser, following, message
   // Improvement 21 (new): Read receipt toggle
   const [readReceiptsEnabled, setReadReceiptsEnabled] = useState(true);
 
+  // [Improvement #23] Shared collection viewer in chat
+  const [showSharedCollection, setShowSharedCollection] = useState(false);
+  // [Improvement #24] Deal/offer tracker in conversation
+  const [showDealTracker, setShowDealTracker] = useState(false);
+  // [Improvement #25] Media gallery from conversation
+  const [showMediaGallery, setShowMediaGallery] = useState(false);
+
   const endRef = useRef(null);
 
   useEffect(() => {
@@ -405,6 +412,36 @@ export default function DMModal({ open, onClose, currentUser, following, message
                   {"\uD83D\uDCCC"}
                 </button>
               )}
+              {/* [Improvement #23] Shared collection viewer toggle */}
+              {activeThread && (
+                <button
+                  onClick={() => { setShowSharedCollection(v => !v); setShowDealTracker(false); setShowMediaGallery(false); }}
+                  title="Shared collection"
+                  className={`border-none rounded-md w-7 h-7 cursor-pointer text-sm flex items-center justify-center ${showSharedCollection ? 'bg-gs-accent/20 text-gs-accent' : 'bg-[#1a1a1a] text-gs-muted hover:text-gs-text'}`}
+                >
+                  {"\uD83D\uDCBF"}
+                </button>
+              )}
+              {/* [Improvement #24] Deal tracker toggle */}
+              {activeThread && (
+                <button
+                  onClick={() => { setShowDealTracker(v => !v); setShowSharedCollection(false); setShowMediaGallery(false); }}
+                  title="Deal tracker"
+                  className={`border-none rounded-md w-7 h-7 cursor-pointer text-sm flex items-center justify-center ${showDealTracker ? 'bg-gs-accent/20 text-gs-accent' : 'bg-[#1a1a1a] text-gs-muted hover:text-gs-text'}`}
+                >
+                  {"\uD83E\uDD1D"}
+                </button>
+              )}
+              {/* [Improvement #25] Media gallery toggle */}
+              {activeThread && (
+                <button
+                  onClick={() => { setShowMediaGallery(v => !v); setShowSharedCollection(false); setShowDealTracker(false); }}
+                  title="Media gallery"
+                  className={`border-none rounded-md w-7 h-7 cursor-pointer text-sm flex items-center justify-center ${showMediaGallery ? 'bg-gs-accent/20 text-gs-accent' : 'bg-[#1a1a1a] text-gs-muted hover:text-gs-text'}`}
+                >
+                  {"\uD83D\uDDBC"}
+                </button>
+              )}
               {/* Improvement 8: Archive conversation */}
               {activeThread && (
                 <button
@@ -421,6 +458,67 @@ export default function DMModal({ open, onClose, currentUser, following, message
               <button onClick={onClose} className="bg-[#1a1a1a] border-none rounded-md w-7 h-7 cursor-pointer text-gs-muted text-lg flex items-center justify-center">{"\u00d7"}</button>
             </div>
           </div>
+
+          {/* [Improvement #23] Shared Collection Viewer */}
+          {showSharedCollection && activeThread && (
+            <div className="px-[18px] py-2.5 border-b border-[#1a1a1a] bg-[#0d0d0d]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-gs-dim font-mono">SHARED COLLECTION — @{activeThread}</span>
+                <button onClick={() => setShowSharedCollection(false)} className="text-[10px] text-gs-faint bg-transparent border-none cursor-pointer hover:text-gs-muted">Close</button>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {[1, 2, 3, 4, 5].map(i => (
+                  <div key={i} className="shrink-0 w-16 h-16 bg-[#1a1a1a] rounded-lg border border-[#222] flex items-center justify-center">
+                    <span className="text-gs-dim text-lg">{'\uD83C\uDFB5'}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="text-[9px] text-gs-faint mt-1">Browse their collection to discuss specific records</div>
+            </div>
+          )}
+
+          {/* [Improvement #24] Deal/Offer Tracker */}
+          {showDealTracker && activeThread && (
+            <div className="px-[18px] py-2.5 border-b border-[#1a1a1a] bg-[#0d0d0d]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-gs-dim font-mono">DEAL TRACKER — @{activeThread}</span>
+                <button onClick={() => setShowDealTracker(false)} className="text-[10px] text-gs-faint bg-transparent border-none cursor-pointer hover:text-gs-muted">Close</button>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-gs-muted">Active offers</span>
+                  <span className="text-gs-accent font-bold">0</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-gs-muted">Completed trades</span>
+                  <span className="text-emerald-400 font-bold">0</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-gs-muted">Pending payments</span>
+                  <span className="text-amber-400 font-bold">0</span>
+                </div>
+              </div>
+              <div className="text-[9px] text-gs-faint mt-1.5">All transactions with this user in one place</div>
+            </div>
+          )}
+
+          {/* [Improvement #25] Media Gallery from Conversation */}
+          {showMediaGallery && activeThread && (
+            <div className="px-[18px] py-2.5 border-b border-[#1a1a1a] bg-[#0d0d0d]">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] text-gs-dim font-mono">SHARED MEDIA</span>
+                <button onClick={() => setShowMediaGallery(false)} className="text-[10px] text-gs-faint bg-transparent border-none cursor-pointer hover:text-gs-muted">Close</button>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {['\uD83D\uDDBC', '\uD83C\uDFB5', '\uD83D\uDCCE', '\uD83D\uDDBC'].map((icon, i) => (
+                  <div key={i} className="aspect-square bg-[#1a1a1a] rounded-lg border border-[#222] flex items-center justify-center text-sm text-gs-dim">
+                    {icon}
+                  </div>
+                ))}
+              </div>
+              <div className="text-[9px] text-gs-faint mt-1.5">Photos and files shared in this conversation</div>
+            </div>
+          )}
 
           {/* Improvement 1: Search bar */}
           {searchOpen && activeThread && (

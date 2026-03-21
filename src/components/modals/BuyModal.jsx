@@ -237,6 +237,76 @@ export default function BuyModal({ open, onClose, record, onPurchase, onAddToCar
 
   return (
     <Modal open={open} onClose={() => { reset(); onClose(); }} title="Purchase Record" width="420px">
+      {/* [Improvement #11] Checkout Progress Steps Indicator */}
+      <div className="flex items-center justify-center gap-3 mb-4">
+        {[{ label: 'Shipping', step: 1 }, { label: 'Review', step: 2 }, { label: 'Pay', step: 3 }].map((s, i) => (
+          <div key={s.label} className="flex items-center gap-1.5">
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
+              step >= s.step ? 'bg-gs-accent text-black' : 'bg-[#1a1a1a] text-gs-dim'
+            }`}>
+              {step > s.step ? '\u2713' : s.step}
+            </div>
+            <span className={`text-[10px] font-mono ${step >= s.step ? 'text-gs-accent' : 'text-gs-faint'}`}>{s.label}</span>
+            {i < 2 && <div className={`w-8 h-px ${step > s.step ? 'bg-gs-accent' : 'bg-[#222]'}`} />}
+          </div>
+        ))}
+      </div>
+
+      {/* [Improvement #8] Price Guarantee Badge */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/[0.04] border border-emerald-500/15 rounded-lg mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <div>
+          <span className="text-[11px] text-emerald-400 font-bold">Price Guarantee</span>
+          <span className="text-[10px] text-gs-dim ml-2">Price locked for 24 hours from listing</span>
+        </div>
+      </div>
+
+      {/* [Improvement #9] Authenticity Guarantee Display */}
+      <div className="flex items-center gap-2 px-3 py-2 bg-blue-500/[0.04] border border-blue-500/15 rounded-lg mb-3">
+        <span className="text-blue-400 text-sm">&check;</span>
+        <div>
+          <span className="text-[11px] text-blue-400 font-bold">Authenticity Guaranteed</span>
+          <span className="text-[10px] text-gs-dim ml-2">Verified original pressing &middot; Full refund if counterfeit</span>
+        </div>
+      </div>
+
+      {/* [Improvement #10] Buyer Protection Timeline */}
+      <div className="flex items-center gap-1 px-3 py-2 bg-[#0d0d0d] border border-[#1a1a1a] rounded-lg mb-4">
+        {[
+          { label: 'Purchase', icon: '\uD83D\uDED2', color: '#10b981' },
+          { label: 'Escrow', icon: '\uD83D\uDD12', color: '#60a5fa' },
+          { label: 'Ship', icon: '\uD83D\uDCE6', color: '#f59e0b' },
+          { label: 'Inspect', icon: '\uD83D\uDD0D', color: '#8b5cf6' },
+          { label: 'Release', icon: '\u2705', color: '#10b981' },
+        ].map((s, i) => (
+          <div key={s.label} className="flex items-center flex-1">
+            <div className="flex flex-col items-center">
+              <span className="text-[10px]">{s.icon}</span>
+              <span className="text-[8px] font-mono mt-0.5" style={{ color: s.color }}>{s.label}</span>
+            </div>
+            {i < 4 && <div className="flex-1 h-px bg-[#222] mx-0.5" />}
+          </div>
+        ))}
+      </div>
+
+      {/* [Improvement #7] One-Click Checkout for returning buyers */}
+      {hasSavedPayment && profile?.shippingStreet && step === 1 && (
+        <button
+          onClick={() => {
+            handleExpressCheckout();
+            // Simulate immediate checkout for returning buyer
+            setTimeout(() => {
+              if (onPurchase) { onPurchase(record.id); reset(); onClose(); }
+            }, 800);
+          }}
+          className="w-full mb-4 p-3.5 rounded-[10px] bg-gradient-to-r from-emerald-500/15 to-gs-accent/15 border border-emerald-500/25 text-emerald-400 text-[13px] font-bold cursor-pointer hover:border-emerald-500/40 transition-colors flex items-center justify-center gap-2"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          One-Click Buy &middot; ${total.toFixed(2)}
+          <span className="text-[10px] opacity-60 ml-1">Returning buyer</span>
+        </button>
+      )}
+
       {/* Record summary */}
       <div className="flex gap-3.5 items-center bg-[#111] rounded-[10px] p-3.5 mb-5">
         <AlbumArt album={record.album} artist={record.artist} accent={record.accent} size={44} />

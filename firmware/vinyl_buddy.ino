@@ -340,6 +340,95 @@ ErrorLogEntry errorLog[MAX_ERROR_LOG_SIZE];
 int errorLogIndex = 0;
 int errorLogCount = 0;
 
+// --- Improvement #16: Audio Streaming ---
+#define STREAM_CHUNK_SIZE       4096    // Bytes per stream chunk
+#define STREAM_ENDPOINT         "/api/v1/vinyl-buddy/stream"
+bool audioStreamActive = false;
+unsigned long lastStreamChunkSent = 0;
+#define STREAM_CHUNK_INTERVAL_MS 250    // Send chunk every 250ms
+
+// --- Improvement #17: Audio Level WebSocket ---
+#define LEVEL_METER_ENDPOINT    "/api/v1/vinyl-buddy/level"
+#define LEVEL_UPDATE_INTERVAL_MS 100
+unsigned long lastLevelUpdate = 0;
+float currentRmsLevel = 0.0f;
+float peakLevel = 0.0f;
+
+// --- Improvement #18: Device-to-device Communication ---
+#define MESH_CHANNEL            1
+#define MESH_MAX_PEERS          6
+#define MESH_MSG_MAX_LEN        200
+bool meshEnabled = false;
+int meshPeerCount = 0;
+struct MeshPeer {
+  uint8_t mac[6];
+  char deviceId[37];
+  unsigned long lastSeen;
+};
+MeshPeer meshPeers[MESH_MAX_PEERS];
+
+// --- Improvement #19: Audio Recording to SPIFFS ---
+#include <SPIFFS.h>
+#define SPIFFS_MAX_RECORDINGS   5
+#define SPIFFS_MAX_RECORD_SIZE  (512 * 1024)  // 512KB max per recording
+bool spiffsAvailable = false;
+bool spiffsRecording = false;
+int spiffsRecordingIndex = 0;
+File spiffsRecordFile;
+
+// --- Improvement #20: Voice Command Recognition ---
+#define VOICE_CMD_BUFFER_SIZE   8000    // 0.5 seconds at 16kHz
+#define VOICE_CMD_THRESHOLD     2000    // RMS threshold for voice detection
+bool voiceCommandEnabled = false;
+unsigned long lastVoiceCheck = 0;
+#define VOICE_CHECK_INTERVAL_MS 500
+
+// --- Improvement #21: Gesture Sensor Support ---
+#define GESTURE_I2C_ADDR        0x39    // APDS-9960 default address
+#define GESTURE_INT_PIN         4       // Interrupt pin
+bool gestureSensorAvailable = false;
+unsigned long lastGestureRead = 0;
+#define GESTURE_READ_INTERVAL_MS 100
+
+// --- Improvement #22b: Environmental Noise Cancellation ---
+#define NOISE_PROFILE_BINS      16
+float noiseProfile[NOISE_PROFILE_BINS];
+bool noiseProfileCalibrated = false;
+#define NOISE_CANCEL_ALPHA      0.85f   // Spectral subtraction strength
+unsigned long lastNoiseProfileUpdate = 0;
+#define NOISE_PROFILE_UPDATE_MS 30000   // Re-profile every 30 seconds during silence
+
+// --- Improvement #23b: Audio Fingerprint Caching ---
+#define FP_CACHE_SIZE           20
+struct FingerprintCacheEntry {
+  float fingerprint[32];
+  IdentifyResult result;
+  unsigned long cachedAt;
+  int hitCount;
+};
+FingerprintCacheEntry fpCache[FP_CACHE_SIZE];
+int fpCacheCount = 0;
+#define FP_CACHE_TTL_MS         600000  // 10 minute cache TTL
+#define FP_SIMILARITY_THRESHOLD 0.85f   // Cosine similarity threshold
+
+// --- Improvement #24b: Device Sleep/Wake Scheduling ---
+struct SleepSchedule {
+  bool enabled;
+  uint8_t sleepHour;    // 0-23
+  uint8_t sleepMinute;  // 0-59
+  uint8_t wakeHour;     // 0-23
+  uint8_t wakeMinute;   // 0-59
+};
+SleepSchedule sleepSchedule = { false, 23, 0, 7, 0 };
+unsigned long lastScheduleCheck = 0;
+#define SCHEDULE_CHECK_INTERVAL_MS 60000
+
+// --- Improvement #25b: Remote Configuration Updates ---
+#define REMOTE_CONFIG_ENDPOINT  "/api/v1/vinyl-buddy/config"
+#define CONFIG_CHECK_INTERVAL_MS 300000  // Check every 5 minutes
+unsigned long lastConfigCheck = 0;
+int remoteConfigVersion = 0;
+
 // --- Performance Profiling (#24) ---
 struct PerfMetrics {
   unsigned long loopTimeUs;
@@ -413,6 +502,50 @@ void attemptErrorRecovery();
 void recordPerfSample();
 void printPerfReport();
 bool validateConfig();
+
+// --- Improvement #16: Audio streaming to server ---
+void startAudioStream();
+void stopAudioStream();
+void streamAudioChunk();
+
+// --- Improvement #17: Real-time audio level meter via WebSocket ---
+void sendAudioLevelUpdate();
+
+// --- Improvement #18: Device-to-device communication ---
+void initDeviceMesh();
+void broadcastMeshMessage(const char* message);
+void handleMeshReceive();
+
+// --- Improvement #19: Audio recording to SPIFFS ---
+void initSPIFFS();
+void startSPIFFSRecording();
+void stopSPIFFSRecording();
+void listSPIFFSRecordings();
+
+// --- Improvement #20: Voice command recognition stub ---
+void initVoiceCommands();
+void processVoiceCommand();
+
+// --- Improvement #21: Gesture sensor support stub ---
+void initGestureSensor();
+void readGestureSensor();
+
+// --- Improvement #22b: Environmental noise cancellation ---
+void initNoiseCancellation();
+void applyNoiseCancellation(int16_t* samples, int count);
+
+// --- Improvement #23b: Audio fingerprint caching ---
+void initFingerprintCache();
+bool checkFingerprintCache(float* fingerprint, IdentifyResult& cachedResult);
+void cacheFingerprintResult(float* fingerprint, const IdentifyResult& result);
+
+// --- Improvement #24b: Device sleep/wake scheduling ---
+void initSleepSchedule();
+void checkSleepSchedule();
+
+// --- Improvement #25b: Remote configuration updates ---
+void checkRemoteConfig();
+void applyRemoteConfig(const String& json);
 
 /* ============================================================================
  * SECTION 5: (#19) Serial Debug Logging
@@ -2187,6 +2320,657 @@ bool validateConfig() {
 }
 
 /* ============================================================================
+ * SECTION 40: Improvement #16 — Audio Streaming to Server
+ * ============================================================================ */
+
+void startAudioStream() {
+  if (audioStreamActive) return;
+  audioStreamActive = true;
+  lastStreamChunkSent = millis();
+  serialDebug("STREAM", "Audio streaming started");
+  logToSD("STREAM", "Streaming started");
+}
+
+void stopAudioStream() {
+  if (!audioStreamActive) return;
+  audioStreamActive = false;
+  serialDebug("STREAM", "Audio streaming stopped");
+  logToSD("STREAM", "Streaming stopped");
+}
+
+void streamAudioChunk() {
+  if (!audioStreamActive || !wifiConnected) return;
+  if (millis() - lastStreamChunkSent < STREAM_CHUNK_INTERVAL_MS) return;
+  lastStreamChunkSent = millis();
+
+  // Collect STREAM_CHUNK_SIZE bytes from audio buffer
+  int samplesToSend = STREAM_CHUNK_SIZE / 2;  // 16-bit samples
+  if (samplesToSend > AUDIO_BUFFER_SIZE) samplesToSend = AUDIO_BUFFER_SIZE;
+
+  uint8_t chunkBuffer[STREAM_CHUNK_SIZE];
+  int idx = 0;
+  uint32_t readIdx = audioReadIndex;
+  for (int i = 0; i < samplesToSend && idx < STREAM_CHUNK_SIZE - 1; i++) {
+    int16_t sample = audioBuffer[readIdx % AUDIO_BUFFER_SIZE];
+    chunkBuffer[idx++] = sample & 0xFF;
+    chunkBuffer[idx++] = (sample >> 8) & 0xFF;
+    readIdx++;
+  }
+
+  HTTPClient http;
+  String url = String(API_BASE_URL) + STREAM_ENDPOINT;
+  http.begin(url);
+  http.addHeader("Content-Type", "application/octet-stream");
+  http.addHeader("X-Device-Id", config.device_id);
+  http.addHeader("X-Sample-Rate", String(SAMPLE_RATE));
+  http.addHeader("X-Channels", "1");
+
+  int httpCode = http.POST(chunkBuffer, idx);
+  if (httpCode != 200) {
+    serialDebugf("STREAM", "Stream chunk send failed: HTTP %d", httpCode);
+  }
+  http.end();
+}
+
+/* ============================================================================
+ * SECTION 41: Improvement #17 — Real-time Audio Level Meter via WebSocket
+ * ============================================================================ */
+
+void sendAudioLevelUpdate() {
+  if (!wifiConnected) return;
+  if (millis() - lastLevelUpdate < LEVEL_UPDATE_INTERVAL_MS) return;
+  lastLevelUpdate = millis();
+
+  // Calculate RMS from recent samples
+  int sampleCount = 256;
+  float sumSquares = 0.0f;
+  float peak = 0.0f;
+  uint32_t readIdx = audioWriteIndex > sampleCount ? audioWriteIndex - sampleCount : 0;
+
+  for (int i = 0; i < sampleCount; i++) {
+    float sample = (float)audioBuffer[(readIdx + i) % AUDIO_BUFFER_SIZE];
+    sumSquares += sample * sample;
+    float absSample = fabs(sample);
+    if (absSample > peak) peak = absSample;
+  }
+
+  currentRmsLevel = sqrt(sumSquares / sampleCount);
+  peakLevel = peak;
+
+  // Send level data via HTTP POST (WebSocket stub — in production use ws://)
+  HTTPClient http;
+  String url = String(API_BASE_URL) + LEVEL_METER_ENDPOINT;
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Device-Id", config.device_id);
+
+  StaticJsonDocument<128> doc;
+  doc["rms"] = currentRmsLevel;
+  doc["peak"] = peakLevel;
+  doc["db"] = 20.0f * log10f(max(currentRmsLevel, 1.0f) / 32768.0f);
+
+  String payload;
+  serializeJson(doc, payload);
+  http.POST(payload);
+  http.end();
+}
+
+/* ============================================================================
+ * SECTION 42: Improvement #18 — Device-to-Device Communication (ESP-NOW)
+ * ============================================================================ */
+
+void initDeviceMesh() {
+  // ESP-NOW peer-to-peer communication for nearby Vinyl Buddy devices
+  serialDebug("MESH", "Initializing device mesh (ESP-NOW stub)");
+
+  // In production: esp_now_init(), register send/receive callbacks
+  meshEnabled = true;
+  meshPeerCount = 0;
+  memset(meshPeers, 0, sizeof(meshPeers));
+
+  serialDebugf("MESH", "Mesh initialized, max peers: %d", MESH_MAX_PEERS);
+  logToSD("MESH", "Device mesh initialized");
+}
+
+void broadcastMeshMessage(const char* message) {
+  if (!meshEnabled) return;
+
+  // Build mesh message with device identity
+  StaticJsonDocument<256> doc;
+  doc["from"] = config.device_id;
+  doc["type"] = "broadcast";
+  doc["msg"] = message;
+  doc["ts"] = millis();
+
+  String payload;
+  serializeJson(doc, payload);
+
+  // In production: esp_now_send() to broadcast address
+  serialDebugf("MESH", "Broadcast: %s (%d peers)", message, meshPeerCount);
+}
+
+void handleMeshReceive() {
+  if (!meshEnabled) return;
+  // In production: process received ESP-NOW packets, update peer table,
+  // handle "now_playing" broadcasts from nearby devices
+}
+
+/* ============================================================================
+ * SECTION 43: Improvement #19 — Audio Recording to SPIFFS
+ * ============================================================================ */
+
+void initSPIFFS() {
+  serialDebug("SPIFFS", "Initializing SPIFFS for audio recording");
+  if (!SPIFFS.begin(true)) {
+    serialDebug("SPIFFS", "SPIFFS mount failed");
+    spiffsAvailable = false;
+    return;
+  }
+
+  spiffsAvailable = true;
+  size_t totalBytes = SPIFFS.totalBytes();
+  size_t usedBytes = SPIFFS.usedBytes();
+  serialDebugf("SPIFFS", "Mounted. Total: %u bytes, Used: %u bytes, Free: %u bytes",
+    totalBytes, usedBytes, totalBytes - usedBytes);
+  logToSD("SPIFFS", "SPIFFS initialized");
+}
+
+void startSPIFFSRecording() {
+  if (!spiffsAvailable || spiffsRecording) return;
+
+  // Rotate recording files
+  spiffsRecordingIndex = (spiffsRecordingIndex + 1) % SPIFFS_MAX_RECORDINGS;
+  char filename[32];
+  snprintf(filename, sizeof(filename), "/rec_%d.raw", spiffsRecordingIndex);
+
+  // Delete old recording if exists
+  if (SPIFFS.exists(filename)) {
+    SPIFFS.remove(filename);
+  }
+
+  spiffsRecordFile = SPIFFS.open(filename, FILE_WRITE);
+  if (!spiffsRecordFile) {
+    serialDebugf("SPIFFS", "Failed to open %s for recording", filename);
+    return;
+  }
+
+  spiffsRecording = true;
+  serialDebugf("SPIFFS", "Recording started: %s", filename);
+  logToSD("SPIFFS", "Recording started");
+}
+
+void stopSPIFFSRecording() {
+  if (!spiffsRecording) return;
+  spiffsRecording = false;
+
+  if (spiffsRecordFile) {
+    size_t fileSize = spiffsRecordFile.size();
+    spiffsRecordFile.close();
+    serialDebugf("SPIFFS", "Recording stopped. Size: %u bytes", fileSize);
+    logToSD("SPIFFS", "Recording stopped");
+  }
+}
+
+void listSPIFFSRecordings() {
+  if (!spiffsAvailable) return;
+  serialDebug("SPIFFS", "Stored recordings:");
+
+  File root = SPIFFS.open("/");
+  File file = root.openNextFile();
+  int count = 0;
+  while (file) {
+    if (String(file.name()).startsWith("/rec_")) {
+      serialDebugf("SPIFFS", "  %s (%u bytes)", file.name(), file.size());
+      count++;
+    }
+    file = root.openNextFile();
+  }
+  serialDebugf("SPIFFS", "Total recordings: %d", count);
+}
+
+/* ============================================================================
+ * SECTION 44: Improvement #20 — Voice Command Recognition Stub
+ * ============================================================================ */
+
+void initVoiceCommands() {
+  voiceCommandEnabled = true;
+  serialDebug("VOICE", "Voice command recognition initialized (stub)");
+  serialDebug("VOICE", "Supported commands: 'identify', 'stop', 'pair', 'status'");
+  logToSD("VOICE", "Voice commands enabled");
+}
+
+void processVoiceCommand() {
+  if (!voiceCommandEnabled) return;
+  if (millis() - lastVoiceCheck < VOICE_CHECK_INTERVAL_MS) return;
+  lastVoiceCheck = millis();
+
+  // Calculate RMS of recent samples to detect speech
+  int sampleCount = VOICE_CMD_BUFFER_SIZE;
+  float sumSquares = 0.0f;
+  uint32_t readIdx = audioWriteIndex > sampleCount ? audioWriteIndex - sampleCount : 0;
+
+  for (int i = 0; i < sampleCount; i++) {
+    float sample = (float)audioBuffer[(readIdx + i) % AUDIO_BUFFER_SIZE];
+    sumSquares += sample * sample;
+  }
+
+  float rms = sqrt(sumSquares / sampleCount);
+
+  // Only process if audio level suggests speech (above music/silence threshold)
+  if (rms < VOICE_CMD_THRESHOLD) return;
+
+  // In production: send audio buffer to speech-to-text API or use on-device
+  // keyword spotting (e.g., TensorFlow Lite Micro with wake-word model)
+  // For now, log that potential voice activity was detected
+  serialDebugf("VOICE", "Voice activity detected (RMS: %.0f) — stub: send to STT API", rms);
+
+  // Stub command handling:
+  // "Hey Groove, identify" -> trigger identification
+  // "Hey Groove, stop"     -> stop recording
+  // "Hey Groove, pair"     -> enter pairing mode
+  // "Hey Groove, status"   -> announce device status via BLE/OLED
+}
+
+/* ============================================================================
+ * SECTION 45: Improvement #21 — Gesture Sensor Support Stub (APDS-9960)
+ * ============================================================================ */
+
+void initGestureSensor() {
+  serialDebug("GESTURE", "Initializing gesture sensor (APDS-9960 stub)");
+
+  // Probe I2C for APDS-9960
+  Wire.beginTransmission(GESTURE_I2C_ADDR);
+  int error = Wire.endTransmission();
+
+  if (error == 0) {
+    gestureSensorAvailable = true;
+    serialDebug("GESTURE", "APDS-9960 detected on I2C");
+
+    // In production: configure proximity and gesture detection registers
+    // Write ENABLE register (0x80) to enable gesture engine
+    // Configure GCONF1-4 for gesture parameters
+    logToSD("GESTURE", "Gesture sensor initialized");
+  } else {
+    gestureSensorAvailable = false;
+    serialDebug("GESTURE", "No gesture sensor detected (optional)");
+  }
+}
+
+void readGestureSensor() {
+  if (!gestureSensorAvailable) return;
+  if (millis() - lastGestureRead < GESTURE_READ_INTERVAL_MS) return;
+  lastGestureRead = millis();
+
+  // In production: read gesture FIFO from APDS-9960
+  // Gestures: UP, DOWN, LEFT, RIGHT, NEAR, FAR
+  //
+  // Gesture mapping:
+  //   Swipe UP    -> Volume up / next track
+  //   Swipe DOWN  -> Volume down / previous track
+  //   Swipe LEFT  -> Skip
+  //   Swipe RIGHT -> Identify
+  //   NEAR        -> Wake from idle
+  //   FAR         -> Enter idle/sleep
+
+  // Stub: read gesture register 0xAF (GSTATUS)
+  Wire.beginTransmission(GESTURE_I2C_ADDR);
+  Wire.write(0xAF);
+  Wire.endTransmission();
+  Wire.requestFrom((uint8_t)GESTURE_I2C_ADDR, (uint8_t)1);
+
+  if (Wire.available()) {
+    uint8_t gstatus = Wire.read();
+    if (gstatus & 0x01) {  // GVALID bit
+      serialDebug("GESTURE", "Gesture detected — processing stub");
+      lastActivityTime = millis();  // Reset idle timeout on gesture
+    }
+  }
+}
+
+/* ============================================================================
+ * SECTION 46: Improvement #22b — Environmental Noise Cancellation
+ * ============================================================================ */
+
+void initNoiseCancellation() {
+  serialDebug("NOISE_CANCEL", "Initializing spectral noise cancellation");
+  memset(noiseProfile, 0, sizeof(noiseProfile));
+  noiseProfileCalibrated = false;
+  lastNoiseProfileUpdate = millis();
+  logToSD("NOISE_CANCEL", "Noise cancellation initialized");
+}
+
+// Build noise profile from silence period (spectral envelope of ambient noise)
+void updateNoiseProfile(int16_t* samples, int count) {
+  if (count < FFT_SIZE) return;
+
+  // Compute FFT of noise samples
+  float tempInput[FFT_SIZE];
+  float tempOutput[FFT_SIZE / 2];
+
+  for (int i = 0; i < FFT_SIZE && i < count; i++) {
+    tempInput[i] = (float)samples[i];
+  }
+
+  simpleFFT(tempInput, tempOutput, FFT_SIZE);
+
+  // Bin the FFT output into noise profile bins
+  int binsPerGroup = (FFT_SIZE / 2) / NOISE_PROFILE_BINS;
+  for (int b = 0; b < NOISE_PROFILE_BINS; b++) {
+    float sum = 0.0f;
+    for (int i = 0; i < binsPerGroup; i++) {
+      sum += tempOutput[b * binsPerGroup + i];
+    }
+    // Running average with existing profile
+    if (noiseProfileCalibrated) {
+      noiseProfile[b] = noiseProfile[b] * 0.7f + (sum / binsPerGroup) * 0.3f;
+    } else {
+      noiseProfile[b] = sum / binsPerGroup;
+    }
+  }
+
+  noiseProfileCalibrated = true;
+  lastNoiseProfileUpdate = millis();
+  serialDebug("NOISE_CANCEL", "Noise profile updated");
+}
+
+void applyNoiseCancellation(int16_t* samples, int count) {
+  if (!noiseProfileCalibrated || count < FFT_SIZE) return;
+
+  // Process in FFT_SIZE chunks
+  for (int offset = 0; offset + FFT_SIZE <= count; offset += FFT_SIZE) {
+    float tempInput[FFT_SIZE];
+    float tempOutput[FFT_SIZE / 2];
+
+    for (int i = 0; i < FFT_SIZE; i++) {
+      tempInput[i] = (float)samples[offset + i];
+    }
+
+    simpleFFT(tempInput, tempOutput, FFT_SIZE);
+
+    // Spectral subtraction: reduce frequency bins matching noise profile
+    int binsPerGroup = (FFT_SIZE / 2) / NOISE_PROFILE_BINS;
+    for (int b = 0; b < NOISE_PROFILE_BINS; b++) {
+      float noiseLevel = noiseProfile[b] * NOISE_CANCEL_ALPHA;
+      for (int i = 0; i < binsPerGroup; i++) {
+        int idx = b * binsPerGroup + i;
+        tempOutput[idx] = max(0.0f, tempOutput[idx] - noiseLevel);
+      }
+    }
+
+    // Apply gain reduction proportional to noise removal
+    // (Simplified: scale time-domain samples by noise reduction ratio)
+    float totalOriginal = 0.0f, totalCleaned = 0.0f;
+    for (int i = 0; i < FFT_SIZE / 2; i++) {
+      totalOriginal += fabs(tempInput[i]);
+      totalCleaned += tempOutput[i];
+    }
+
+    float ratio = (totalOriginal > 0) ? (totalCleaned / totalOriginal) : 1.0f;
+    ratio = constrain(ratio, 0.3f, 1.0f);  // Don't reduce more than 70%
+
+    for (int i = 0; i < FFT_SIZE; i++) {
+      samples[offset + i] = (int16_t)(samples[offset + i] * ratio);
+    }
+  }
+}
+
+/* ============================================================================
+ * SECTION 47: Improvement #23b — Audio Fingerprint Caching
+ * ============================================================================ */
+
+void initFingerprintCache() {
+  serialDebug("FP_CACHE", "Initializing fingerprint cache");
+  fpCacheCount = 0;
+  memset(fpCache, 0, sizeof(fpCache));
+  logToSD("FP_CACHE", "Fingerprint cache initialized");
+}
+
+// Compute cosine similarity between two fingerprint vectors
+float fingerprintSimilarity(float* fp1, float* fp2) {
+  float dotProduct = 0.0f, normA = 0.0f, normB = 0.0f;
+  for (int i = 0; i < 32; i++) {
+    dotProduct += fp1[i] * fp2[i];
+    normA += fp1[i] * fp1[i];
+    normB += fp2[i] * fp2[i];
+  }
+  if (normA == 0 || normB == 0) return 0.0f;
+  return dotProduct / (sqrt(normA) * sqrt(normB));
+}
+
+bool checkFingerprintCache(float* fingerprint, IdentifyResult& cachedResult) {
+  unsigned long now = millis();
+  float bestSimilarity = 0.0f;
+  int bestIndex = -1;
+
+  for (int i = 0; i < fpCacheCount; i++) {
+    // Skip expired entries
+    if (now - fpCache[i].cachedAt > FP_CACHE_TTL_MS) continue;
+
+    float sim = fingerprintSimilarity(fingerprint, fpCache[i].fingerprint);
+    if (sim > bestSimilarity) {
+      bestSimilarity = sim;
+      bestIndex = i;
+    }
+  }
+
+  if (bestIndex >= 0 && bestSimilarity >= FP_SIMILARITY_THRESHOLD) {
+    cachedResult = fpCache[bestIndex].result;
+    fpCache[bestIndex].hitCount++;
+    serialDebugf("FP_CACHE", "Cache hit! Similarity: %.2f, Hits: %d, Track: %s",
+      bestSimilarity, fpCache[bestIndex].hitCount, cachedResult.album_title);
+    return true;
+  }
+
+  return false;
+}
+
+void cacheFingerprintResult(float* fingerprint, const IdentifyResult& result) {
+  // Find slot: use empty or oldest entry
+  int slot = fpCacheCount < FP_CACHE_SIZE ? fpCacheCount++ : 0;
+
+  if (fpCacheCount >= FP_CACHE_SIZE) {
+    // Evict oldest entry
+    unsigned long oldest = ULONG_MAX;
+    for (int i = 0; i < FP_CACHE_SIZE; i++) {
+      if (fpCache[i].cachedAt < oldest) {
+        oldest = fpCache[i].cachedAt;
+        slot = i;
+      }
+    }
+  }
+
+  memcpy(fpCache[slot].fingerprint, fingerprint, sizeof(float) * 32);
+  fpCache[slot].result = result;
+  fpCache[slot].cachedAt = millis();
+  fpCache[slot].hitCount = 0;
+
+  serialDebugf("FP_CACHE", "Cached fingerprint in slot %d: %s - %s",
+    slot, result.artist_name, result.album_title);
+}
+
+/* ============================================================================
+ * SECTION 48: Improvement #24b — Device Sleep/Wake Scheduling
+ * ============================================================================ */
+
+void initSleepSchedule() {
+  serialDebug("SCHEDULE", "Initializing sleep/wake schedule");
+
+  // Load schedule from NVS
+  preferences.begin(NVS_NAMESPACE, true);
+  sleepSchedule.enabled = preferences.getBool("sched_en", false);
+  sleepSchedule.sleepHour = preferences.getUChar("sched_sh", 23);
+  sleepSchedule.sleepMinute = preferences.getUChar("sched_sm", 0);
+  sleepSchedule.wakeHour = preferences.getUChar("sched_wh", 7);
+  sleepSchedule.wakeMinute = preferences.getUChar("sched_wm", 0);
+  preferences.end();
+
+  if (sleepSchedule.enabled) {
+    serialDebugf("SCHEDULE", "Schedule active: sleep %02d:%02d, wake %02d:%02d",
+      sleepSchedule.sleepHour, sleepSchedule.sleepMinute,
+      sleepSchedule.wakeHour, sleepSchedule.wakeMinute);
+  } else {
+    serialDebug("SCHEDULE", "Sleep schedule disabled");
+  }
+
+  lastScheduleCheck = millis();
+  logToSD("SCHEDULE", "Sleep schedule initialized");
+}
+
+void checkSleepSchedule() {
+  if (!sleepSchedule.enabled) return;
+  if (millis() - lastScheduleCheck < SCHEDULE_CHECK_INTERVAL_MS) return;
+  lastScheduleCheck = millis();
+
+  // Get current time from NTP (simplified — use stored offset from last sync)
+  // In production: use configTime() and getLocalTime() for accurate time
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    serialDebug("SCHEDULE", "Cannot check schedule — no time sync");
+    return;
+  }
+
+  int currentMinutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
+  int sleepMinutes = sleepSchedule.sleepHour * 60 + sleepSchedule.sleepMinute;
+  int wakeMinutes = sleepSchedule.wakeHour * 60 + sleepSchedule.wakeMinute;
+
+  bool shouldSleep = false;
+  if (sleepMinutes < wakeMinutes) {
+    // Normal range (e.g., sleep 23:00, wake 07:00 doesn't apply here)
+    shouldSleep = (currentMinutes >= sleepMinutes && currentMinutes < wakeMinutes);
+  } else {
+    // Overnight range (e.g., sleep 23:00, wake 07:00)
+    shouldSleep = (currentMinutes >= sleepMinutes || currentMinutes < wakeMinutes);
+  }
+
+  if (shouldSleep && deviceState != STATE_IDLE) {
+    serialDebug("SCHEDULE", "Scheduled sleep time reached — entering deep sleep");
+
+    // Calculate wake duration in microseconds
+    int wakeInMinutes;
+    if (currentMinutes < wakeMinutes) {
+      wakeInMinutes = wakeMinutes - currentMinutes;
+    } else {
+      wakeInMinutes = (24 * 60 - currentMinutes) + wakeMinutes;
+    }
+
+    uint64_t sleepDurationUs = (uint64_t)wakeInMinutes * 60ULL * 1000000ULL;
+    esp_sleep_enable_timer_wakeup(sleepDurationUs);
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)BUTTON_PIN, LOW);  // Allow button wake
+
+    logToSD("SCHEDULE", "Entering scheduled deep sleep");
+    serialDebugf("SCHEDULE", "Sleeping for %d minutes until %02d:%02d",
+      wakeInMinutes, sleepSchedule.wakeHour, sleepSchedule.wakeMinute);
+
+    delay(100);
+    esp_deep_sleep_start();
+  }
+}
+
+/* ============================================================================
+ * SECTION 49: Improvement #25b — Remote Configuration Updates
+ * ============================================================================ */
+
+void checkRemoteConfig() {
+  if (!wifiConnected) return;
+  if (millis() - lastConfigCheck < CONFIG_CHECK_INTERVAL_MS) return;
+  lastConfigCheck = millis();
+
+  serialDebug("RCONFIG", "Checking for remote configuration updates");
+
+  HTTPClient http;
+  String url = String(API_BASE_URL) + REMOTE_CONFIG_ENDPOINT;
+  url += "?device_id=";
+  url += config.device_id;
+  url += "&current_version=";
+  url += remoteConfigVersion;
+
+  http.begin(url);
+  http.addHeader("X-Device-Id", config.device_id);
+  http.addHeader("X-Api-Key", config.api_key);
+  http.setTimeout(5000);
+
+  int httpCode = http.GET();
+
+  if (httpCode == 200) {
+    String payload = http.getString();
+    applyRemoteConfig(payload);
+  } else if (httpCode == 304) {
+    serialDebug("RCONFIG", "Configuration is up to date");
+  } else {
+    serialDebugf("RCONFIG", "Config check failed: HTTP %d", httpCode);
+  }
+
+  http.end();
+}
+
+void applyRemoteConfig(const String& json) {
+  StaticJsonDocument<512> doc;
+  DeserializationError error = deserializeJson(doc, json);
+  if (error) {
+    serialDebugf("RCONFIG", "JSON parse error: %s", error.c_str());
+    return;
+  }
+
+  int newVersion = doc["version"] | 0;
+  if (newVersion <= remoteConfigVersion) {
+    serialDebug("RCONFIG", "No new configuration version");
+    return;
+  }
+
+  serialDebugf("RCONFIG", "Applying remote config v%d (was v%d)", newVersion, remoteConfigVersion);
+
+  // Apply configurable parameters
+  if (doc.containsKey("audio_gain")) {
+    float gain = doc["audio_gain"];
+    if (gain >= AUTOGAIN_MIN && gain <= AUTOGAIN_MAX) {
+      config.audio_gain = gain;
+      currentAudioGain = gain;
+      serialDebugf("RCONFIG", "Audio gain updated: %.2f", gain);
+    }
+  }
+
+  if (doc.containsKey("silence_threshold")) {
+    int threshold = doc["silence_threshold"];
+    if (threshold >= 50 && threshold <= 10000) {
+      config.silence_threshold = threshold;
+      noiseFloor = threshold;
+      serialDebugf("RCONFIG", "Silence threshold updated: %d", threshold);
+    }
+  }
+
+  if (doc.containsKey("heartbeat_interval")) {
+    // Note: can't change #define at runtime, but store for reference
+    serialDebugf("RCONFIG", "Heartbeat interval suggestion: %d ms", (int)doc["heartbeat_interval"]);
+  }
+
+  if (doc.containsKey("sleep_schedule")) {
+    JsonObject sched = doc["sleep_schedule"];
+    sleepSchedule.enabled = sched["enabled"] | sleepSchedule.enabled;
+    sleepSchedule.sleepHour = sched["sleep_hour"] | sleepSchedule.sleepHour;
+    sleepSchedule.sleepMinute = sched["sleep_minute"] | sleepSchedule.sleepMinute;
+    sleepSchedule.wakeHour = sched["wake_hour"] | sleepSchedule.wakeHour;
+    sleepSchedule.wakeMinute = sched["wake_minute"] | sleepSchedule.wakeMinute;
+    serialDebug("RCONFIG", "Sleep schedule updated from remote config");
+  }
+
+  if (doc.containsKey("noise_cancellation")) {
+    bool nc = doc["noise_cancellation"];
+    noiseProfileCalibrated = nc;
+    serialDebugf("RCONFIG", "Noise cancellation: %s", nc ? "enabled" : "disabled");
+  }
+
+  if (doc.containsKey("voice_commands")) {
+    voiceCommandEnabled = doc["voice_commands"] | voiceCommandEnabled;
+    serialDebugf("RCONFIG", "Voice commands: %s", voiceCommandEnabled ? "enabled" : "disabled");
+  }
+
+  remoteConfigVersion = newVersion;
+  saveConfig();
+  serialDebugf("RCONFIG", "Remote config v%d applied and saved", newVersion);
+  logToSD("RCONFIG", "Remote config applied");
+}
+
+/* ============================================================================
  * SECTION 38: setup() - Main Initialization
  * ============================================================================ */
 
@@ -2245,6 +3029,15 @@ void setup() {
 
   // Initialize BLE (#16)
   initBLE();
+
+  // Initialize new subsystems (#40-#49)
+  initSPIFFS();             // #19: Audio recording to SPIFFS
+  initFingerprintCache();   // #23b: Audio fingerprint caching
+  initNoiseCancellation();  // #22b: Environmental noise cancellation
+  initVoiceCommands();      // #20: Voice command recognition
+  initGestureSensor();      // #21: Gesture sensor support
+  initSleepSchedule();      // #24b: Device sleep/wake scheduling
+  initDeviceMesh();         // #18: Device-to-device communication
 
   // Connect to WiFi (#1, #23)
   connectWiFi();
@@ -2307,6 +3100,12 @@ void loop() {
   // --- Audio gain auto-calibration (#20) ---
   autoCallibrateGain();
 
+  // --- New audio subsystems ---
+  streamAudioChunk();       // #16: Audio streaming to server
+  processVoiceCommand();    // #20: Voice command recognition
+  readGestureSensor();      // #21: Gesture sensor support
+  handleMeshReceive();      // #18: Device-to-device communication
+
   // --- OLED display update (#18) ---
   updateOLED();
 
@@ -2348,8 +3147,13 @@ void loop() {
 
   // --- Network tasks (only when connected) ---
   if (wifiConnected) {
-    sendHeartbeat();        // #17: Heartbeat every 30s
+    sendHeartbeat();          // #17: Heartbeat every 30s
+    sendAudioLevelUpdate();   // #17b: Real-time audio level meter
+    checkRemoteConfig();      // #25b: Remote configuration updates
   }
+
+  // --- Scheduled sleep/wake (#24b) ---
+  checkSleepSchedule();
 
   // --- Power management (#15) ---
   checkIdleTimeout();

@@ -265,6 +265,55 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
         </div>
       )}
 
+      {/* [Improvement #16] Offer Negotiation History Chart */}
+      <div className="mb-3 bg-[#0d0d0d] border border-[#1a1a1a] rounded-lg p-3">
+        <div className="text-[10px] text-gs-dim font-mono mb-2">NEGOTIATION HISTORY</div>
+        <svg viewBox="0 0 200 40" className="w-full" style={{ maxHeight: 40 }}>
+          {[
+            { x: 0, y: 35, label: 'List' },
+            { x: 50, y: 25, label: 'Offer 1' },
+            { x: 100, y: 30, label: 'Counter' },
+            { x: 150, y: 20, label: 'Offer 2' },
+            { x: 200, y: parseFloat(price) ? Math.max(5, 35 - (parseFloat(price) / (parseFloat(fmvEstimate?.high) || 40) * 30)) : 15, label: 'Now' },
+          ].map((pt, i, arr) => (
+            <g key={i}>
+              <circle cx={pt.x} cy={pt.y} r="3" fill={i === arr.length - 1 ? '#10b981' : '#444'} />
+              {i > 0 && (
+                <line x1={arr[i-1].x} y1={arr[i-1].y} x2={pt.x} y2={pt.y} stroke="#333" strokeWidth="1" strokeDasharray={i < arr.length - 1 ? "3,2" : "0"} />
+              )}
+              <text x={pt.x} y={pt.y - 6} fill="#666" fontSize="6" textAnchor="middle">{pt.label}</text>
+            </g>
+          ))}
+        </svg>
+        <div className="text-[9px] text-gs-faint mt-1">Typical negotiation pattern for similar records</div>
+      </div>
+
+      {/* [Improvement #17] Smart Offer Suggestion Based on Market Data */}
+      {fmvEstimate && offerType === "cash" && (
+        <div className="mb-3 px-3 py-2 bg-gs-accent/[0.04] border border-gs-accent/15 rounded-lg">
+          <div className="text-[10px] text-gs-accent font-mono mb-1">SMART SUGGESTION</div>
+          <div className="text-[11px] text-gs-muted">
+            Based on market data, we recommend offering <button onClick={() => setPrice(fmvEstimate.mid)} className="text-gs-accent font-bold bg-transparent border-none cursor-pointer p-0 hover:underline">${fmvEstimate.mid}</button>
+            {' '}(FMV midpoint). Offers at 85-100% of FMV have the highest acceptance rates.
+          </div>
+          <div className="flex gap-1.5 mt-2">
+            {[
+              { label: 'Below FMV', pct: 0.8 },
+              { label: 'At FMV', pct: 1.0 },
+              { label: 'Above FMV', pct: 1.15 },
+            ].map(s => (
+              <button
+                key={s.label}
+                onClick={() => setPrice((parseFloat(fmvEstimate.mid) * s.pct).toFixed(2))}
+                className="flex-1 py-1 rounded-md bg-[#1a1a1a] border border-[#222] text-[9px] text-gs-dim font-mono cursor-pointer hover:border-gs-accent/40 transition-colors"
+              >
+                {s.label} (${(parseFloat(fmvEstimate.mid) * s.pct).toFixed(2)})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Improvement 12 (new): Fair market value comparison chart */}
       <button
         onClick={() => setShowFMVChart(v => !v)}
@@ -761,6 +810,45 @@ export default function OfferModal({ open, onClose, target, records, onSubmit })
           </div>
         )}
       </div>
+
+      {/* [Improvement #18] Offer Withdrawal with Reason */}
+      <div className="mb-4">
+        <button
+          onClick={() => {
+            const reason = window.prompt('Why are you withdrawing? (optional)\n\n- Found elsewhere\n- Price changed\n- Changed my mind\n- Other');
+            if (reason !== null) {
+              reset();
+              onClose();
+            }
+          }}
+          className="text-[10px] text-gs-faint bg-transparent border-none cursor-pointer hover:text-red-400 p-0 font-semibold"
+        >
+          Withdraw offer with reason...
+        </button>
+      </div>
+
+      {/* [Improvement #19] Counter-Offer Quick Responses */}
+      {isCounterOffer && (
+        <div className="mb-4">
+          <div className="text-[10px] text-gs-dim font-mono mb-1.5">QUICK COUNTER RESPONSES</div>
+          <div className="flex flex-wrap gap-1">
+            {[
+              { label: 'Meet halfway', action: () => { if (fmvEstimate) setPrice((parseFloat(fmvEstimate.mid) * 0.9).toFixed(2)); setCounterMessage("Let's meet in the middle?"); } },
+              { label: 'Firm on price', action: () => setCounterMessage("I appreciate the offer but I'm firm on my asking price.") },
+              { label: 'Add incentive', action: () => setCounterMessage("I can include free shipping if we agree on this price.") },
+              { label: 'Bundle deal', action: () => setCounterMessage("Would you be interested in a bundle deal for a better price?") },
+            ].map(qr => (
+              <button
+                key={qr.label}
+                onClick={qr.action}
+                className="px-2 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-[10px] text-amber-400 cursor-pointer hover:bg-amber-500/15 transition-colors"
+              >
+                {qr.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-2.5">
         <button onClick={() => { reset(); onClose(); }} className="flex-1 py-[11px] bg-[#1a1a1a] border border-gs-border-hover rounded-[10px] text-gs-muted text-[13px] font-semibold cursor-pointer">Cancel</button>

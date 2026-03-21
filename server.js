@@ -10840,6 +10840,831 @@ app.get('/api/admin/revenue-report', authMiddleware, async (req, res) => {
   }
 });
 
+// ── Feature F61: GraphQL-style flexible query endpoint ─────────────────────────
+
+app.post('/api/query', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { resource, fields, filters = {}, sort, limit = 25, offset = 0 } = req.body;
+    const allowedResources = ['records', 'profiles', 'posts', 'purchases', 'vinyl_sessions'];
+    if (!resource || !allowedResources.includes(resource)) {
+      return res.status(400).json({ error: `Invalid resource. Allowed: ${allowedResources.join(', ')}` });
+    }
+
+    const selectedFields = Array.isArray(fields) && fields.length > 0
+      ? fields.map(f => f.replace(/[^a-zA-Z0-9_]/g, '')).join(', ')
+      : '*';
+
+    let query = `SELECT ${selectedFields} FROM ${resource}`;
+    const params = [];
+    const whereClauses = [];
+
+    for (const [key, value] of Object.entries(filters)) {
+      const cleanKey = key.replace(/[^a-zA-Z0-9_]/g, '');
+      params.push(value);
+      whereClauses.push(`${cleanKey} = $${params.length}`);
+    }
+
+    if (whereClauses.length > 0) query += ` WHERE ${whereClauses.join(' AND ')}`;
+
+    if (sort) {
+      const cleanSort = String(sort).replace(/[^a-zA-Z0-9_ ]/g, '');
+      query += ` ORDER BY ${cleanSort}`;
+    }
+
+    const safeLimit = Math.min(Math.max(1, parseInt(limit)), 100);
+    const safeOffset = Math.max(0, parseInt(offset));
+    params.push(safeLimit, safeOffset);
+    query += ` LIMIT $${params.length - 1} OFFSET $${params.length}`;
+
+    const result = await pool.query(query, params);
+    res.json({ success: true, resource, data: result.rows, count: result.rows.length, limit: safeLimit, offset: safeOffset });
+  } catch (err) {
+    console.error('Flexible query error:', err.message);
+    res.status(500).json({ error: 'Query execution failed' });
+  }
+});
+
+// ── Feature F62: Real-time WebSocket event stub ────────────────────────────────
+
+const wsEventSubscribers = new Map(); // userId -> [{ channel, callback }]
+
+app.post('/api/realtime/subscribe', authMiddleware, (req, res) => {
+  const { channels = [] } = req.body;
+  const validChannels = ['listings', 'offers', 'messages', 'vinyl_buddy', 'notifications', 'marketplace'];
+  const selected = channels.filter(c => validChannels.includes(c));
+
+  if (selected.length === 0) {
+    return res.status(400).json({ error: `No valid channels. Available: ${validChannels.join(', ')}` });
+  }
+
+  const subscriptionId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const existing = wsEventSubscribers.get(req.user.id) || [];
+  existing.push({ subscriptionId, channels: selected, subscribedAt: new Date().toISOString() });
+  wsEventSubscribers.set(req.user.id, existing);
+
+  res.json({
+    success: true,
+    subscriptionId,
+    channels: selected,
+    note: 'WebSocket stub — in production, upgrade to ws:// connection for real-time delivery.',
+    pollingFallback: '/api/realtime/poll',
+  });
+});
+
+app.get('/api/realtime/poll', authMiddleware, (req, res) => {
+  const subs = wsEventSubscribers.get(req.user.id) || [];
+  res.json({
+    success: true,
+    subscriptions: subs.length,
+    events: [],
+    note: 'No pending events. In production, WebSocket pushes events in real-time.',
+  });
+});
+
+// ── Feature F63: Batch notification delivery ───────────────────────────────────
+
+app.post('/api/notifications/batch', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { notifications } = req.body;
+    if (!Array.isArray(notifications) || notifications.length === 0) {
+      return res.status(400).json({ error: 'notifications array required' });
+    }
+    if (notifications.length > 100) {
+      return res.status(400).json({ error: 'Maximum 100 notifications per batch' });
+    }
+
+    const results = [];
+    for (const notif of notifications) {
+      const { recipientId, type = 'general', title, body, metadata = {} } = notif;
+      if (!recipientId || !title) {
+        results.push({ recipientId, status: 'skipped', reason: 'missing recipientId or title' });
+        continue;
+      }
+      try {
+        await pool.query(
+          `INSERT INTO notifications (user_id, type, title, body, metadata, created_at)
+           VALUES ($1, $2, $3, $4, $5, now())`,
+          [recipientId, type, title, body || '', JSON.stringify(metadata)]
+        );
+        results.push({ recipientId, status: 'delivered', type });
+      } catch (innerErr) {
+        results.push({ recipientId, status: 'failed', reason: innerErr.message });
+      }
+    }
+
+    const delivered = results.filter(r => r.status === 'delivered').length;
+    res.json({ success: true, total: notifications.length, delivered, failed: notifications.length - delivered, results });
+  } catch (err) {
+    console.error('Batch notification error:', err.message);
+    res.status(500).json({ error: 'Batch notification delivery failed' });
+  }
+});
+
+// ── Feature F64: User activity feed aggregation ────────────────────────────────
+
+app.get('/api/users/:username/activity', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { username } = req.params;
+    const { limit = 30, offset = 0 } = req.query;
+    const safeLimit = Math.min(Math.max(1, parseInt(limit)), 50);
+    const safeOffset = Math.max(0, parseInt(offset));
+
+    const userResult = await pool.query('SELECT id FROM profiles WHERE username = $1', [username]);
+    if (userResult.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const userId = userResult.rows[0].id;
+
+    const [listings, purchases, posts, follows] = await Promise.all([
+      pool.query(
+        `SELECT 'listing' as activity_type, title as description, created_at
+         FROM records WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`, [userId, safeLimit]
+      ),
+      pool.query(
+        `SELECT 'purchase' as activity_type, 'Purchased a record' as description, created_at
+         FROM purchases WHERE buyer_id = $1 ORDER BY created_at DESC LIMIT $2`, [userId, safeLimit]
+      ),
+      pool.query(
+        `SELECT 'post' as activity_type, SUBSTRING(body, 1, 100) as description, created_at
+         FROM posts WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2`, [userId, safeLimit]
+      ),
+      pool.query(
+        `SELECT 'follow' as activity_type, 'Followed ' || following_username as description, created_at
+         FROM follows WHERE follower_id = $1 ORDER BY created_at DESC LIMIT $2`, [userId, safeLimit]
+      ),
+    ]);
+
+    const allActivity = [
+      ...listings.rows, ...purchases.rows, ...posts.rows, ...follows.rows,
+    ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(safeOffset, safeOffset + safeLimit);
+
+    res.json({ success: true, username, activity: allActivity, count: allActivity.length });
+  } catch (err) {
+    console.error('Activity feed error:', err.message);
+    res.status(500).json({ error: 'Failed to aggregate activity feed' });
+  }
+});
+
+// ── Feature F65: Smart collection valuation ────────────────────────────────────
+
+app.get('/api/collections/:username/valuation', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { username } = req.params;
+
+    const records = await pool.query(
+      `SELECT r.id, r.title, r.artist, r.genre, r.condition, r.price,
+              r.year, r.format
+       FROM records r JOIN profiles p ON r.user_id = p.id
+       WHERE p.username = $1 AND r.status = 'collection'`,
+      [username]
+    );
+
+    if (records.rows.length === 0) {
+      return res.json({ success: true, username, totalRecords: 0, estimatedValue: 0, breakdown: [] });
+    }
+
+    // Condition multipliers for valuation
+    const conditionMultipliers = { 'Mint': 1.5, 'Near Mint': 1.3, 'Very Good Plus': 1.1, 'Very Good': 1.0, 'Good': 0.7, 'Fair': 0.4, 'Poor': 0.2 };
+
+    let totalEstimate = 0;
+    const breakdown = records.rows.map(r => {
+      const basePrice = parseFloat(r.price) || 15.00;
+      const multiplier = conditionMultipliers[r.condition] || 1.0;
+      // Age bonus: +0.5% per year for records older than 20 years
+      const age = r.year ? Math.max(0, new Date().getFullYear() - parseInt(r.year)) : 0;
+      const ageBonus = age > 20 ? 1 + (age - 20) * 0.005 : 1.0;
+      const estimated = Math.round(basePrice * multiplier * ageBonus * 100) / 100;
+      totalEstimate += estimated;
+      return { id: r.id, title: r.title, artist: r.artist, condition: r.condition, basePrice, estimatedValue: estimated, ageBonus: Math.round((ageBonus - 1) * 100) };
+    });
+
+    const genreTotals = {};
+    for (const r of breakdown) {
+      const record = records.rows.find(rec => rec.id === r.id);
+      const genre = record?.genre || 'Unknown';
+      genreTotals[genre] = (genreTotals[genre] || 0) + r.estimatedValue;
+    }
+
+    res.json({
+      success: true,
+      username,
+      totalRecords: records.rows.length,
+      estimatedTotalValue: Math.round(totalEstimate * 100) / 100,
+      averageRecordValue: Math.round((totalEstimate / records.rows.length) * 100) / 100,
+      valueByGenre: genreTotals,
+      breakdown: breakdown.sort((a, b) => b.estimatedValue - a.estimatedValue).slice(0, 50),
+      disclaimer: 'Estimated values based on condition, age, and listed price. Actual market value may vary.',
+    });
+  } catch (err) {
+    console.error('Collection valuation error:', err.message);
+    res.status(500).json({ error: 'Failed to generate collection valuation' });
+  }
+});
+
+// ── Feature F66: Record authentication blockchain stub ─────────────────────────
+
+const authenticationLedger = []; // In-memory ledger simulating blockchain entries
+
+app.post('/api/records/:id/authenticate', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const recordId = req.params.id;
+    const { proofImageBase64, notes = '' } = req.body;
+
+    const record = await pool.query('SELECT * FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+
+    const prevHash = authenticationLedger.length > 0
+      ? authenticationLedger[authenticationLedger.length - 1].hash
+      : '0000000000000000000000000000000000000000000000000000000000000000';
+
+    const entryData = `${recordId}:${req.user.id}:${Date.now()}:${prevHash}`;
+    const hash = crypto.createHash('sha256').update(entryData).digest('hex');
+
+    const entry = {
+      blockIndex: authenticationLedger.length,
+      hash,
+      previousHash: prevHash,
+      recordId,
+      authenticatedBy: req.user.username,
+      timestamp: new Date().toISOString(),
+      notes,
+      hasProofImage: !!proofImageBase64,
+      status: 'pending_verification',
+    };
+
+    authenticationLedger.push(entry);
+
+    res.json({
+      success: true,
+      authentication: entry,
+      ledgerSize: authenticationLedger.length,
+      note: 'Blockchain stub — in production, entries are committed to an immutable distributed ledger.',
+    });
+  } catch (err) {
+    console.error('Authentication error:', err.message);
+    res.status(500).json({ error: 'Record authentication failed' });
+  }
+});
+
+app.get('/api/records/:id/authentication-history', async (req, res) => {
+  const entries = authenticationLedger.filter(e => e.recordId === req.params.id);
+  res.json({ success: true, recordId: req.params.id, authentications: entries, count: entries.length });
+});
+
+// ── Feature F67: AI-powered search ranking ─────────────────────────────────────
+
+app.get('/api/search/smart', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { q, limit = 20 } = req.query;
+    if (!q || String(q).trim().length < 2) {
+      return res.status(400).json({ error: 'Search query must be at least 2 characters' });
+    }
+
+    const searchTerm = `%${String(q).trim().toLowerCase()}%`;
+    const safeLimit = Math.min(Math.max(1, parseInt(limit)), 50);
+
+    const results = await pool.query(
+      `SELECT id, title, artist, genre, year, price, condition, created_at,
+              CASE
+                WHEN LOWER(title) = $2 THEN 100
+                WHEN LOWER(title) LIKE $2 || '%' THEN 90
+                WHEN LOWER(artist) = $2 THEN 85
+                WHEN LOWER(artist) LIKE $2 || '%' THEN 80
+                WHEN LOWER(title) LIKE $1 THEN 60
+                WHEN LOWER(artist) LIKE $1 THEN 55
+                WHEN LOWER(genre) LIKE $1 THEN 30
+                ELSE 10
+              END as relevance_score
+       FROM records
+       WHERE LOWER(title) LIKE $1 OR LOWER(artist) LIKE $1 OR LOWER(genre) LIKE $1
+       ORDER BY relevance_score DESC, created_at DESC
+       LIMIT $3`,
+      [searchTerm, String(q).trim().toLowerCase(), safeLimit]
+    );
+
+    // Boost scores based on engagement signals
+    const boosted = results.rows.map(r => {
+      let boost = 0;
+      // Recency boost: records listed in last 7 days
+      const ageMs = Date.now() - new Date(r.created_at).getTime();
+      if (ageMs < 7 * 24 * 60 * 60 * 1000) boost += 10;
+      // Price confidence: priced records rank higher
+      if (parseFloat(r.price) > 0) boost += 5;
+      return { ...r, relevance_score: r.relevance_score + boost };
+    }).sort((a, b) => b.relevance_score - a.relevance_score);
+
+    res.json({ success: true, query: q, results: boosted, count: boosted.length, ranking: 'ai_relevance_v1' });
+  } catch (err) {
+    console.error('Smart search error:', err.message);
+    res.status(500).json({ error: 'Search failed' });
+  }
+});
+
+// ── Feature F68: Dynamic homepage content ──────────────────────────────────────
+
+app.get('/api/homepage', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const [featuredListings, recentActivity, topSellers, trendingGenres, platformStats] = await Promise.all([
+      pool.query(
+        `SELECT id, title, artist, genre, price, condition, created_at
+         FROM records WHERE status = 'listed' AND price IS NOT NULL
+         ORDER BY created_at DESC LIMIT 8`
+      ),
+      pool.query(
+        `SELECT 'new_listing' as type, title as description, created_at
+         FROM records WHERE status = 'listed' ORDER BY created_at DESC LIMIT 5`
+      ),
+      pool.query(
+        `SELECT p.username, COUNT(*) as sales, COALESCE(AVG(r.price), 0) as avg_price
+         FROM purchases pu JOIN profiles p ON pu.seller_id = p.id JOIN records r ON pu.record_id = r.id
+         WHERE pu.created_at >= now() - interval '30 days'
+         GROUP BY p.username ORDER BY sales DESC LIMIT 5`
+      ),
+      pool.query(
+        `SELECT genre, COUNT(*) as listing_count
+         FROM records WHERE genre IS NOT NULL AND created_at >= now() - interval '30 days'
+         GROUP BY genre ORDER BY listing_count DESC LIMIT 10`
+      ),
+      pool.query(
+        `SELECT
+           (SELECT COUNT(*) FROM profiles) as total_users,
+           (SELECT COUNT(*) FROM records WHERE status = 'listed') as active_listings,
+           (SELECT COUNT(*) FROM purchases WHERE created_at >= now() - interval '7 days') as weekly_sales`
+      ),
+    ]);
+
+    res.json({
+      success: true,
+      homepage: {
+        hero: {
+          headline: 'The Vinyl Marketplace for Collectors',
+          subheadline: `${platformStats.rows[0]?.active_listings || 0} records available from ${platformStats.rows[0]?.total_users || 0} collectors`,
+        },
+        featuredListings: featuredListings.rows,
+        recentActivity: recentActivity.rows,
+        topSellers: topSellers.rows,
+        trendingGenres: trendingGenres.rows,
+        stats: platformStats.rows[0] || {},
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Homepage content error:', err.message);
+    res.status(500).json({ error: 'Failed to generate homepage content' });
+  }
+});
+
+// ── Feature F69: User journey analytics ────────────────────────────────────────
+
+const userJourneyEvents = []; // In-memory event store
+
+app.post('/api/analytics/journey', authMiddleware, (req, res) => {
+  const { event, page, metadata = {} } = req.body;
+  if (!event) return res.status(400).json({ error: 'event name required' });
+
+  const journeyEvent = {
+    userId: req.user.id,
+    username: req.user.username,
+    event: String(event).slice(0, 100),
+    page: String(page || '').slice(0, 200),
+    metadata,
+    timestamp: new Date().toISOString(),
+    sessionId: req.headers['x-session-id'] || 'unknown',
+  };
+
+  userJourneyEvents.push(journeyEvent);
+  if (userJourneyEvents.length > 10000) userJourneyEvents.splice(0, userJourneyEvents.length - 10000);
+
+  res.json({ success: true, recorded: true });
+});
+
+app.get('/api/analytics/journey/:username', authMiddleware, (req, res) => {
+  const { username } = req.params;
+  const { limit = 50 } = req.query;
+  const safeLimit = Math.min(Math.max(1, parseInt(limit)), 200);
+
+  const events = userJourneyEvents
+    .filter(e => e.username === username)
+    .slice(-safeLimit);
+
+  // Compute journey summary
+  const pageViews = {};
+  const eventCounts = {};
+  for (const e of events) {
+    pageViews[e.page] = (pageViews[e.page] || 0) + 1;
+    eventCounts[e.event] = (eventCounts[e.event] || 0) + 1;
+  }
+
+  res.json({
+    success: true,
+    username,
+    events,
+    summary: { totalEvents: events.length, pageViews, eventCounts },
+  });
+});
+
+// ── Feature F70: Marketplace health score ──────────────────────────────────────
+
+app.get('/api/admin/marketplace-health', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const [listings, sales, users, disputes, avgTime] = await Promise.all([
+      pool.query(`SELECT COUNT(*) as active FROM records WHERE status = 'listed'`),
+      pool.query(`SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE created_at >= now() - interval '7 days') as weekly
+                  FROM purchases WHERE status IN ('completed', 'paid')`),
+      pool.query(`SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE created_at >= now() - interval '30 days') as new_monthly
+                  FROM profiles`),
+      pool.query(`SELECT COUNT(*) as open FROM purchases WHERE status = 'disputed'`),
+      pool.query(`SELECT COALESCE(AVG(EXTRACT(EPOCH FROM (updated_at - created_at))), 0) as avg_fulfillment_seconds
+                  FROM purchases WHERE status = 'completed' AND created_at >= now() - interval '30 days'`),
+    ]);
+
+    const activeListings = parseInt(listings.rows[0].active);
+    const weeklySales = parseInt(sales.rows[0].weekly);
+    const totalUsers = parseInt(users.rows[0].total);
+    const newMonthlyUsers = parseInt(users.rows[0].new_monthly);
+    const openDisputes = parseInt(disputes.rows[0].open);
+    const avgFulfillmentHrs = Math.round(parseFloat(avgTime.rows[0].avg_fulfillment_seconds) / 3600 * 10) / 10;
+
+    // Compute health score (0-100)
+    let healthScore = 50;
+    if (activeListings > 100) healthScore += 10;
+    if (weeklySales > 10) healthScore += 15;
+    if (newMonthlyUsers > 5) healthScore += 10;
+    if (openDisputes === 0) healthScore += 10;
+    else if (openDisputes > 5) healthScore -= 15;
+    if (avgFulfillmentHrs < 48) healthScore += 5;
+    healthScore = Math.max(0, Math.min(100, healthScore));
+
+    const status = healthScore >= 80 ? 'excellent' : healthScore >= 60 ? 'good' : healthScore >= 40 ? 'fair' : 'needs_attention';
+
+    res.json({
+      success: true,
+      health: {
+        score: healthScore,
+        status,
+        metrics: {
+          activeListings,
+          weeklySales,
+          totalSales: parseInt(sales.rows[0].total),
+          totalUsers,
+          newMonthlyUsers,
+          openDisputes,
+          avgFulfillmentHours: avgFulfillmentHrs,
+        },
+        recommendations: [
+          ...(activeListings < 50 ? ['Encourage sellers to list more records to increase marketplace variety.'] : []),
+          ...(openDisputes > 3 ? ['Address open disputes promptly to maintain buyer trust.'] : []),
+          ...(weeklySales < 5 ? ['Consider promotions or featured listings to drive sales volume.'] : []),
+          ...(newMonthlyUsers < 3 ? ['Invest in marketing or referral programs to attract new users.'] : []),
+        ],
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Marketplace health error:', err.message);
+    res.status(500).json({ error: 'Failed to compute marketplace health score' });
+  }
+});
+
+// ── Feature F71: Automated content moderation ──────────────────────────────────
+
+const moderationQueue = []; // In-memory moderation queue
+const MODERATION_BLOCKED_WORDS = ['scam', 'counterfeit', 'bootleg', 'pirated', 'fake pressing'];
+
+app.post('/api/moderation/check', authMiddleware, (req, res) => {
+  const { content, contentType = 'listing' } = req.body;
+  if (!content) return res.status(400).json({ error: 'content required' });
+
+  const text = String(content).toLowerCase();
+  const flags = [];
+
+  // Check blocked words
+  for (const word of MODERATION_BLOCKED_WORDS) {
+    if (text.includes(word)) flags.push({ rule: 'blocked_word', match: word, severity: 'high' });
+  }
+
+  // Check for excessive caps (>50% uppercase in content >20 chars)
+  if (content.length > 20) {
+    const upperRatio = (content.match(/[A-Z]/g) || []).length / content.length;
+    if (upperRatio > 0.5) flags.push({ rule: 'excessive_caps', severity: 'low' });
+  }
+
+  // Check for URLs (potential spam)
+  const urlPattern = /https?:\/\/[^\s]+/gi;
+  const urls = content.match(urlPattern) || [];
+  if (urls.length > 2) flags.push({ rule: 'excessive_links', count: urls.length, severity: 'medium' });
+
+  // Check content length
+  if (content.length > 5000) flags.push({ rule: 'content_too_long', severity: 'medium' });
+
+  const approved = flags.filter(f => f.severity === 'high').length === 0;
+
+  if (!approved) {
+    moderationQueue.push({
+      userId: req.user.id,
+      contentType,
+      contentPreview: content.slice(0, 200),
+      flags,
+      status: 'pending_review',
+      createdAt: new Date().toISOString(),
+    });
+    if (moderationQueue.length > 500) moderationQueue.splice(0, moderationQueue.length - 500);
+  }
+
+  res.json({
+    success: true,
+    approved,
+    flags,
+    moderationId: approved ? null : `mod-${Date.now()}`,
+    message: approved ? 'Content approved' : 'Content flagged for review',
+  });
+});
+
+app.get('/api/admin/moderation-queue', authMiddleware, (req, res) => {
+  const { status = 'pending_review', limit = 50 } = req.query;
+  const safeLimit = Math.min(Math.max(1, parseInt(limit)), 100);
+  const filtered = moderationQueue.filter(m => m.status === status).slice(-safeLimit);
+  res.json({ success: true, queue: filtered, total: filtered.length });
+});
+
+// ── Feature F72: Platform growth metrics ───────────────────────────────────────
+
+app.get('/api/admin/growth-metrics', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { period = '30d' } = req.query;
+    const intervalMap = { '7d': '7 days', '30d': '30 days', '90d': '90 days', '1y': '1 year' };
+    const interval = intervalMap[period] || '30 days';
+    const prevInterval = intervalMap[period] ? intervalMap[period].replace(/(\d+)/, m => parseInt(m) * 2) : '60 days';
+
+    const [currentUsers, prevUsers, currentListings, prevListings, currentSales, prevSales, dailySignups] = await Promise.all([
+      pool.query(`SELECT COUNT(*) as count FROM profiles WHERE created_at >= now() - $1::interval`, [interval]),
+      pool.query(`SELECT COUNT(*) as count FROM profiles WHERE created_at >= now() - $1::interval AND created_at < now() - $2::interval`, [prevInterval, interval]),
+      pool.query(`SELECT COUNT(*) as count FROM records WHERE created_at >= now() - $1::interval`, [interval]),
+      pool.query(`SELECT COUNT(*) as count FROM records WHERE created_at >= now() - $1::interval AND created_at < now() - $2::interval`, [prevInterval, interval]),
+      pool.query(`SELECT COUNT(*) as count FROM purchases WHERE created_at >= now() - $1::interval AND status IN ('completed', 'paid')`, [interval]),
+      pool.query(`SELECT COUNT(*) as count FROM purchases WHERE created_at >= now() - $1::interval AND created_at < now() - $2::interval AND status IN ('completed', 'paid')`, [prevInterval, interval]),
+      pool.query(
+        `SELECT DATE_TRUNC('day', created_at) as day, COUNT(*) as signups
+         FROM profiles WHERE created_at >= now() - $1::interval
+         GROUP BY day ORDER BY day`, [interval]
+      ),
+    ]);
+
+    function growthRate(current, previous) {
+      const c = parseInt(current), p = parseInt(previous);
+      if (p === 0) return c > 0 ? 100 : 0;
+      return Math.round(((c - p) / p) * 100 * 10) / 10;
+    }
+
+    res.json({
+      success: true,
+      period,
+      growth: {
+        users: { current: parseInt(currentUsers.rows[0].count), previous: parseInt(prevUsers.rows[0].count), growthRate: growthRate(currentUsers.rows[0].count, prevUsers.rows[0].count) },
+        listings: { current: parseInt(currentListings.rows[0].count), previous: parseInt(prevListings.rows[0].count), growthRate: growthRate(currentListings.rows[0].count, prevListings.rows[0].count) },
+        sales: { current: parseInt(currentSales.rows[0].count), previous: parseInt(prevSales.rows[0].count), growthRate: growthRate(currentSales.rows[0].count, prevSales.rows[0].count) },
+        dailySignups: dailySignups.rows,
+      },
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('Growth metrics error:', err.message);
+    res.status(500).json({ error: 'Failed to compute growth metrics' });
+  }
+});
+
+// ── Feature F73: User retention analytics ──────────────────────────────────────
+
+app.get('/api/admin/retention', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const [cohorts, activeUsers, churned, engagementBuckets] = await Promise.all([
+      // Monthly signup cohorts with return rates
+      pool.query(
+        `SELECT DATE_TRUNC('month', p.created_at) as cohort_month, COUNT(DISTINCT p.id) as signups,
+                COUNT(DISTINCT CASE WHEN EXISTS (
+                  SELECT 1 FROM records r WHERE r.user_id = p.id AND r.created_at >= p.created_at + interval '7 days'
+                  UNION SELECT 1 FROM purchases pu WHERE pu.buyer_id = p.id AND pu.created_at >= p.created_at + interval '7 days'
+                ) THEN p.id END) as returned_7d
+         FROM profiles p WHERE p.created_at >= now() - interval '6 months'
+         GROUP BY cohort_month ORDER BY cohort_month`
+      ),
+      // Users active in last 30 days
+      pool.query(
+        `SELECT COUNT(DISTINCT user_id) as active_30d FROM (
+           SELECT user_id FROM records WHERE created_at >= now() - interval '30 days'
+           UNION SELECT buyer_id as user_id FROM purchases WHERE created_at >= now() - interval '30 days'
+         ) sub`
+      ),
+      // Users with no activity in 90+ days
+      pool.query(
+        `SELECT COUNT(*) as churned FROM profiles p
+         WHERE p.created_at < now() - interval '90 days'
+         AND NOT EXISTS (SELECT 1 FROM records r WHERE r.user_id = p.id AND r.created_at >= now() - interval '90 days')
+         AND NOT EXISTS (SELECT 1 FROM purchases pu WHERE pu.buyer_id = p.id AND pu.created_at >= now() - interval '90 days')`
+      ),
+      // Engagement buckets
+      pool.query(
+        `SELECT
+           CASE
+             WHEN activity_count >= 20 THEN 'power_user'
+             WHEN activity_count >= 5 THEN 'active'
+             WHEN activity_count >= 1 THEN 'casual'
+             ELSE 'inactive'
+           END as bucket, COUNT(*) as user_count
+         FROM (
+           SELECT p.id, (
+             SELECT COUNT(*) FROM records r WHERE r.user_id = p.id AND r.created_at >= now() - interval '30 days'
+           ) + (
+             SELECT COUNT(*) FROM purchases pu WHERE pu.buyer_id = p.id AND pu.created_at >= now() - interval '30 days'
+           ) as activity_count
+           FROM profiles p
+         ) sub GROUP BY bucket`
+      ),
+    ]);
+
+    const retentionCohorts = cohorts.rows.map(c => ({
+      month: c.cohort_month,
+      signups: parseInt(c.signups),
+      returned7d: parseInt(c.returned_7d),
+      retentionRate: parseInt(c.signups) > 0 ? Math.round(parseInt(c.returned_7d) / parseInt(c.signups) * 100 * 10) / 10 : 0,
+    }));
+
+    res.json({
+      success: true,
+      retention: {
+        activeUsers30d: parseInt(activeUsers.rows[0].active_30d),
+        churnedUsers90d: parseInt(churned.rows[0].churned),
+        cohorts: retentionCohorts,
+        engagementBuckets: engagementBuckets.rows,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Retention analytics error:', err.message);
+    res.status(500).json({ error: 'Failed to compute retention analytics' });
+  }
+});
+
+// ── Feature F74: Revenue optimization suggestions ──────────────────────────────
+
+app.get('/api/admin/revenue-optimization', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const [staleListings, underpriced, highDemandGenres, conversionRate, avgCartSize] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) as count FROM records
+         WHERE status = 'listed' AND updated_at < now() - interval '60 days'`
+      ),
+      pool.query(
+        `SELECT r.id, r.title, r.artist, r.price, r.genre,
+                (SELECT COALESCE(AVG(r2.price), 0) FROM records r2 WHERE r2.genre = r.genre AND r2.price > 0) as genre_avg_price
+         FROM records r WHERE r.status = 'listed' AND r.price > 0
+           AND r.price < (SELECT COALESCE(AVG(r2.price), 0) * 0.5 FROM records r2 WHERE r2.genre = r.genre AND r2.price > 0)
+         ORDER BY (SELECT COALESCE(AVG(r2.price), 0) FROM records r2 WHERE r2.genre = r.genre AND r2.price > 0) - r.price DESC
+         LIMIT 10`
+      ),
+      pool.query(
+        `SELECT r.genre, COUNT(p.*) as sales, COALESCE(AVG(r.price), 0) as avg_price,
+                (SELECT COUNT(*) FROM records r2 WHERE r2.genre = r.genre AND r2.status = 'listed') as supply
+         FROM purchases p JOIN records r ON p.record_id = r.id
+         WHERE p.created_at >= now() - interval '30 days' AND r.genre IS NOT NULL
+         GROUP BY r.genre ORDER BY sales DESC LIMIT 10`
+      ),
+      pool.query(
+        `SELECT
+           (SELECT COUNT(*) FROM purchases WHERE status IN ('completed', 'paid') AND created_at >= now() - interval '30 days') as purchases,
+           (SELECT COUNT(DISTINCT buyer_id) FROM purchases WHERE created_at >= now() - interval '30 days') as unique_buyers`
+      ),
+      pool.query(
+        `SELECT COALESCE(AVG(amount), 0) as avg_cart FROM purchases
+         WHERE status IN ('completed', 'paid') AND created_at >= now() - interval '30 days'`
+      ),
+    ]);
+
+    const suggestions = [];
+    if (parseInt(staleListings.rows[0].count) > 10) {
+      suggestions.push({ type: 'stale_listings', priority: 'medium', message: `${staleListings.rows[0].count} listings haven't been updated in 60+ days. Prompt sellers to refresh pricing.` });
+    }
+    if (underpriced.rows.length > 0) {
+      suggestions.push({ type: 'underpriced_items', priority: 'low', message: `${underpriced.rows.length} items are priced well below genre averages. Sellers may benefit from price guidance.`, items: underpriced.rows });
+    }
+    for (const genre of highDemandGenres.rows) {
+      if (parseInt(genre.sales) > parseInt(genre.supply)) {
+        suggestions.push({ type: 'supply_gap', priority: 'high', message: `${genre.genre}: ${genre.sales} sales vs ${genre.supply} listed. Encourage more ${genre.genre} listings.` });
+      }
+    }
+    const avgCart = parseFloat(avgCartSize.rows[0].avg_cart);
+    if (avgCart < 20) {
+      suggestions.push({ type: 'low_cart_value', priority: 'medium', message: `Average order value is $${avgCart.toFixed(2)}. Consider bundle promotions or free shipping thresholds.` });
+    }
+
+    res.json({
+      success: true,
+      optimization: {
+        suggestions,
+        metrics: {
+          staleListings: parseInt(staleListings.rows[0].count),
+          underpricedItems: underpriced.rows.length,
+          averageOrderValue: Math.round(avgCart * 100) / 100,
+          conversionData: conversionRate.rows[0],
+        },
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Revenue optimization error:', err.message);
+    res.status(500).json({ error: 'Failed to generate revenue optimization suggestions' });
+  }
+});
+
+// ── Feature F75: API usage analytics per user ──────────────────────────────────
+
+const apiUsageTracker = new Map(); // userId -> { endpoints: { path: count }, totalRequests, firstSeen, lastSeen }
+
+// Middleware to track API usage (placed on authenticated routes)
+function trackApiUsage(req, res, next) {
+  if (req.user?.id) {
+    const userId = req.user.id;
+    let usage = apiUsageTracker.get(userId);
+    if (!usage) {
+      usage = { endpoints: {}, totalRequests: 0, firstSeen: new Date().toISOString(), lastSeen: null, dailyCounts: {} };
+      apiUsageTracker.set(userId, usage);
+    }
+    usage.totalRequests++;
+    usage.lastSeen = new Date().toISOString();
+
+    const pathKey = `${req.method} ${req.path}`;
+    usage.endpoints[pathKey] = (usage.endpoints[pathKey] || 0) + 1;
+
+    const today = new Date().toISOString().slice(0, 10);
+    usage.dailyCounts[today] = (usage.dailyCounts[today] || 0) + 1;
+
+    // Trim daily counts older than 30 days
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    for (const day of Object.keys(usage.dailyCounts)) {
+      if (day < cutoff) delete usage.dailyCounts[day];
+    }
+  }
+  next();
+}
+
+app.use('/api', trackApiUsage);
+
+app.get('/api/admin/api-usage/:userId', authMiddleware, (req, res) => {
+  const { userId } = req.params;
+  const usage = apiUsageTracker.get(userId);
+
+  if (!usage) {
+    return res.json({ success: true, userId, usage: null, message: 'No API usage recorded for this user' });
+  }
+
+  // Sort endpoints by usage
+  const topEndpoints = Object.entries(usage.endpoints)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20)
+    .map(([endpoint, count]) => ({ endpoint, count }));
+
+  res.json({
+    success: true,
+    userId,
+    usage: {
+      totalRequests: usage.totalRequests,
+      firstSeen: usage.firstSeen,
+      lastSeen: usage.lastSeen,
+      topEndpoints,
+      dailyCounts: usage.dailyCounts,
+      uniqueEndpoints: Object.keys(usage.endpoints).length,
+    },
+  });
+});
+
+app.get('/api/admin/api-usage', authMiddleware, (req, res) => {
+  const { limit = 25 } = req.query;
+  const safeLimit = Math.min(Math.max(1, parseInt(limit)), 100);
+
+  const allUsers = [];
+  for (const [userId, usage] of apiUsageTracker) {
+    allUsers.push({ userId, totalRequests: usage.totalRequests, lastSeen: usage.lastSeen, uniqueEndpoints: Object.keys(usage.endpoints).length });
+  }
+
+  allUsers.sort((a, b) => b.totalRequests - a.totalRequests);
+
+  res.json({
+    success: true,
+    users: allUsers.slice(0, safeLimit),
+    totalTrackedUsers: allUsers.length,
+    totalRequests: allUsers.reduce((sum, u) => sum + u.totalRequests, 0),
+  });
+});
+
 // ── Feature 20: Server startup banner with configuration summary ──────────────
 
 const PORT = process.env.PORT || process.env.SERVER_PORT || 3001;

@@ -1,18 +1,51 @@
 // Inline @handle text link that opens a user's profile on click.
 // Animated underline on hover. Stops event propagation so parent card clicks don't also fire.
-// Includes: #21 Inline avatar, #22 Follow status indicator, #23 Tooltip with mini profile,
-// #24 Click ripple effect, #25 Blocked user indicator.
+// Includes: #21 Inline avatar, #22 Follow status indicator, #23 Context menu on right-click,
+// #24 Copy profile URL, #25 Report user option.
 import { useState, useRef, useCallback } from 'react';
 import Avatar from './ui/Avatar';
 import { getProfile } from '../utils/helpers';
 
-export default function UserLink({ username, onViewUser, className = "", verified = false, isFollowing = false, isBlocked = false }) {
+export default function UserLink({ username, onViewUser, className = "", verified = false, isFollowing = false, isBlocked = false, onReport }) {
   // All hooks declared before any conditional returns
   const [showTooltip, setShowTooltip] = useState(false);
   const [ripple, setRipple] = useState(null);
+  // #23 — Context menu state
+  const [contextMenu, setContextMenu] = useState(null);
+  // #24 — Copy URL feedback
+  const [showCopied, setShowCopied] = useState(false);
   const hoverTimeout = useRef(null);
   const linkRef = useRef(null);
   const p = getProfile(username);
+
+  // #23 — Context menu on right-click
+  const handleContextMenu = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, []);
+
+  // Close context menu
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  // #24 — Copy profile URL
+  const handleCopyProfileUrl = useCallback((e) => {
+    e?.stopPropagation();
+    const url = `${window.location.origin}/user/${username}`;
+    navigator.clipboard.writeText(url).catch(() => {});
+    setShowCopied(true);
+    setTimeout(() => setShowCopied(false), 1500);
+    setContextMenu(null);
+  }, [username]);
+
+  // #25 — Report user
+  const handleReport = useCallback((e) => {
+    e?.stopPropagation();
+    setContextMenu(null);
+    onReport?.(username);
+  }, [username, onReport]);
 
   // #23 — Tooltip handlers
   const handleMouseEnter = useCallback(() => {
@@ -61,6 +94,7 @@ export default function UserLink({ username, onViewUser, className = "", verifie
     <span
       ref={linkRef}
       onClick={handleClick}
+      onContextMenu={handleContextMenu}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       className={`text-gs-accent font-semibold cursor-pointer text-xs relative inline-flex items-center gap-1 group/link overflow-hidden ${className}`}
@@ -136,6 +170,56 @@ export default function UserLink({ username, onViewUser, className = "", verifie
             <span className="block mt-1.5 text-[9px] text-gs-accent font-semibold">Following</span>
           )}
         </span>
+      )}
+
+      {/* #24 — Copy profile URL feedback */}
+      {showCopied && (
+        <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gs-accent bg-gs-surface border border-gs-border rounded px-2 py-0.5 whitespace-nowrap animate-fade-in z-50">
+          URL copied!
+        </span>
+      )}
+
+      {/* #23 — Context menu on right-click */}
+      {contextMenu && (
+        <>
+          {/* Backdrop to close menu */}
+          <span
+            className="fixed inset-0 z-40"
+            onClick={closeContextMenu}
+            onContextMenu={(e) => { e.preventDefault(); closeContextMenu(); }}
+          />
+          <span
+            className="fixed bg-gs-surface border border-gs-border rounded-lg shadow-2xl z-50 py-1 min-w-[150px] animate-fade-in"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* View Profile */}
+            <button
+              onClick={(e) => { e.stopPropagation(); setContextMenu(null); onViewUser(username); }}
+              className="w-full text-left px-3 py-1.5 bg-transparent border-none text-gs-muted text-[11px] cursor-pointer hover:bg-gs-accent/10 flex items-center gap-2 transition-colors"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              View Profile
+            </button>
+            {/* #24 — Copy Profile URL */}
+            <button
+              onClick={handleCopyProfileUrl}
+              className="w-full text-left px-3 py-1.5 bg-transparent border-none text-gs-muted text-[11px] cursor-pointer hover:bg-gs-accent/10 flex items-center gap-2 transition-colors"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              Copy Profile URL
+            </button>
+            {/* #25 — Report user */}
+            <span className="block border-t border-gs-border my-0.5" />
+            <button
+              onClick={handleReport}
+              className="w-full text-left px-3 py-1.5 bg-transparent border-none text-red-400/80 text-[11px] cursor-pointer hover:bg-red-500/10 flex items-center gap-2 transition-colors"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              Report User
+            </button>
+          </span>
+        </>
       )}
     </span>
   );

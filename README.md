@@ -17,7 +17,9 @@ Built across nine development waves, the platform includes 1,100+ improvements, 
 - [Architecture](#architecture)
 - [Vinyl Buddy Hardware](#vinyl-buddy-hardware)
 - [Deployment](#deployment)
+- [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
+- [Changelog](#changelog)
 - [License](#license)
 
 ---
@@ -619,6 +621,74 @@ The SSD1306 OLED connects via I2C on the default SDA/SCL pins (GPIO 21 / GPIO 22
 
 ---
 
+## Troubleshooting
+
+### Common Issues
+
+**Port 3001 already in use**
+
+Another process is using the backend port. Find and kill it:
+
+```bash
+lsof -ti:3001 | xargs kill -9
+npm run server
+```
+
+**Database connection refused**
+
+- Verify `DATABASE_URL` is set correctly in your `.env` file
+- Ensure PostgreSQL is running: `pg_isready`
+- If using Railway, check that the database service is active and the connection string is current
+- The server falls back to in-memory mode if no database is configured, so missing `DATABASE_URL` will not crash the server but data will not persist
+
+**Migrations fail on startup**
+
+- Check `GET /api/admin/migrations` to see which migrations have been applied
+- Ensure the database user has `CREATE TABLE` and `ALTER TABLE` permissions
+- If a migration is partially applied, check the `schema_migrations` table and manually resolve the state
+- Delete and recreate the database as a last resort: `DROP SCHEMA public CASCADE; CREATE SCHEMA public;`
+
+**Stripe webhooks not received**
+
+- Verify the webhook endpoint URL is correct: `https://your-backend.railway.app/api/webhook`
+- Check that `STRIPE_SECRET_KEY` matches the key for the same Stripe account as the webhook
+- In development, use the Stripe CLI to forward events: `stripe listen --forward-to localhost:3001/api/webhook`
+- Confirm the webhook is configured to send `checkout.session.completed` events
+
+**Vinyl Buddy device not pairing**
+
+- Ensure the device is powered on and displaying a 12-character code on the OLED screen
+- Check that the device is connected to the same Wi-Fi network that has internet access
+- Verify the backend URL in the firmware matches your GrooveStack server
+- Try power-cycling the device and waiting 30 seconds for the code to regenerate
+
+**Frontend shows blank screen**
+
+- Open browser DevTools (F12) and check the Console tab for errors
+- Clear localStorage: `localStorage.clear()` in the console, then refresh
+- Ensure `REACT_APP_API_URL` is set correctly if the backend is not on `localhost:3001`
+- Run `npm run build` to check for build errors
+
+**CORS errors in the browser**
+
+- Set `FRONTEND_URL` in your backend environment to your frontend's URL (e.g., `https://your-app.vercel.app`)
+- In development, the `proxy` field in `package.json` handles CORS automatically
+- Ensure the frontend and backend are not on different ports without the proxy configured
+
+**Discogs API rate limited**
+
+- The Discogs API allows 60 requests per minute for authenticated requests (with `DISCOGS_TOKEN`) and 25 for unauthenticated
+- Add a `DISCOGS_TOKEN` to your environment variables to increase the rate limit
+- Price lookups are cached to reduce API calls
+
+**AI grading returns errors**
+
+- Verify `ANTHROPIC_API_KEY` is set and valid
+- Image files must be under 10 MB in JPG or PNG format
+- The AI grading endpoint requires an active internet connection to reach the Claude API
+
+---
+
 ## Contributing
 
 1. Fork the repository
@@ -639,6 +709,103 @@ The SSD1306 OLED connects via I2C on the default SDA/SCL pins (GPIO 21 / GPIO 22
 ### Reporting Issues
 
 Open a GitHub issue with a clear description, steps to reproduce, and expected vs. actual behavior.
+
+---
+
+## Changelog
+
+### Wave 9 (March 2025)
+
+- Added marketplace tips constant with 20 tips for buyers and sellers
+- Added comprehensive vinyl care guide with 10 detailed care instructions
+- Added detailed Goldmine grading guide with examples, buyer tips, and price multipliers
+- Added keyboard shortcuts reference constant with navigation, action, and browsing shortcuts
+- Added app configuration constant with feature flags, limits, and defaults
+- Added social proof constant with testimonials, platform stats, and milestones
+- Added contextual onboarding tips for every major screen in the app
+- Added user-friendly error messages for all error categories (network, auth, marketplace, social, Vinyl Buddy)
+- Expanded record catalog with 20 new records covering classical, world, reggae, and blues
+- Added catalog number, weight, and pressing type fields to records
+- Added previous price field to records for price change indicators
+- Expanded social feed to 100 posts with reaction counts and view counts
+- Added side (A/B) and RPM (33/45/78) fields to all listening sessions
+- Added troubleshooting section to documentation
+
+### Wave 8 (January 2025)
+
+- Escrow and dispute system for full transaction protection
+- Condition verification log with community-verified reports
+- Provenance tracking for high-value records
+- Authenticity review queue with admin verification workflow
+- Advanced seller and buyer analytics dashboards
+- Collection merging and comparison across accounts
+- Scheduled messages for compose-now-send-later messaging
+- Conversation archiving for inbox management
+
+### Wave 7 (November 2024)
+
+- Country of pressing origins with 18 countries
+- Decade themes with visual styling for 1950s through 2020s
+- Community badges system (trade, listening, social, curation categories)
+- Seasonal events calendar (Record Store Day, Jazz Day, etc.)
+- Vinyl labels database with 18 major labels
+- Record format specifications with RPM and diameter data
+- Turntable brands reference with 10 manufacturers
+- FAQ database with 20 categorized questions and answers
+- Expanded record catalog to 200+ records across all genres
+
+### Wave 6 (September 2024)
+
+- AI condition grading via Claude vision analysis
+- Marketplace aggregate statistics
+- Onboarding walkthrough steps
+- Order lifecycle messages
+- Marketplace browse categories
+- Vinyl weight classes and pressing type classifications
+
+### Wave 5 (July 2024)
+
+- Social feed with posts, reviews, and photo sharing
+- Comments on records and posts with threaded replies
+- Follow system with activity feed
+- Content bookmarking
+- Trending content algorithm
+- Personalized recommendations engine
+
+### Wave 4 (May 2024)
+
+- Vinyl Buddy ESP32 hardware integration
+- Audio fingerprinting via AudD API
+- Listening history and statistics
+- Device pairing with activation codes
+- Achievement system and listening streaks
+- Now Playing display with equalizer visualization
+
+### Wave 3 (March 2024)
+
+- Direct messaging with real-time conversations
+- Wishlist with priority levels and price alerts
+- Notification system with categorized alerts
+- Email notification triggers
+- Stripe Checkout integration with webhook verification
+
+### Wave 2 (January 2024)
+
+- Marketplace with offers, counter-offers, and negotiation history
+- Discogs-powered pricing with market value lookups
+- Shipping rate calculator with address validation
+- Collection statistics and analytics dashboard
+- Pure SVG charts (line, bar, donut, heatmap)
+- Dark mode and accent color theming
+
+### Wave 1 (November 2023)
+
+- Initial launch with collection management
+- Full CRUD for vinyl records with rich metadata
+- JWT authentication with bcrypt password hashing
+- Record search with full-text search
+- User profiles with avatars and bios
+- Responsive layout with desktop sidebar and mobile bottom nav
 
 ---
 

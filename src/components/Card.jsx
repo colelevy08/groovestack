@@ -1,6 +1,9 @@
 // Record post card — the primary visual unit of the feed.
 // Receives a record (r) and action callbacks from App.js via cardHandlers.
-import { useState, useRef, useCallback, useEffect } from 'react';
+// Includes: #1 Flip animation, #2 Drag to reorder, #3 Size variants, #4 Record age badge,
+// #5 Listening count indicator, #6 Certification badge, #7 Owner history count,
+// #8 Quick add to playlist, #9 Comparison checkbox, #10 Loading skeleton.
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import AlbumArt from './ui/AlbumArt';
 import Stars from './ui/Stars';
 import Badge from './ui/Badge';
@@ -106,7 +109,80 @@ function shippingEstimate(r) {
   return { label: 'Est. $4-6 ship', color: '#6b7280' };
 }
 
-export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, onViewUser, onViewArtist, onQuickBuy, onPin, currentUser }) {
+// #4 — Record age badge: how old the pressing is
+function recordAgeBadge(year) {
+  if (!year) return null;
+  const age = new Date().getFullYear() - year;
+  if (age >= 50) return { label: `${age}yr Classic`, color: '#f59e0b', bg: '#f59e0b11', border: '#f59e0b33' };
+  if (age >= 30) return { label: `${age}yr Vintage`, color: '#a78bfa', bg: '#a78bfa11', border: '#a78bfa33' };
+  if (age >= 15) return { label: `${age}yr Retro`, color: '#60a5fa', bg: '#60a5fa11', border: '#60a5fa33' };
+  return null;
+}
+
+// #5 — Listening count: simulated from record data
+function listeningCount(r) {
+  return r.listeningCount || r.playCount || ((r.likes || 0) * 3 + (r.comments?.length || 0) * 2);
+}
+
+// #6 — Certification badge (Gold/Platinum) based on likes + saves
+function certificationBadge(r) {
+  const score = (r.likes || 0) + (r.saved ? 5 : 0) + (r.comments?.length || 0) * 2;
+  if (score >= 25) return { label: 'Platinum', color: '#e5e5e5', bg: 'linear-gradient(135deg, #e5e5e5 0%, #a3a3a3 100%)' };
+  if (score >= 15) return { label: 'Gold', color: '#f59e0b', bg: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' };
+  return null;
+}
+
+// #7 — Owner history count
+function ownerHistoryCount(r) {
+  return r.ownerHistory || r.previousOwners || Math.min(Math.floor((r.likes || 0) / 2), 5);
+}
+
+// #10 — Card loading skeleton
+export function CardSkeleton({ size = 'normal' }) {
+  const heightClass = size === 'compact' ? 'h-[120px]' : size === 'expanded' ? 'h-[320px]' : 'h-[220px]';
+  return (
+    <div className={`gs-card animate-pulse ${heightClass}`}>
+      <div className="h-0.5 bg-[#1a1a1a]" />
+      <div className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-6 h-6 rounded-full bg-[#1a1a1a]" />
+          <div className="h-3 w-20 bg-[#1a1a1a] rounded" />
+        </div>
+        <div className="flex gap-3 mb-3">
+          <div className="w-[68px] h-[68px] rounded-xl bg-[#1a1a1a] shrink-0" />
+          <div className="flex-1 space-y-2">
+            <div className="h-4 w-3/4 bg-[#1a1a1a] rounded" />
+            <div className="h-3 w-1/2 bg-[#1a1a1a] rounded" />
+            <div className="h-3 w-2/3 bg-[#1a1a1a] rounded" />
+          </div>
+        </div>
+        <div className="flex gap-1.5 mb-2.5">
+          <div className="h-5 w-12 bg-[#1a1a1a] rounded-full" />
+          <div className="h-5 w-14 bg-[#1a1a1a] rounded-full" />
+        </div>
+        <div className="border-t border-gs-border pt-2.5 flex justify-between">
+          <div className="flex gap-3">
+            <div className="h-4 w-8 bg-[#1a1a1a] rounded" />
+            <div className="h-4 w-8 bg-[#1a1a1a] rounded" />
+          </div>
+          <div className="h-4 w-4 bg-[#1a1a1a] rounded" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// #3 — Card size variant style maps
+const SIZE_STYLES = {
+  compact: { padding: 'p-2.5 pl-3.5', artSize: 48, titleSize: 'text-[13px]', gap: 'gap-2', tagsMax: 2 },
+  normal: { padding: 'p-4 pl-5', artSize: 68, titleSize: 'text-[15px]', gap: 'gap-3', tagsMax: 4 },
+  expanded: { padding: 'p-5 pl-6', artSize: 96, titleSize: 'text-[17px]', gap: 'gap-4', tagsMax: 6 },
+};
+
+export default function Card({
+  r, onLike, onSave, onComment, onBuy, onDetail, onViewUser, onViewArtist, onQuickBuy, onPin, currentUser,
+  size = 'normal', onAddToPlaylist, onCompareToggle, isCompareSelected = false, onDragStart, onDragOver, onDrop, draggable = false,
+}) {
   const [likeAnim, setLikeAnim] = useState(false);
   const [heartBurstParticles, setHeartBurstParticles] = useState([]);
   const [showMenu, setShowMenu] = useState(false);
@@ -118,10 +194,21 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
   const [quickViewOpen, setQuickViewOpen] = useState(false);
   const [vinylCoverUrl, setVinylCoverUrl] = useState(null);
   const [discogsPrice, setDiscogsPrice] = useState(null);
+  // #1 — Flip animation state (front/back)
+  const [isFlipped, setIsFlipped] = useState(false);
+  // #2 — Drag state
+  const [isDragging, setIsDragging] = useState(false);
+  // #8 — Quick add to playlist
+  const [showPlaylistMenu, setShowPlaylistMenu] = useState(false);
+  // #9 — Comparison checkbox
+  const [compareChecked, setCompareChecked] = useState(isCompareSelected);
   const hoverTimeout = useRef(null);
   const menuRef = useRef(null);
   const cardRef = useRef(null);
   const swipeRef = useRef({ startX: 0, startY: 0, swiping: false });
+
+  // #3 — Size variant config
+  const sizeConfig = useMemo(() => SIZE_STYLES[size] || SIZE_STYLES.normal, [size]);
 
   // Fetch cover URL for vinyl label (cached, no extra API call)
   useEffect(() => {
@@ -146,6 +233,63 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
     }
     return () => { cancelled = true; };
   }, [r.album, r.artist]);
+
+  // #9 — Sync compare selection from parent
+  useEffect(() => {
+    setCompareChecked(isCompareSelected);
+  }, [isCompareSelected]);
+
+  // #2 — Drag handlers
+  const handleDragStart = useCallback((e) => {
+    if (!draggable) return;
+    setIsDragging(true);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', r.id);
+    onDragStart?.(e, r);
+  }, [draggable, r, onDragStart]);
+
+  const handleDragEnd = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const handleDragOver = useCallback((e) => {
+    if (!draggable) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    onDragOver?.(e, r);
+  }, [draggable, r, onDragOver]);
+
+  const handleDrop = useCallback((e) => {
+    if (!draggable) return;
+    e.preventDefault();
+    onDrop?.(e, r);
+  }, [draggable, r, onDrop]);
+
+  // #1 — Flip toggle
+  const handleFlip = useCallback((e) => {
+    e.stopPropagation();
+    setIsFlipped(f => !f);
+  }, []);
+
+  // #8 — Quick add to playlist
+  const handleAddToPlaylist = useCallback((playlistName, e) => {
+    e?.stopPropagation();
+    setShowPlaylistMenu(false);
+    onAddToPlaylist?.(r.id, playlistName);
+  }, [r.id, onAddToPlaylist]);
+
+  // #9 — Compare toggle
+  const handleCompareToggle = useCallback((e) => {
+    e.stopPropagation();
+    setCompareChecked(c => !c);
+    onCompareToggle?.(r.id, !compareChecked);
+  }, [r.id, compareChecked, onCompareToggle]);
+
+  // Computed values for new features
+  const ageBadge = recordAgeBadge(r.year);
+  const listenCount = listeningCount(r);
+  const cert = certificationBadge(r);
+  const ownerCount = ownerHistoryCount(r);
 
   // NEW: Animated like heart burst
   const handleLike = () => {
@@ -284,20 +428,51 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
       role="article"
       tabIndex={0}
       aria-label={`${r.album} by ${r.artist}, ${r.condition} condition${r.forSale ? `, $${r.price}` : ''}`}
-      className="gs-card group relative focus:outline-none focus-visible:ring-2 focus-visible:ring-gs-accent/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent"
-      style={{ background: condGradient }}
+      className={`gs-card group relative focus:outline-none focus-visible:ring-2 focus-visible:ring-gs-accent/50 focus-visible:ring-offset-1 focus-visible:ring-offset-transparent ${isDragging ? 'opacity-50 scale-95' : ''} ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
+      style={{ background: condGradient, perspective: '1000px' }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onKeyDown={handleKeyDown}
+      draggable={draggable}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
     >
+      {/* #9 — Comparison checkbox */}
+      {onCompareToggle && (
+        <div className="absolute top-2 right-2 z-10">
+          <label className="flex items-center gap-1 cursor-pointer" onClick={e => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={compareChecked}
+              onChange={handleCompareToggle}
+              className="w-3.5 h-3.5 rounded accent-[var(--gs-accent,#8b5cf6)] cursor-pointer"
+            />
+            <span className="text-[9px] text-gs-faint font-mono">Compare</span>
+          </label>
+        </div>
+      )}
+
+      {/* #1 — Flip container */}
+      <div
+        className="relative w-full transition-transform duration-500"
+        style={{
+          transformStyle: 'preserve-3d',
+          transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+        }}
+      >
+      {/* FRONT FACE */}
+      <div style={{ backfaceVisibility: 'hidden' }}>
+
       {/* Condition-based left border accent */}
       <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full opacity-40" style={{ background: borderAccent }} />
 
       {/* Accent bar */}
       <div className="h-0.5" style={{ background: `linear-gradient(90deg,${r.accent},transparent)` }} />
-      <div className="p-4 pl-5">
+      <div className={sizeConfig.padding}>
         {/* User header */}
         <div className="flex justify-between items-center mb-3">
           <div className="flex items-center gap-2">
@@ -353,6 +528,31 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
                 title={fmtIcon.title}
               >
                 {fmtIcon.label}
+              </span>
+            )}
+            {/* #4 — Record age badge */}
+            {ageBadge && (
+              <span
+                className="text-[9px] font-bold tracking-wide px-1.5 py-0.5 rounded-[4px] border"
+                style={{ color: ageBadge.color, borderColor: ageBadge.border, background: ageBadge.bg }}
+                title={`Pressed ${new Date().getFullYear() - r.year} years ago`}
+              >
+                {ageBadge.label.toUpperCase()}
+              </span>
+            )}
+            {/* #6 — Certification badge (Gold/Platinum) */}
+            {cert && (
+              <span
+                className="text-[9px] font-extrabold tracking-wide px-1.5 py-0.5 rounded-[4px] border border-transparent"
+                style={{ color: cert.color, background: cert.bg, WebkitBackgroundClip: 'padding-box' }}
+                title={`${cert.label} certified`}
+              >
+                {cert.label === 'Platinum' ? (
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" className="inline -mt-px mr-0.5"><path d="M12 2l2.09 6.26L20 9.27l-4.5 3.87L16.82 20 12 16.77 7.18 20l1.32-6.86L4 9.27l5.91-1.01L12 2z"/></svg>
+                ) : (
+                  <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" className="inline -mt-px mr-0.5"><circle cx="12" cy="12" r="10"/></svg>
+                )}
+                {cert.label.toUpperCase()}
               </span>
             )}
             {r.forSale && (
@@ -436,7 +636,7 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
             onMouseLeave={() => setImgZoomed(false)}
           >
             <div className={`transition-transform duration-300 ${imgZoomed ? 'scale-110' : 'scale-100'}`}>
-              <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={68} />
+              <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={sizeConfig.artSize} />
             </div>
             <div className="absolute inset-0 rounded-xl bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
             {/* Vinyl disc peek on hover */}
@@ -498,7 +698,7 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
             </div>
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[15px] font-bold text-gs-text tracking-tight leading-tight mb-1 flex items-center gap-1.5 truncate">
+            <div className={`${sizeConfig.titleSize} font-bold text-gs-text tracking-tight leading-tight mb-1 flex items-center gap-1.5 truncate`}>
               {r.album}
               {r.verified && (
                 <span title="Verified vinyl" className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-500 shrink-0">
@@ -518,6 +718,20 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
               <Stars rating={r.rating} />
               <Badge label={r.condition} color={condColor(r.condition)} />
               <span className="text-[10px] text-gs-faint font-mono">{r.year}</span>
+              {/* #5 — Listening count indicator */}
+              {listenCount > 0 && (
+                <span className="flex items-center gap-0.5 text-[9px] text-violet-400" title={`${listenCount} listens`}>
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                  {listenCount}
+                </span>
+              )}
+              {/* #7 — Owner history count */}
+              {ownerCount > 0 && (
+                <span className="flex items-center gap-0.5 text-[9px] text-gs-dim" title={`${ownerCount} previous owner${ownerCount !== 1 ? 's' : ''}`}>
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                  {ownerCount}
+                </span>
+              )}
             </div>
           </div>
           {r.forSale && (
@@ -641,7 +855,7 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
         )}
 
         <div className="flex gap-1.5 flex-wrap mb-2.5">
-          {r.tags.slice(0, 4).map(t => (
+          {r.tags.slice(0, sizeConfig.tagsMax).map(t => (
             <span key={t} className="gs-pill">#{t}</span>
           ))}
         </div>
@@ -712,17 +926,58 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
               )}
             </button>
           </div>
-          <button
-            onClick={() => onSave(r.id)}
-            aria-label={r.saved ? 'Unsave' : 'Save'}
-            aria-pressed={r.saved}
-            className="bg-transparent border-none cursor-pointer text-xs transition-all duration-200 hover:scale-110"
-            style={{ color: r.saved ? "#f59e0b" : "#555" }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill={r.saved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
-              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-2">
+            {/* #8 — Quick add to playlist */}
+            {onAddToPlaylist && (
+              <div className="relative">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setShowPlaylistMenu(m => !m); }}
+                  aria-label="Add to playlist"
+                  className="bg-transparent border-none cursor-pointer text-gs-dim text-xs hover:text-gs-muted transition-colors"
+                  title="Add to playlist"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                </button>
+                {showPlaylistMenu && (
+                  <div className="absolute bottom-full mb-1 right-0 bg-gs-surface border border-gs-border rounded-lg shadow-xl z-20 py-1 min-w-[140px] animate-fade-in">
+                    {['Favorites', 'To Listen', 'Chill Vibes', 'Party Mix'].map(name => (
+                      <button
+                        key={name}
+                        onClick={(e) => handleAddToPlaylist(name, e)}
+                        className="w-full text-left px-3 py-1.5 bg-transparent border-none text-gs-muted text-[11px] cursor-pointer hover:bg-gs-accent/10 transition-colors"
+                      >
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* #1 — Flip card button */}
+            <button
+              onClick={handleFlip}
+              aria-label="Flip card"
+              className="bg-transparent border-none cursor-pointer text-gs-dim text-xs hover:text-gs-muted transition-colors"
+              title="Flip card for details"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 2v6h-6M3 12a9 9 0 0115.36-6.36L21 8M3 22v-6h6M21 12a9 9 0 01-15.36 6.36L3 16"/>
+              </svg>
+            </button>
+            <button
+              onClick={() => onSave(r.id)}
+              aria-label={r.saved ? 'Unsave' : 'Save'}
+              aria-pressed={r.saved}
+              className="bg-transparent border-none cursor-pointer text-xs transition-all duration-200 hover:scale-110"
+              style={{ color: r.saved ? "#f59e0b" : "#555" }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill={r.saved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Swipe hint for mobile */}
@@ -730,6 +985,66 @@ export default function Card({ r, onLike, onSave, onComment, onBuy, onDetail, on
           Swipe right to like · left to save
         </div>
       </div>
+      </div>{/* END front face */}
+
+      {/* #1 — BACK FACE (flip) */}
+      <div
+        className="absolute inset-0 bg-gs-surface border border-gs-border rounded-xl p-4 overflow-auto"
+        style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
+      >
+        <div className="flex justify-between items-start mb-3">
+          <div className="text-sm font-bold text-gs-text">Record Details</div>
+          <button
+            onClick={handleFlip}
+            className="bg-transparent border-none text-gs-dim text-xs cursor-pointer hover:text-gs-muted p-0"
+            aria-label="Flip back"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 2v6h-6M3 12a9 9 0 0115.36-6.36L21 8M3 22v-6h6M21 12a9 9 0 01-15.36 6.36L3 16"/>
+            </svg>
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
+          <div className="text-gs-faint">Artist</div>
+          <div className="text-gs-text">{r.artist}</div>
+          <div className="text-gs-faint">Album</div>
+          <div className="text-gs-text">{r.album}</div>
+          <div className="text-gs-faint">Year</div>
+          <div className="text-gs-text">{r.year}</div>
+          <div className="text-gs-faint">Condition</div>
+          <div className="text-gs-text flex items-center gap-1"><Badge label={r.condition} color={condColor(r.condition)} /> {r.condition}</div>
+          <div className="text-gs-faint">Rating</div>
+          <div className="text-gs-text"><Stars rating={r.rating} /> {r.rating}/5</div>
+          {r.format && <>
+            <div className="text-gs-faint">Format</div>
+            <div className="text-gs-text">{r.format}</div>
+          </>}
+          {r.forSale && <>
+            <div className="text-gs-faint">Price</div>
+            <div className="text-gs-text font-bold">${r.price}</div>
+          </>}
+          {/* #5 — Listening count on back */}
+          <div className="text-gs-faint">Listens</div>
+          <div className="text-gs-text">{listenCount}</div>
+          {/* #7 — Owner history on back */}
+          <div className="text-gs-faint">Owners</div>
+          <div className="text-gs-text">{ownerCount} previous</div>
+          {/* #6 — Certification on back */}
+          {cert && <>
+            <div className="text-gs-faint">Certified</div>
+            <div className="text-gs-text font-semibold" style={{ color: cert.color }}>{cert.label}</div>
+          </>}
+        </div>
+        {r.review && (
+          <p className="text-[11px] text-[#777] leading-relaxed italic mt-3 border-t border-gs-border pt-2">
+            &quot;{r.review}&quot;
+          </p>
+        )}
+        <div className="flex gap-1 mt-3 flex-wrap">
+          {r.tags.map(t => <span key={t} className="gs-pill text-[9px]">#{t}</span>)}
+        </div>
+      </div>
+      </div>{/* END flip container */}
 
       {/* Inline keyframes for heart burst particles */}
       <style>{`

@@ -4,7 +4,9 @@
 // focus management (returns focus to trigger element on close),
 // swipe-down-to-close on mobile, modal stacking with incremented z-index,
 // size presets (xs-fullscreen), confirmation variant, multi-step wizard,
-// minimize to corner, and modal history (back button between modals).
+// minimize to corner, modal history (back button between modals),
+// drawer variant (slides from side), bottom sheet variant (mobile),
+// and loading state with skeleton placeholder.
 import { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react';
 
 const SIZE_MAP = {
@@ -55,6 +57,23 @@ export function ModalHistoryProvider({ children }) {
 
 export function useModalHistory() {
   return useContext(ModalHistoryContext);
+}
+
+// --- Modal Loading Skeleton ---
+// Shows a skeleton placeholder while modal content is loading.
+function ModalSkeleton() {
+  return (
+    <div className="p-5 space-y-4 animate-pulse">
+      <div className="h-4 bg-[#1a1a1a] rounded w-3/4" style={{ background: 'linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.8s ease-in-out infinite' }} />
+      <div className="h-3 bg-[#1a1a1a] rounded w-full" style={{ background: 'linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.8s ease-in-out infinite' }} />
+      <div className="h-3 bg-[#1a1a1a] rounded w-5/6" style={{ background: 'linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.8s ease-in-out infinite' }} />
+      <div className="h-20 bg-[#1a1a1a] rounded w-full mt-2" style={{ background: 'linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.8s ease-in-out infinite' }} />
+      <div className="flex gap-2 mt-4">
+        <div className="h-9 bg-[#1a1a1a] rounded-lg flex-1" style={{ background: 'linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.8s ease-in-out infinite' }} />
+        <div className="h-9 bg-[#1a1a1a] rounded-lg w-24" style={{ background: 'linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%)', backgroundSize: '200% 100%', animation: 'shimmer 1.8s ease-in-out infinite' }} />
+      </div>
+    </div>
+  );
 }
 
 // --- Confirmation Modal ---
@@ -202,8 +221,261 @@ export function WizardModal({
   );
 }
 
+// --- Drawer Variant ---
+// Slides in from the left or right side of the screen.
+export function DrawerModal({
+  open,
+  onClose,
+  title,
+  children,
+  side = 'right', // 'left' | 'right'
+  width = '380px',
+  loading = false,
+}) {
+  const [visible, setVisible] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [stackIndex, setStackIndex] = useState(0);
+  const drawerRef = useRef(null);
+  const triggerRef = useRef(null);
+
+  useEffect(() => {
+    if (open) {
+      triggerRef.current = document.activeElement;
+      setClosing(false);
+      modalStackCount++;
+      setStackIndex(modalStackCount);
+      requestAnimationFrame(() => setVisible(true));
+    } else {
+      setVisible(false);
+    }
+    return () => {
+      if (open) modalStackCount = Math.max(0, modalStackCount - 1);
+    };
+  }, [open]);
+
+  const handleClose = useCallback(() => {
+    setClosing(true);
+    setTimeout(() => {
+      setClosing(false);
+      setVisible(false);
+      onClose();
+      if (triggerRef.current && typeof triggerRef.current.focus === 'function') {
+        try { triggerRef.current.focus(); } catch { /* element may be unmounted */ }
+      }
+    }, 250);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') { handleClose(); return; }
+      if (e.key === 'Tab' && drawerRef.current) {
+        const focusable = drawerRef.current.querySelectorAll(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+        } else {
+          if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, handleClose]);
+
+  useEffect(() => {
+    if (open && visible && drawerRef.current) {
+      const focusable = drawerRef.current.querySelectorAll(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length > 0) setTimeout(() => focusable[0].focus(), 50);
+    }
+  }, [open, visible]);
+
+  if (!open && !closing) return null;
+
+  const zIndex = 1000 + (stackIndex * 10);
+  const isLeft = side === 'left';
+  const slideFrom = isLeft ? '-100%' : '100%';
+  const slideTo = '0%';
+
+  return (
+    <div
+      className={`fixed inset-0 bg-black/70 backdrop-blur-sm ${closing ? 'animate-overlay-out' : 'animate-overlay-in'}`}
+      style={{ zIndex }}
+      onClick={e => e.target === e.currentTarget && handleClose()}
+    >
+      <div
+        ref={drawerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? 'drawer-title' : undefined}
+        className={`fixed top-0 ${isLeft ? 'left-0' : 'right-0'} h-full bg-gs-surface border-${isLeft ? 'r' : 'l'} border-gs-border shadow-2xl flex flex-col overflow-hidden`}
+        style={{
+          width,
+          maxWidth: '90vw',
+          transform: visible && !closing ? `translateX(${slideTo})` : `translateX(${slideFrom})`,
+          transition: 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
+        }}
+      >
+        {/* Header */}
+        <div className="flex justify-between items-center px-5 py-4 border-b border-gs-border shrink-0">
+          <h2 id="drawer-title" className="text-[15px] font-bold tracking-tight text-gs-text m-0">{title}</h2>
+          <button
+            onClick={handleClose}
+            aria-label="Close"
+            className="w-7 h-7 rounded-md bg-[#1a1a1a] border-none cursor-pointer text-gs-muted text-lg flex items-center justify-center hover:bg-[#222] hover:text-gs-text transition-colors"
+          >
+            x
+          </button>
+        </div>
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-5">
+          {loading ? <ModalSkeleton /> : children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Bottom Sheet Variant ---
+// Slides up from the bottom, ideal for mobile interactions.
+export function BottomSheetModal({
+  open,
+  onClose,
+  title,
+  children,
+  height = 'auto', // 'auto' | 'half' | 'full' | px value
+  loading = false,
+}) {
+  const [visible, setVisible] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [stackIndex, setStackIndex] = useState(0);
+  const sheetRef = useRef(null);
+  const triggerRef = useRef(null);
+  const touchStartY = useRef(null);
+  const [swipeOffset, setSwipeOffset] = useState(0);
+
+  useEffect(() => {
+    if (open) {
+      triggerRef.current = document.activeElement;
+      setClosing(false);
+      modalStackCount++;
+      setStackIndex(modalStackCount);
+      requestAnimationFrame(() => setVisible(true));
+    } else {
+      setVisible(false);
+    }
+    return () => {
+      if (open) modalStackCount = Math.max(0, modalStackCount - 1);
+    };
+  }, [open]);
+
+  const handleClose = useCallback(() => {
+    setClosing(true);
+    setSwipeOffset(0);
+    setTimeout(() => {
+      setClosing(false);
+      setVisible(false);
+      onClose();
+      if (triggerRef.current && typeof triggerRef.current.focus === 'function') {
+        try { triggerRef.current.focus(); } catch { /* element may be unmounted */ }
+      }
+    }, 250);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') handleClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, handleClose]);
+
+  const onTouchStart = useCallback((e) => {
+    touchStartY.current = e.touches[0].clientY;
+  }, []);
+
+  const onTouchMove = useCallback((e) => {
+    if (touchStartY.current === null) return;
+    const delta = e.touches[0].clientY - touchStartY.current;
+    if (delta > 0) setSwipeOffset(delta);
+  }, []);
+
+  const onTouchEnd = useCallback(() => {
+    if (swipeOffset > 100) {
+      handleClose();
+    } else {
+      setSwipeOffset(0);
+    }
+    touchStartY.current = null;
+  }, [swipeOffset, handleClose]);
+
+  if (!open && !closing) return null;
+
+  const zIndex = 1000 + (stackIndex * 10);
+
+  const resolvedHeight = height === 'half' ? '50vh' : height === 'full' ? '90vh' : height;
+
+  return (
+    <div
+      className={`fixed inset-0 bg-black/70 backdrop-blur-sm ${closing ? 'animate-overlay-out' : 'animate-overlay-in'}`}
+      style={{ zIndex }}
+      onClick={e => e.target === e.currentTarget && handleClose()}
+    >
+      <div
+        ref={sheetRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? 'sheet-title' : undefined}
+        className="fixed bottom-0 left-0 right-0 bg-gs-surface rounded-t-2xl shadow-2xl flex flex-col overflow-hidden"
+        style={{
+          maxHeight: '90vh',
+          height: resolvedHeight !== 'auto' ? resolvedHeight : undefined,
+          transform: visible && !closing
+            ? `translateY(${swipeOffset}px)`
+            : 'translateY(100%)',
+          transition: swipeOffset > 0 ? 'none' : 'transform 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
+          opacity: swipeOffset > 0 ? Math.max(0.5, 1 - swipeOffset / 400) : undefined,
+        }}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        {/* Drag handle */}
+        <div className="flex justify-center pt-3 pb-1">
+          <div className="w-10 h-1 rounded-full bg-gs-border-hover" />
+        </div>
+        {/* Header */}
+        <div className="flex justify-between items-center px-5 py-3 border-b border-gs-border shrink-0">
+          <h2 id="sheet-title" className="text-[15px] font-bold tracking-tight text-gs-text m-0">{title}</h2>
+          <button
+            onClick={handleClose}
+            aria-label="Close"
+            className="w-7 h-7 rounded-md bg-[#1a1a1a] border-none cursor-pointer text-gs-muted text-lg flex items-center justify-center hover:bg-[#222] hover:text-gs-text transition-colors"
+          >
+            x
+          </button>
+        </div>
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto p-5">
+          {loading ? <ModalSkeleton /> : children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // --- Main Modal Component ---
-export default function Modal({ open, onClose, title, children, width = "480px", size }) {
+export default function Modal({
+  open, onClose, title, children, width = "480px", size,
+  loading = false, // Improvement 3: Loading state with skeleton
+}) {
   const [visible, setVisible] = useState(false);
   const [closing, setClosing] = useState(false);
   const [stackIndex, setStackIndex] = useState(0);
@@ -446,7 +718,9 @@ export default function Modal({ open, onClose, title, children, width = "480px",
             </button>
           </div>
         </div>
-        <div className="gs-modal-body p-5">{children}</div>
+        <div className="gs-modal-body p-5">
+          {loading ? <ModalSkeleton /> : children}
+        </div>
       </div>
     </div>
   );

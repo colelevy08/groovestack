@@ -548,6 +548,67 @@ export default function ProfileEditModal({ open, onClose, profile, onSave, curre
             </div>
           </div>
 
+          {/* [Improvement #29] Profile SEO Optimization Tips */}
+          <div className="border-t border-gs-border mt-4 pt-4 mb-4">
+            <div className="gs-label mb-3">SEO OPTIMIZATION TIPS</div>
+            <div className="p-3 bg-[#0a0a0a] rounded-lg border border-gs-border space-y-2">
+              {[
+                { check: !!displayName && displayName.length >= 3, tip: 'Display name is set (3+ chars)', fix: 'Add a recognizable display name' },
+                { check: !!bio && bio.length >= 50, tip: 'Bio is descriptive (50+ chars)', fix: 'Write a more detailed bio for better search visibility' },
+                { check: (bio || '').includes('vinyl') || (bio || '').includes('record') || (bio || '').includes('music'), tip: 'Bio contains collector keywords', fix: 'Include terms like "vinyl", "record", or "collector" in your bio' },
+                { check: !!location, tip: 'Location is set for local discovery', fix: 'Add your location so nearby collectors can find you' },
+                { check: !!avatarUrl, tip: 'Profile photo uploaded', fix: 'Upload a profile photo to build trust' },
+                { check: Object.values(socialLinks).some(Boolean), tip: 'Social links added for cross-promotion', fix: 'Link your Discogs or Instagram for credibility' },
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <span className={`text-[10px] shrink-0 mt-0.5 ${item.check ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {item.check ? '\u2713' : '\u25CB'}
+                  </span>
+                  <span className={`text-[11px] ${item.check ? 'text-gs-muted' : 'text-amber-400'}`}>
+                    {item.check ? item.tip : item.fix}
+                  </span>
+                </div>
+              ))}
+              <div className="text-[9px] text-gs-faint mt-2">
+                SEO score: {[displayName && displayName.length >= 3, bio && bio.length >= 50, (bio || '').match(/vinyl|record|music|collector/i), location, avatarUrl, Object.values(socialLinks).some(Boolean)].filter(Boolean).length}/6 optimizations complete
+              </div>
+            </div>
+          </div>
+
+          {/* [Improvement #30] Profile A/B Test Results Viewer */}
+          <div className="border-t border-gs-border mt-4 pt-4 mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="gs-label">A/B TEST RESULTS</div>
+            </div>
+            <div className="p-3 bg-[#0a0a0a] rounded-lg border border-gs-border">
+              <div className="text-[11px] text-gs-muted mb-3">Performance comparison of your profile variants:</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-[#111] rounded-lg p-2.5 border border-gs-accent/20">
+                  <div className="text-[10px] text-gs-accent font-mono mb-1.5">VARIANT A (Current)</div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px]"><span className="text-gs-dim">Profile views</span><span className="text-gs-muted font-bold">342</span></div>
+                    <div className="flex justify-between text-[10px]"><span className="text-gs-dim">Click-through</span><span className="text-emerald-400 font-bold">12.4%</span></div>
+                    <div className="flex justify-between text-[10px]"><span className="text-gs-dim">New followers</span><span className="text-gs-muted font-bold">18</span></div>
+                    <div className="flex justify-between text-[10px]"><span className="text-gs-dim">Offers received</span><span className="text-gs-muted font-bold">7</span></div>
+                  </div>
+                </div>
+                <div className="bg-[#111] rounded-lg p-2.5 border border-purple-500/20">
+                  <div className="text-[10px] text-purple-400 font-mono mb-1.5">VARIANT B</div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px]"><span className="text-gs-dim">Profile views</span><span className="text-gs-muted font-bold">287</span></div>
+                    <div className="flex justify-between text-[10px]"><span className="text-gs-dim">Click-through</span><span className="text-amber-400 font-bold">9.8%</span></div>
+                    <div className="flex justify-between text-[10px]"><span className="text-gs-dim">New followers</span><span className="text-gs-muted font-bold">12</span></div>
+                    <div className="flex justify-between text-[10px]"><span className="text-gs-dim">Offers received</span><span className="text-gs-muted font-bold">4</span></div>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-2 px-2 py-1.5 bg-emerald-500/[0.06] border border-emerald-500/15 rounded-lg">
+                <div className="text-[10px] text-emerald-400 font-semibold">Variant A is outperforming by 19%</div>
+                <div className="text-[9px] text-gs-faint">Based on simulated data. Real analytics coming soon.</div>
+              </div>
+            </div>
+          </div>
+
           {/* [Improvement 14] Profile Analytics Preview */}
           <div className="border-t border-gs-border mt-4 pt-4 mb-4">
             <div className="flex items-center justify-between mb-3">

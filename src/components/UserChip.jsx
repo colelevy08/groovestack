@@ -2,17 +2,48 @@
 // Clicking it opens that user's profile via onViewUser (stops event propagation to avoid triggering parent clicks).
 // Used in Card.jsx as the author header on each record post.
 // Includes: #16 Reputation badge, #17 Activity indicator, #18 Quick action dropdown,
-// #19 Hover stats card enhancement, #20 Verified seller checkmark.
-import { useState, useRef } from 'react';
+// #19 Mini collection preview on hover, #20 Verified seller checkmark,
+// #21 Last active timestamp, #22 Trade count badge, #23 Listening now indicator (renamed from old numbering).
+import { useState, useRef, useMemo } from 'react';
 import Avatar from './ui/Avatar';
 import { getProfile } from '../utils/helpers';
 
-export default function UserChip({ username, onViewUser, onFollow, onMessage, showFollowBtn = false, mutualFriends = 0, forSaleCount = 0, followerCount = 0, verified = false }) {
+export default function UserChip({
+  username, onViewUser, onFollow, onMessage, showFollowBtn = false,
+  mutualFriends = 0, forSaleCount = 0, followerCount = 0, verified = false,
+  tradeCount = 0, lastActive = null, collectionPreview = null, listeningNow = null,
+}) {
   const p = getProfile(username);
   const [showPopup, setShowPopup] = useState(false);
   const [following, setFollowing] = useState(false);
   const [showActions, setShowActions] = useState(false);
   const hoverTimeout = useRef(null);
+
+  // #21 — Last active timestamp formatter
+  const lastActiveLabel = useMemo(() => {
+    if (!lastActive) return null;
+    const diff = Date.now() - new Date(lastActive).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'Active now';
+    if (mins < 60) return `Active ${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `Active ${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    return `Active ${days}d ago`;
+  }, [lastActive]);
+
+  // #19 — Mini collection preview data (simulated if not passed)
+  const miniCollection = useMemo(() => {
+    if (collectionPreview) return collectionPreview;
+    // Derive from username hash for demo
+    const hash = username.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    const genres = ['Jazz', 'Rock', 'Soul', 'Electronic', 'Hip-Hop', 'Classical'];
+    return {
+      count: (hash % 50) + 5,
+      topGenres: [genres[hash % 6], genres[(hash + 2) % 6]],
+      recentAlbums: [],
+    };
+  }, [username, collectionPreview]);
 
   // Online status (simulated from username hash)
   const isOnline = username.length % 3 !== 0;
@@ -105,6 +136,13 @@ export default function UserChip({ username, onViewUser, onFollow, onMessage, sh
                 {mutualFriends}
               </span>
             )}
+            {/* #22 — Trade count badge */}
+            {tradeCount > 0 && (
+              <span className="text-[8px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-1.5 py-px" title={`${tradeCount} completed trade${tradeCount !== 1 ? 's' : ''}`}>
+                <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="inline -mt-px mr-0.5"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+                {tradeCount}
+              </span>
+            )}
           </div>
           <div className="text-[10px] text-gs-dim font-mono flex items-center gap-1">
             @{username}
@@ -114,6 +152,17 @@ export default function UserChip({ username, onViewUser, onFollow, onMessage, sh
                 <span>{currentActivity.icon}</span>
                 <span className="hidden sm:inline">{currentActivity.label}</span>
               </span>
+            )}
+            {/* #23 — Listening now indicator */}
+            {listeningNow && (
+              <span className="inline-flex items-center gap-0.5 text-[8px] text-green-400 animate-pulse" title={`Listening to ${listeningNow}`}>
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="1" y="10" width="3" height="10" rx="1"/><rect x="6" y="6" width="3" height="14" rx="1"/><rect x="11" y="3" width="3" height="18" rx="1"/><rect x="16" y="8" width="3" height="12" rx="1"/><rect x="21" y="12" width="3" height="8" rx="1"/></svg>
+                <span className="hidden sm:inline truncate max-w-[60px]">{listeningNow}</span>
+              </span>
+            )}
+            {/* #21 — Last active timestamp */}
+            {lastActiveLabel && !isOnline && (
+              <span className="text-[8px] text-gs-faint">{lastActiveLabel}</span>
             )}
           </div>
         </div>
@@ -226,6 +275,49 @@ export default function UserChip({ username, onViewUser, onFollow, onMessage, sh
               <span className={`inline-flex items-center gap-1 text-[9px] font-bold border rounded-full px-2 py-0.5 ${repBadge.color}`}>
                 {repBadge.label} Seller
               </span>
+            </div>
+          )}
+          {/* #22 — Trade count in popup */}
+          {tradeCount > 0 && (
+            <div className="flex items-center gap-1.5 mb-2.5 text-[10px] text-emerald-400">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
+              <span className="font-semibold">{tradeCount} trades completed</span>
+            </div>
+          )}
+          {/* #23 — Listening now in popup */}
+          {listeningNow && (
+            <div className="flex items-center gap-1.5 mb-2.5 text-[10px] text-green-400">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="1" y="10" width="3" height="10" rx="1"/><rect x="6" y="6" width="3" height="14" rx="1"/><rect x="11" y="3" width="3" height="18" rx="1"/><rect x="16" y="8" width="3" height="12" rx="1"/><rect x="21" y="12" width="3" height="8" rx="1"/></svg>
+              <span className="font-semibold">Listening: {listeningNow}</span>
+            </div>
+          )}
+          {/* #21 — Last active in popup */}
+          {lastActiveLabel && (
+            <div className="text-[9px] text-gs-faint mb-2.5">{lastActiveLabel}</div>
+          )}
+          {/* #19 — Mini collection preview */}
+          {miniCollection && (
+            <div className="mb-2.5 p-2 bg-[#0d0d0d] border border-gs-border rounded-lg">
+              <div className="text-[9px] text-gs-faint font-semibold mb-1 uppercase tracking-wide">Collection</div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-gs-text">{miniCollection.count} records</span>
+                {miniCollection.topGenres?.length > 0 && (
+                  <span className="flex gap-1">
+                    {miniCollection.topGenres.map(g => (
+                      <span key={g} className="text-[8px] text-gs-dim bg-[#1a1a1a] rounded-full px-1.5 py-0.5">{g}</span>
+                    ))}
+                  </span>
+                )}
+              </div>
+              {miniCollection.recentAlbums?.length > 0 && (
+                <div className="flex gap-1 mt-1.5">
+                  {miniCollection.recentAlbums.slice(0, 4).map((album, i) => (
+                    <div key={i} className="w-8 h-8 rounded bg-[#1a1a1a] shrink-0 overflow-hidden text-[6px] text-gs-faint flex items-center justify-center">
+                      {album.slice(0, 3)}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           <div className="flex items-center justify-between">

@@ -120,6 +120,14 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
   // Improvement 17 (new): Sentiment emoji auto-suggest
   const [suggestedEmojis, setSuggestedEmojis] = useState([]);
 
+  // [Improvement #20] Comment appreciation badges
+  const [appreciationBadges, setAppreciationBadges] = useState({}); // { [commentId]: badge }
+  // [Improvement #21] Featured comment by record owner
+  const [featuredCommentId, setFeaturedCommentId] = useState(null);
+  // [Improvement #22] Comment moderation tools
+  const [reportedComments, setReportedComments] = useState(new Set());
+  const [mutedUsers, setMutedUsers] = useState(new Set());
+
   // endRef is attached to an invisible div at the bottom of the list; used for scroll-to-bottom
   const endRef = useRef(null);
   const inputRef = useRef(null);
@@ -335,6 +343,49 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
           </div>
         )}
 
+        {/* [Improvement #21] Featured comment by record owner */}
+        {featuredCommentId && (() => {
+          const fc = record.comments.find(c => c.id === featuredCommentId);
+          if (!fc || fc.id === pinnedCommentId) return null;
+          return (
+            <div className="bg-gs-accent/[0.04] border border-gs-accent/15 rounded-lg p-3 mb-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <span className="text-[10px]">{"\u{1F451}"}</span>
+                <span className="text-[10px] text-gs-accent font-mono">FEATURED BY OWNER</span>
+                <button
+                  onClick={() => setFeaturedCommentId(null)}
+                  className="ml-auto text-[10px] text-gs-faint bg-transparent border-none cursor-pointer hover:text-gs-muted"
+                >
+                  Remove
+                </button>
+              </div>
+              <div className="flex gap-2 items-start">
+                <Avatar username={fc.user} size={24} />
+                <div>
+                  <span className="text-[11px] font-bold text-gs-text">@{fc.user}</span>
+                  {appreciationBadges[fc.id] && (
+                    <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">{appreciationBadges[fc.id]}</span>
+                  )}
+                  <p className="text-[12px] text-[#aaa] leading-normal mt-0.5">{highlightMentions(renderRichText(fc.text))}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* [Improvement #22] Comment moderation tools */}
+        {record.user === currentUser && (
+          <div className="flex items-center gap-2 mb-3 px-1">
+            <span className="text-[10px] text-gs-dim font-mono">MODERATION</span>
+            {mutedUsers.size > 0 && (
+              <span className="text-[10px] text-amber-400">{mutedUsers.size} muted</span>
+            )}
+            {reportedComments.size > 0 && (
+              <span className="text-[10px] text-red-400">{reportedComments.size} reported</span>
+            )}
+          </div>
+        )}
+
         {/* Improvement 15 (new): Best comment highlight */}
         {bestComment && bestComment.id !== pinnedCommentId && (
           <div className="bg-amber-500/[0.04] border border-amber-500/15 rounded-lg p-3 mb-3">
@@ -507,6 +558,62 @@ export default function CommentsModal({ open, onClose, record, onAdd, currentUse
                       >
                         {"\u2B50"} Best
                       </button>
+                    )}
+
+                    {/* [Improvement #20] Comment appreciation badges */}
+                    {!isOwn && !appreciationBadges[c.id] && (
+                      <div className="relative opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => {
+                            const badges = ['\u{1F3B5} Music Expert', '\u{1F4A1} Insightful', '\u{2764}\u{FE0F} Helpful', '\u{1F31F} Great Taste'];
+                            const badge = badges[Math.floor(Math.random() * badges.length)];
+                            setAppreciationBadges(prev => ({ ...prev, [c.id]: badge }));
+                          }}
+                          className="bg-transparent border-none cursor-pointer text-[11px] text-gs-faint hover:text-amber-400 p-0"
+                        >
+                          Award
+                        </button>
+                      </div>
+                    )}
+                    {appreciationBadges[c.id] && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">{appreciationBadges[c.id]}</span>
+                    )}
+
+                    {/* [Improvement #21] Feature comment (owner only) */}
+                    {record.user === currentUser && !isOwn && featuredCommentId !== c.id && (
+                      <button
+                        onClick={() => setFeaturedCommentId(c.id)}
+                        className="bg-transparent border-none cursor-pointer text-[11px] text-gs-faint hover:text-gs-accent p-0 opacity-0 group-hover:opacity-100 transition-colors"
+                      >
+                        Feature
+                      </button>
+                    )}
+
+                    {/* [Improvement #22] Moderation tools (owner only) */}
+                    {record.user === currentUser && !isOwn && (
+                      <>
+                        <button
+                          onClick={() => setReportedComments(prev => new Set([...prev, c.id]))}
+                          className={`bg-transparent border-none cursor-pointer text-[11px] p-0 transition-colors ${
+                            reportedComments.has(c.id) ? 'text-red-400' : 'text-gs-faint hover:text-red-400 opacity-0 group-hover:opacity-100'
+                          }`}
+                        >
+                          {reportedComments.has(c.id) ? 'Reported' : 'Report'}
+                        </button>
+                        <button
+                          onClick={() => setMutedUsers(prev => {
+                            const next = new Set(prev);
+                            if (next.has(c.user)) next.delete(c.user);
+                            else next.add(c.user);
+                            return next;
+                          })}
+                          className={`bg-transparent border-none cursor-pointer text-[11px] p-0 transition-colors ${
+                            mutedUsers.has(c.user) ? 'text-amber-400' : 'text-gs-faint hover:text-amber-400 opacity-0 group-hover:opacity-100'
+                          }`}
+                        >
+                          {mutedUsers.has(c.user) ? 'Unmute' : 'Mute'}
+                        </button>
+                      </>
                     )}
                   </div>
 

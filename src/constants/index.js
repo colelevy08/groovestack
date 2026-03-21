@@ -641,3 +641,329 @@ export const DECADE_THEMES = {
   "2010s": { label: "The 2010s",     colorPrimary: "#7c3aed", colorSecondary: "#ddd6fe", gradient: "linear-gradient(135deg, #7c3aed, #a855f7)", icon: "trending-up", description: "Vinyl outsells CDs. Colored vinyl explosion. Streaming and vinyl coexist." },
   "2020s": { label: "The 2020s",     colorPrimary: "#0f172a", colorSecondary: "#e2e8f0", gradient: "linear-gradient(135deg, #0f172a, #334155)", icon: "star",        description: "Record sales at 30-year highs. Supply chain challenges. New pressing plants open worldwide." },
 };
+
+// ── Improvement #11: Marketplace tips for buyers and sellers ─────────────────
+export const MARKETPLACE_TIPS = [
+  { id: "tip-01", audience: "buyer",  tip: "Always ask for detailed photos of the runout groove area to verify pressing details before buying." },
+  { id: "tip-02", audience: "buyer",  tip: "Check the seller's feedback score and transaction history before committing to a purchase." },
+  { id: "tip-03", audience: "buyer",  tip: "Compare the asking price against Discogs median and recent sales to make sure you are getting a fair deal." },
+  { id: "tip-04", audience: "buyer",  tip: "When buying internationally, factor in customs duties and longer shipping times for fragile vinyl." },
+  { id: "tip-05", audience: "buyer",  tip: "Look for original pressings with matrix numbers that match known first runs for the best sound quality." },
+  { id: "tip-06", audience: "buyer",  tip: "Set price alerts on your wishlist items so you never miss a deal when a seller lists below your target." },
+  { id: "tip-07", audience: "buyer",  tip: "Media Mail is the most affordable domestic US shipping option for vinyl records." },
+  { id: "tip-08", audience: "buyer",  tip: "If a deal seems too good to be true, ask the seller to verify authenticity before purchasing." },
+  { id: "tip-09", audience: "buyer",  tip: "Pay attention to the sleeve condition as well as the vinyl. A VG+ record in a G sleeve is less desirable." },
+  { id: "tip-10", audience: "buyer",  tip: "Bundle purchases from the same seller to save on shipping costs and build a relationship." },
+  { id: "tip-11", audience: "seller", tip: "Grade conservatively. Under-promising and over-delivering builds long-term trust and repeat buyers." },
+  { id: "tip-12", audience: "seller", tip: "Include clear photos of the label, runout grooves, and any defects to reduce disputes." },
+  { id: "tip-13", audience: "seller", tip: "Ship records outside the jacket in a proper record mailer with cardboard stiffeners to prevent seam splits." },
+  { id: "tip-14", audience: "seller", tip: "Price competitively by checking recent sold listings on Discogs for the same pressing and condition." },
+  { id: "tip-15", audience: "seller", tip: "Respond to offers within 24 hours. Quick responses lead to more completed sales." },
+  { id: "tip-16", audience: "seller", tip: "Use poly-lined inner sleeves for all records you sell. It shows you care about quality." },
+  { id: "tip-17", audience: "seller", tip: "List the catalog number, matrix/runout info, and pressing country to attract informed buyers." },
+  { id: "tip-18", audience: "seller", tip: "Offer combined shipping discounts to encourage buyers to purchase multiple records from your shop." },
+  { id: "tip-19", audience: "seller", tip: "Seasonal records sell better at the right time. List holiday albums in November, summer vibes in May." },
+  { id: "tip-20", audience: "seller", tip: "Keep your inventory updated. Remove sold-out records promptly to maintain a professional storefront." },
+];
+
+// ── Improvement #12: Vinyl care guide ────────────────────────────────────────
+export const VINYL_CARE_GUIDE = [
+  { id: "care-01", title: "Handle with care",          detail: "Always hold records by the edges and the label area. Never touch the grooved playing surface. Oils from your fingers attract dust and cause permanent damage over time." },
+  { id: "care-02", title: "Store vertically",          detail: "Always store records upright like books, never stacked flat. Stacking causes warping and ring wear on sleeves. Use sturdy shelving that supports the full height of the record." },
+  { id: "care-03", title: "Use proper inner sleeves",  detail: "Replace paper inner sleeves with poly-lined or anti-static rice paper sleeves. Paper sleeves shed fibers that embed in grooves and create static. MoFi and Sleeve City make excellent options." },
+  { id: "care-04", title: "Brush before every play",   detail: "Use a carbon fiber brush (AudioQuest, Boundless) on the record surface before dropping the needle. Brush in the direction of the grooves to lift dust and debris. This single habit prevents most surface noise." },
+  { id: "care-05", title: "Deep clean periodically",   detail: "Use a wet cleaning system like a Spin-Clean or ultrasonic cleaner for thorough cleaning. Never use household cleaners, Windex, or tap water. Use distilled water with a dedicated cleaning solution." },
+  { id: "care-06", title: "Control your environment",  detail: "Store records at 65-70 degrees Fahrenheit with 45-50% relative humidity. Avoid direct sunlight, radiators, and attic/basement storage. Temperature swings cause warping." },
+  { id: "care-07", title: "Protect with outer sleeves", detail: "Use clear polyethylene or polypropylene outer sleeves on all jackets. They prevent shelf wear, ring wear, and edge splits. Resealable outer sleeves are ideal for high-value records." },
+  { id: "care-08", title: "Maintain your stylus",      detail: "Clean your stylus before each listening session with a stylus brush (back to front only, never side to side). Replace the stylus every 800-1000 hours of play. A worn stylus damages grooves permanently." },
+  { id: "care-09", title: "Set tracking force correctly", detail: "Use a digital stylus gauge to set tracking force to the cartridge manufacturer's recommendation. Too light causes skipping and mistracking. Too heavy causes accelerated groove wear." },
+  { id: "care-10", title: "Let new records settle",    detail: "New records can arrive with static from the factory pressing process. Let them acclimate to room temperature before playing, and give them a brush or anti-static treatment first." },
+];
+
+// ── Improvement #13: Detailed Goldmine grading guide with examples ───────────
+export const GRADING_GUIDE = {
+  "M": {
+    grade: "Mint",
+    shortDescription: "Perfect and unplayed",
+    fullDescription: "A Mint record has never been played and shows absolutely no signs of handling. It is still sealed in its original shrink wrap or has been opened but never placed on a turntable. The sleeve is flawless with sharp corners, no seam splits, and no ring wear.",
+    examples: ["Factory sealed new release", "Unplayed promo copy still in shrink", "Record store dead stock"],
+    buyerTip: "True Mint records are extremely rare for vintage titles. Be skeptical of older records graded M unless they are verifiably sealed.",
+    priceMultiplier: 1.0,
+  },
+  "NM": {
+    grade: "Near Mint",
+    shortDescription: "Nearly perfect with minimal signs of handling",
+    fullDescription: "A Near Mint record has been played carefully and shows no visible wear to the naked eye. There are no scratches, scuffs, or marks on the playing surface. The sleeve is intact with minimal shelf wear and no splits.",
+    examples: ["Played once on a quality turntable", "Record with pristine surface under bright light", "Sleeve with only slight wear on spine"],
+    buyerTip: "NM is the highest grade you should realistically expect for a used record. This is collector grade.",
+    priceMultiplier: 0.85,
+  },
+  "VG+": {
+    grade: "Very Good Plus",
+    shortDescription: "Light marks that do not affect playback",
+    fullDescription: "A VG+ record shows some light marks or surface scuffs visible under direct light, but they do not produce audible clicks or pops during playback. There may be very light paper scuffs. The sleeve shows light wear but no significant damage.",
+    examples: ["Light hairline marks visible at an angle", "Very faint background noise in quiet passages", "Sleeve with minor ring wear or light edge wear"],
+    buyerTip: "VG+ is the sweet spot for most collectors. Great sound quality at a significant discount from NM prices.",
+    priceMultiplier: 0.65,
+  },
+  "VG": {
+    grade: "Very Good",
+    shortDescription: "Noticeable wear but plays through without skipping",
+    fullDescription: "A VG record has noticeable surface marks, light scratches, and some audible surface noise. It plays through without skipping but you will hear consistent background noise and occasional light clicks. Sleeve may have seam splits, ring wear, or writing.",
+    examples: ["Consistent light surface noise throughout", "Several visible scratches that do not cause skips", "Sleeve with ring wear, small seam splits, or price stickers"],
+    buyerTip: "VG records are good for listening copies when you do not want to pay collector prices. Expect some noise.",
+    priceMultiplier: 0.40,
+  },
+  "G+": {
+    grade: "Good Plus",
+    shortDescription: "Significant surface noise but still enjoyable",
+    fullDescription: "A G+ record has significant surface noise, scratches, and scuffs throughout. Playback includes audible clicks, pops, and background noise but the music is still clearly enjoyable. The sleeve is worn with splits, tears, or water damage.",
+    examples: ["Heavy surface noise with frequent clicks", "Scratches visible without close inspection", "Sleeve with major ring wear, splits on multiple seams"],
+    buyerTip: "G+ records are budget listening copies. Good for filling gaps in a collection or discovering music cheaply.",
+    priceMultiplier: 0.20,
+  },
+  "G": {
+    grade: "Good",
+    shortDescription: "Heavy wear affecting playback quality",
+    fullDescription: "A Good record has significant wear throughout. Scratches, scuffs, and groove wear produce heavy surface noise. The music is still recognizable but playback quality is significantly degraded. Sleeve is heavily damaged.",
+    examples: ["Constant surface noise and distortion", "Deep scratches that may cause occasional skips", "Sleeve barely holding together or heavily water damaged"],
+    buyerTip: "G records are placeholder copies. Good for rare titles when no better copy is available or affordable.",
+    priceMultiplier: 0.10,
+  },
+  "F": {
+    grade: "Fair",
+    shortDescription: "Barely playable with heavy distortion",
+    fullDescription: "A Fair record plays through but with heavy distortion, frequent skipping, and significant groove damage. It is listenable only in the loosest sense. The sleeve may be torn, missing pieces, or heavily damaged.",
+    examples: ["Plays with distortion and noise on most tracks", "Multiple deep scratches causing repeated skips", "Sleeve missing panels or held together with tape"],
+    buyerTip: "Fair records are for completists only. You are buying for the label and the history, not the listening experience.",
+    priceMultiplier: 0.05,
+  },
+  "P": {
+    grade: "Poor",
+    shortDescription: "Damaged, may not play through",
+    fullDescription: "A Poor record is severely damaged and may not play through at all. Warping, deep gouges, cracks, or extreme groove wear make it essentially unplayable. The sleeve is destroyed or missing entirely.",
+    examples: ["Cracked or broken vinyl", "Extreme warping that causes tonearm to skip", "Used as a frisbee at some point in its life"],
+    buyerTip: "Poor records have near-zero monetary value. Only acquire if the artwork or label is historically significant.",
+    priceMultiplier: 0.02,
+  },
+};
+
+// ── Improvement #14: Keyboard shortcuts reference ────────────────────────────
+export const KEYBOARD_SHORTCUTS = {
+  navigation: [
+    { keys: ["Cmd", "K"],       action: "Open command palette",       description: "Quick search and navigation" },
+    { keys: ["Cmd", "1"],       action: "Go to Explore",             description: "Navigate to marketplace browse" },
+    { keys: ["Cmd", "2"],       action: "Go to Collection",          description: "Navigate to your collection" },
+    { keys: ["Cmd", "3"],       action: "Go to Social Feed",         description: "Navigate to the social feed" },
+    { keys: ["Cmd", "4"],       action: "Go to Messages",            description: "Navigate to direct messages" },
+    { keys: ["Cmd", "5"],       action: "Go to Profile",             description: "Navigate to your profile" },
+    { keys: ["Cmd", ","],       action: "Open Settings",             description: "Open application settings" },
+    { keys: ["Escape"],         action: "Close modal / Go back",     description: "Close the current modal or panel" },
+  ],
+  actions: [
+    { keys: ["Cmd", "N"],       action: "New record",                description: "Open the Add Record form" },
+    { keys: ["Cmd", "Shift", "N"], action: "New post",              description: "Open the Create Post composer" },
+    { keys: ["Cmd", "Shift", "M"], action: "New message",           description: "Start a new direct message" },
+    { keys: ["/"],              action: "Focus search",              description: "Focus the global search bar" },
+    { keys: ["Cmd", "Z"],       action: "Undo",                     description: "Undo the last action" },
+    { keys: ["Cmd", "Shift", "Z"], action: "Redo",                  description: "Redo the last undone action" },
+  ],
+  browsing: [
+    { keys: ["J"],              action: "Next item",                 description: "Move to the next record or post" },
+    { keys: ["K"],              action: "Previous item",             description: "Move to the previous record or post" },
+    { keys: ["L"],              action: "Like / Unlike",             description: "Toggle like on the focused item" },
+    { keys: ["S"],              action: "Save / Unsave",             description: "Toggle save on the focused item" },
+    { keys: ["Enter"],          action: "Open detail",               description: "Open the detail view for the focused item" },
+    { keys: ["Cmd", "Enter"],   action: "Quick buy",                description: "Open buy modal for the focused listing" },
+  ],
+};
+
+// ── Improvement #15: App configuration constants ─────────────────────────────
+export const APP_CONFIG = {
+  featureFlags: {
+    vinylBuddy: true,
+    aiGrading: true,
+    escrow: true,
+    darkMode: true,
+    i18n: true,
+    promoCodeSystem: true,
+    twoFactorAuth: true,
+    pushNotifications: false,
+    videoMessages: false,
+    auctionMode: false,
+    nftCertificates: false,
+    arRecordViewer: false,
+  },
+  limits: {
+    maxCollectionSize: 10000,
+    maxListingsPerUser: 500,
+    maxImagesPerRecord: 8,
+    maxPostLength: 2000,
+    maxCommentLength: 500,
+    maxBioLength: 300,
+    maxWishlistItems: 200,
+    maxConversations: 100,
+    maxDevicesPerAccount: 4,
+    maxBulkImportRecords: 500,
+    maxFileUploadMB: 10,
+    maxSearchResults: 50,
+  },
+  defaults: {
+    currency: "USD",
+    language: "en",
+    theme: "dark",
+    accentColor: "#0ea5e9",
+    fontSize: "medium",
+    notificationSound: "needle_drop",
+    pageSize: 20,
+    sortBy: "recent",
+    defaultCondition: "VG+",
+    defaultFormat: "LP",
+    defaultShipping: "us_media",
+    searchRadius: 50,
+  },
+  platformFee: 0.05,
+  minListingPrice: 1.00,
+  maxListingPrice: 50000.00,
+  disputeWindowHours: 48,
+  escrowHoldDays: 14,
+  passwordMinLength: 8,
+  sessionTimeoutMinutes: 1440,
+  rateLimitGeneral: 100,
+  rateLimitAuth: 10,
+};
+
+// ── Improvement #16: Social proof data ───────────────────────────────────────
+export const SOCIAL_PROOF = {
+  testimonials: [
+    { id: "test-01", user: "mara.vinyl",      quote: "GrooveStack completely changed how I collect. I have found records here I spent years hunting for.",            rating: 5 },
+    { id: "test-02", user: "thomas.wax",      quote: "The Vinyl Buddy is magic. It identified a rare acetate I did not even know I had. Worth every penny.",          rating: 5 },
+    { id: "test-03", user: "juniper.sounds",   quote: "Best vinyl community online. The people here actually know their pressings and care about condition.",         rating: 5 },
+    { id: "test-04", user: "nadia.rpm",        quote: "Sold 50 records in my first month. The offer system makes negotiations so smooth.",                            rating: 5 },
+    { id: "test-05", user: "felix.rpm",        quote: "The analytics dashboard showed me my collection is worth 3x what I thought. Incredible tool.",                 rating: 5 },
+    { id: "test-06", user: "cleo.spins",       quote: "I love the AI grading feature. It caught a counterfeit pressing I almost bought from another site.",           rating: 5 },
+    { id: "test-07", user: "yuki.vinyl",       quote: "Finally a platform that understands Japanese city pop collectors. The genre depth here is unmatched.",          rating: 5 },
+    { id: "test-08", user: "bjorn.grooves",    quote: "The escrow system gave me confidence to buy a $400 original pressing from a seller I did not know. Flawless.", rating: 5 },
+  ],
+  stats: {
+    totalUsers: 41,
+    totalRecordsCatalogued: 12483,
+    totalTransactionsCompleted: 8921,
+    totalListeningSessions: 34500,
+    averageSellerRating: 4.7,
+    countriesRepresented: 28,
+    genresCovered: 18,
+    totalApiEndpoints: 170,
+    databaseTables: 35,
+    totalImprovements: 1100,
+  },
+  milestones: [
+    { date: "2024-01-15", event: "GrooveStack launched",                        description: "Wave 1: Core collection management and marketplace" },
+    { date: "2024-03-01", event: "1,000 records catalogued",                    description: "Community milestone reached in under two months" },
+    { date: "2024-05-20", event: "Vinyl Buddy hardware shipped",               description: "ESP32 audio identification device available to all users" },
+    { date: "2024-07-10", event: "Social feed launched",                        description: "Wave 4: Posts, comments, follows, and community features" },
+    { date: "2024-09-01", event: "AI condition grading launched",               description: "Claude-powered photo analysis for record verification" },
+    { date: "2024-11-15", event: "10,000 records catalogued",                   description: "Platform crosses five figures in catalogued vinyl" },
+    { date: "2025-01-20", event: "Escrow and dispute system launched",          description: "Wave 7: Full transaction protection for all marketplace sales" },
+    { date: "2025-03-10", event: "1,100+ improvements milestone",              description: "Wave 9: Nine development waves completed" },
+  ],
+};
+
+// ── Improvement #17: Contextual onboarding tips per screen ───────────────────
+export const ONBOARDING_TIPS = {
+  explore: [
+    { id: "onb-e1", tip: "Use genre filter pills to narrow down the marketplace. Tap a genre to see all listings in that category." },
+    { id: "onb-e2", tip: "Sort by price, condition, or date listed to find exactly what you are looking for." },
+    { id: "onb-e3", tip: "Tap the heart icon to like a record. Tap the bookmark icon to save it for later." },
+  ],
+  collection: [
+    { id: "onb-c1", tip: "Tap the + button to add your first record. Include the condition and a quick review to share with the community." },
+    { id: "onb-c2", tip: "Swipe right on a record to quickly mark it for sale. Swipe left to remove it." },
+    { id: "onb-c3", tip: "Use the Discogs import feature to bring your entire existing collection in at once." },
+  ],
+  social: [
+    { id: "onb-s1", tip: "Create a post to share a recent find, review, or setup photo with the community." },
+    { id: "onb-s2", tip: "Tag a record in your post to link it to the catalog. Other collectors can find it from your post." },
+    { id: "onb-s3", tip: "Follow collectors whose taste you admire. Their activity will appear in your Following feed." },
+  ],
+  profile: [
+    { id: "onb-p1", tip: "Complete your profile to build trust. Add a bio, location, and avatar to stand out." },
+    { id: "onb-p2", tip: "Check your reputation score. Higher scores unlock verified seller badges and lower fees." },
+    { id: "onb-p3", tip: "Feature your best records on your profile to showcase your collection highlights." },
+  ],
+  vinylBuddy: [
+    { id: "onb-v1", tip: "Place the Vinyl Buddy within 3 feet of your turntable speaker for best results." },
+    { id: "onb-v2", tip: "Run the calibration tool once to optimize audio capture for your room acoustics." },
+    { id: "onb-v3", tip: "Check the device tab to monitor battery, signal strength, and firmware version." },
+  ],
+  messages: [
+    { id: "onb-m1", tip: "Message sellers directly to ask questions about a listing before making an offer." },
+    { id: "onb-m2", tip: "Pin important conversations to keep them at the top of your inbox." },
+    { id: "onb-m3", tip: "Use reactions to quickly acknowledge a message without typing a full reply." },
+  ],
+  analytics: [
+    { id: "onb-a1", tip: "Your collection value updates automatically based on Discogs market data." },
+    { id: "onb-a2", tip: "Use time range filters to see trends over 30 days, 3 months, 6 months, or all time." },
+    { id: "onb-a3", tip: "The genre distribution chart shows where your collection is concentrated and where you might diversify." },
+  ],
+  settings: [
+    { id: "onb-st1", tip: "Enable two-factor authentication for extra account security." },
+    { id: "onb-st2", tip: "Customize your notification preferences to only receive alerts you care about." },
+    { id: "onb-st3", tip: "Connect your Discogs account to enable price lookups and collection import." },
+  ],
+};
+
+// ── Improvement #18: User-friendly error messages ────────────────────────────
+export const ERROR_MESSAGES = {
+  // Network errors
+  NETWORK_OFFLINE:          "You appear to be offline. Check your internet connection and try again.",
+  NETWORK_TIMEOUT:          "The request timed out. The server may be busy. Please try again in a moment.",
+  NETWORK_SERVER_ERROR:     "Something went wrong on our end. Our team has been notified. Please try again later.",
+  NETWORK_RATE_LIMITED:     "You are making requests too quickly. Please wait a moment and try again.",
+
+  // Auth errors
+  AUTH_INVALID_CREDENTIALS: "Incorrect email or password. Please double-check and try again.",
+  AUTH_ACCOUNT_LOCKED:      "Your account has been temporarily locked due to too many failed attempts. Try again in 15 minutes.",
+  AUTH_SESSION_EXPIRED:     "Your session has expired. Please sign in again to continue.",
+  AUTH_EMAIL_NOT_VERIFIED:  "Please verify your email address before continuing. Check your inbox for a verification link.",
+  AUTH_WEAK_PASSWORD:       "Password must be at least 8 characters with a mix of letters and numbers.",
+  AUTH_EMAIL_IN_USE:        "An account with this email already exists. Try signing in or resetting your password.",
+  AUTH_USERNAME_TAKEN:      "This username is already taken. Try a different one.",
+  AUTH_2FA_REQUIRED:        "Two-factor authentication is required. Enter the code from your authenticator app.",
+  AUTH_2FA_INVALID:         "Invalid verification code. Please check your authenticator app and try again.",
+
+  // Record errors
+  RECORD_NOT_FOUND:         "This record could not be found. It may have been removed by the owner.",
+  RECORD_ALREADY_EXISTS:    "A record with this album and artist already exists in your collection.",
+  RECORD_UPLOAD_FAILED:     "Image upload failed. Please try a smaller file (max 10 MB) in JPG or PNG format.",
+  RECORD_IMPORT_FAILED:     "Import failed. Please check your file format and try again. Supported formats: CSV, JSON.",
+
+  // Marketplace errors
+  OFFER_EXPIRED:            "This offer has expired. The seller may have accepted another offer or removed the listing.",
+  OFFER_ALREADY_ACCEPTED:   "This offer has already been accepted by the seller.",
+  LISTING_UNAVAILABLE:      "This listing is no longer available. It may have been sold or removed.",
+  PAYMENT_FAILED:           "Payment could not be processed. Please check your card details and try again.",
+  PAYMENT_DECLINED:         "Your card was declined. Please try a different payment method.",
+  ESCROW_RELEASE_FAILED:    "Escrow release failed. Please contact support for assistance.",
+  DISPUTE_WINDOW_CLOSED:    "The 48-hour dispute window has closed for this transaction.",
+
+  // Social errors
+  POST_TOO_LONG:            "Your post exceeds the 2,000 character limit. Please shorten it and try again.",
+  COMMENT_TOO_LONG:         "Your comment exceeds the 500 character limit. Please shorten it and try again.",
+  USER_BLOCKED:             "You cannot interact with this user because they have blocked you.",
+  FOLLOW_LIMIT_REACHED:     "You have reached the maximum number of follows. Unfollow some users to follow new ones.",
+
+  // Vinyl Buddy errors
+  DEVICE_NOT_FOUND:         "Device not found. Check the device code and make sure your Vinyl Buddy is powered on.",
+  DEVICE_ALREADY_PAIRED:    "This device is already paired to another account. Unpair it first.",
+  DEVICE_OFFLINE:           "Your Vinyl Buddy appears to be offline. Check power and Wi-Fi connectivity.",
+  AUDIO_ID_FAILED:          "Could not identify the track. Try moving the device closer to the speaker or reducing background noise.",
+  CALIBRATION_FAILED:       "Calibration failed. Make sure the room is quiet and the device is near the speaker.",
+
+  // General errors
+  GENERIC_ERROR:            "Something went wrong. Please try again.",
+  PERMISSION_DENIED:        "You do not have permission to perform this action.",
+  INVALID_INPUT:            "Some of the information you entered is not valid. Please check and try again.",
+  FILE_TOO_LARGE:           "This file is too large. Maximum upload size is 10 MB.",
+  UNSUPPORTED_FORMAT:       "This file format is not supported. Please use a supported format.",
+};

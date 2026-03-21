@@ -2,44 +2,75 @@
 // Shows configurable records per page with page indicators, jump-to-page, and grid column selector.
 // Used by ExploreScreen and CollectionScreen.
 // handlers is the cardHandlers object spread from App.js (onLike, onSave, onComment, onBuy, onDetail, onViewUser).
+// Includes: #11 Virtual scrolling, #12 Card size toggle, #13 List view, #14 Sort direction arrows,
+// #15 Saved sort preferences, #16 Filter result count badge, #17 Bulk action toolbar, #18 Progressive image loading.
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import Card from './Card';
+import Card, { CardSkeleton } from './Card';
 
 const PAGE_SIZE_OPTIONS = [12, 24, 48];
 const COLUMN_OPTIONS = [2, 3, 4];
+const CARD_SIZE_OPTIONS = ['compact', 'normal', 'expanded']; // #12
 const PAGE_SIZE_STORAGE_KEY = 'gs-page-size';
 const COLUMNS_STORAGE_KEY = 'gs-columns';
+const CARD_SIZE_STORAGE_KEY = 'gs-card-size'; // #12
+const SORT_PREF_STORAGE_KEY = 'gs-sort-pref'; // #15
+const VIEW_TYPE_STORAGE_KEY = 'gs-view-type'; // #13
+const VIRTUAL_SCROLL_OVERSCAN = 5; // #11
+const VIRTUAL_ITEM_HEIGHT = 220; // #11 approximate card height
 
-// NEW: Loading skeleton component
-function SkeletonCard() {
+// #13 — List view row component
+function ListRow({ r, handlers }) {
   return (
-    <div className="gs-card animate-pulse">
-      <div className="h-0.5 bg-[#1a1a1a]" />
-      <div className="p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="w-6 h-6 rounded-full bg-[#1a1a1a]" />
-          <div className="h-3 w-20 bg-[#1a1a1a] rounded" />
-        </div>
-        <div className="flex gap-3 mb-3">
-          <div className="w-[68px] h-[68px] rounded-xl bg-[#1a1a1a] shrink-0" />
-          <div className="flex-1 space-y-2">
-            <div className="h-4 w-3/4 bg-[#1a1a1a] rounded" />
-            <div className="h-3 w-1/2 bg-[#1a1a1a] rounded" />
-            <div className="h-3 w-2/3 bg-[#1a1a1a] rounded" />
-          </div>
-        </div>
-        <div className="flex gap-1.5 mb-2.5">
-          <div className="h-5 w-12 bg-[#1a1a1a] rounded-full" />
-          <div className="h-5 w-14 bg-[#1a1a1a] rounded-full" />
-        </div>
-        <div className="border-t border-gs-border pt-2.5 flex justify-between">
-          <div className="flex gap-3">
-            <div className="h-4 w-8 bg-[#1a1a1a] rounded" />
-            <div className="h-4 w-8 bg-[#1a1a1a] rounded" />
-          </div>
-          <div className="h-4 w-4 bg-[#1a1a1a] rounded" />
-        </div>
+    <div
+      className="flex items-center gap-4 px-4 py-2.5 bg-gs-surface border border-gs-border rounded-lg hover:border-gs-border-hover transition-colors cursor-pointer"
+      onClick={() => handlers.onDetail(r)}
+    >
+      <div className="w-10 h-10 rounded-lg bg-[#1a1a1a] shrink-0 overflow-hidden flex items-center justify-center text-[10px] text-gs-faint font-bold" style={{ background: `linear-gradient(135deg, ${r.accent}22, transparent)` }}>
+        {r.album?.slice(0, 2)}
       </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold text-gs-text truncate">{r.album}</div>
+        <div className="text-[11px] text-gs-muted truncate">{r.artist} · {r.year}</div>
+      </div>
+      <div className="text-[11px] text-gs-dim font-mono shrink-0">{r.condition}</div>
+      <div className="text-[11px] text-gs-dim font-mono shrink-0">{r.rating}/5</div>
+      {r.forSale && <div className="text-sm font-bold text-gs-text shrink-0">${r.price}</div>}
+      <div className="flex items-center gap-2 shrink-0">
+        <button onClick={e => { e.stopPropagation(); handlers.onLike(r.id); }} className="bg-transparent border-none text-gs-dim text-xs cursor-pointer hover:text-gs-muted">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill={r.liked ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        </button>
+        <span className="text-[10px] text-gs-dim">{r.likes}</span>
+        <button onClick={e => { e.stopPropagation(); handlers.onSave(r.id); }} className="bg-transparent border-none text-gs-dim text-xs cursor-pointer hover:text-gs-muted">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill={r.saved ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// #18 — Progressive image loading placeholder (used internally)
+function ProgressiveImg({ src, alt, className }) {
+  const [loaded, setLoaded] = useState(false);
+  const imgRef = useRef(null);
+
+  useEffect(() => {
+    if (!src) return;
+    const img = new Image();
+    img.onload = () => setLoaded(true);
+    img.src = src;
+  }, [src]);
+
+  return (
+    <div className={`relative ${className || ''}`}>
+      {!loaded && <div className="absolute inset-0 bg-[#1a1a1a] animate-pulse rounded-xl" />}
+      {src && (
+        <img
+          ref={imgRef}
+          src={src}
+          alt={alt}
+          className={`w-full h-full object-cover rounded-xl transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        />
+      )}
     </div>
   );
 }
@@ -65,8 +96,8 @@ function EmptyState() {
   );
 }
 
-export default function Paginated({ records, handlers, loading, sortField, sortDirection }) {
-  // NEW: Persist page size and columns to localStorage
+export default function Paginated({ records, handlers, loading, sortField, sortDirection, totalUnfiltered, onBulkAction }) {
+  // All hooks declared before any conditional returns
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(() => {
     try {
@@ -86,12 +117,36 @@ export default function Paginated({ records, handlers, loading, sortField, sortD
       return 2;
     }
   });
+  // #12 — Card size toggle
+  const [cardSize, setCardSize] = useState(() => {
+    try {
+      const stored = localStorage.getItem(CARD_SIZE_STORAGE_KEY);
+      return CARD_SIZE_OPTIONS.includes(stored) ? stored : 'normal';
+    } catch {
+      return 'normal';
+    }
+  });
+  // #13 — View type: grid, list, or loadmore
+  const [viewType, setViewType] = useState(() => {
+    try {
+      const stored = localStorage.getItem(VIEW_TYPE_STORAGE_KEY);
+      return ['grid', 'list'].includes(stored) ? stored : 'grid';
+    } catch {
+      return 'grid';
+    }
+  });
   const [jumpInput, setJumpInput] = useState('');
   const [showJump, setShowJump] = useState(false);
   const [viewMode, setViewMode] = useState('paginated'); // 'paginated' or 'loadmore'
   const [loadMoreCount, setLoadMoreCount] = useState(24);
   const [pageTransition, setPageTransition] = useState(false);
+  // #17 — Bulk selection
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showBulkBar, setShowBulkBar] = useState(false);
+  // #11 — Virtual scroll state
+  const [virtualScrollTop, setVirtualScrollTop] = useState(0);
   const topRef = useRef(null);
+  const virtualContainerRef = useRef(null);
 
   const totalPages = Math.ceil(records.length / pageSize);
   const start = (page - 1) * pageSize;
@@ -112,6 +167,81 @@ export default function Paginated({ records, handlers, loading, sortField, sortD
       localStorage.setItem(COLUMNS_STORAGE_KEY, String(columns));
     } catch { /* noop */ }
   }, [columns]);
+
+  // #12 — Save card size to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(CARD_SIZE_STORAGE_KEY, cardSize);
+    } catch { /* noop */ }
+  }, [cardSize]);
+
+  // #13 — Save view type to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_TYPE_STORAGE_KEY, viewType);
+    } catch { /* noop */ }
+  }, [viewType]);
+
+  // #15 — Save sort preferences
+  useEffect(() => {
+    if (sortField) {
+      try {
+        localStorage.setItem(SORT_PREF_STORAGE_KEY, JSON.stringify({ field: sortField, direction: sortDirection }));
+      } catch { /* noop */ }
+    }
+  }, [sortField, sortDirection]);
+
+  // #17 — Show/hide bulk action bar
+  useEffect(() => {
+    setShowBulkBar(selectedIds.size > 0);
+  }, [selectedIds]);
+
+  // #11 — Virtual scroll handler
+  useEffect(() => {
+    const container = virtualContainerRef.current;
+    if (!container || viewMode !== 'loadmore' || records.length < 200) return;
+    const handleScroll = () => {
+      setVirtualScrollTop(container.scrollTop);
+    };
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [viewMode, records.length]);
+
+  // #11 — Virtual scroll computed values
+  const useVirtualScroll = viewMode === 'loadmore' && records.length >= 200;
+  const virtualVisibleCount = useVirtualScroll ? Math.ceil(600 / VIRTUAL_ITEM_HEIGHT) + VIRTUAL_SCROLL_OVERSCAN * 2 : 0;
+  const virtualStartIdx = useVirtualScroll ? Math.max(0, Math.floor(virtualScrollTop / VIRTUAL_ITEM_HEIGHT) - VIRTUAL_SCROLL_OVERSCAN) : 0;
+  const virtualEndIdx = useVirtualScroll ? Math.min(records.length, virtualStartIdx + virtualVisibleCount) : 0;
+  const virtualTotalHeight = useVirtualScroll ? records.length * VIRTUAL_ITEM_HEIGHT : 0;
+
+  // #17 — Bulk action handlers
+  const handleBulkSelect = useCallback((id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleBulkSelectAll = useCallback(() => {
+    if (selectedIds.size === visible.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(visible.map(r => r.id)));
+    }
+  }, [visible, selectedIds]);
+
+  const handleBulkAction = useCallback((action) => {
+    onBulkAction?.(action, Array.from(selectedIds));
+    setSelectedIds(new Set());
+  }, [selectedIds, onBulkAction]);
+
+  // #16 — Filter result count
+  const filterCountBadge = useMemo(() => {
+    if (!totalUnfiltered || totalUnfiltered === records.length) return null;
+    return { shown: records.length, total: totalUnfiltered };
+  }, [records.length, totalUnfiltered]);
 
   // NEW: URL sync for current page
   useEffect(() => {
@@ -197,17 +327,14 @@ export default function Paginated({ records, handlers, loading, sortField, sortD
     return base[columns] || 'grid-cols-1 sm:grid-cols-2';
   }, [columns]);
 
-  // NEW: Sort indicator helper
+  // #14 — Sort direction indicator with animated arrows
   const sortLabel = sortField ? (
-    <span className="flex items-center gap-1 text-[10px] text-gs-accent font-mono">
-      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        {sortDirection === 'asc' ? (
-          <path d="M12 19V5M5 12l7-7 7 7" />
-        ) : (
-          <path d="M12 5v14M19 12l-7 7-7-7" />
-        )}
+    <span className="flex items-center gap-1 text-[10px] text-gs-accent font-mono bg-gs-accent/5 border border-gs-accent/15 rounded-md px-1.5 py-0.5">
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="transition-transform duration-200" style={{ transform: sortDirection === 'asc' ? 'rotate(0deg)' : 'rotate(180deg)' }}>
+        <path d="M12 19V5M5 12l7-7 7 7" />
       </svg>
       {sortField}
+      <span className="text-[8px] text-gs-faint ml-0.5">({sortDirection === 'asc' ? 'A-Z' : 'Z-A'})</span>
     </span>
   ) : null;
 
@@ -221,7 +348,7 @@ export default function Paginated({ records, handlers, loading, sortField, sortD
         </div>
         <div className={`gs-card-grid grid ${gridColsClass} gap-3.5`}>
           {Array.from({ length: pageSize > 12 ? 12 : pageSize }, (_, i) => (
-            <SkeletonCard key={i} />
+            <CardSkeleton key={i} size={cardSize} />
           ))}
         </div>
       </div>
@@ -255,9 +382,57 @@ export default function Paginated({ records, handlers, loading, sortField, sortD
           )}
           {/* NEW: Sort indicator */}
           {sortLabel}
+          {/* #16 — Filter result count badge */}
+          {filterCountBadge && (
+            <span className="text-[10px] font-semibold bg-violet-500/10 text-violet-400 border border-violet-500/20 rounded-full px-2 py-0.5">
+              {filterCountBadge.shown}/{filterCountBadge.total} filtered
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
+          {/* #13 — Grid/List view toggle */}
+          <div className="flex items-center gap-1 bg-[#111] border border-gs-border rounded-lg p-0.5">
+            <button
+              onClick={() => setViewType('grid')}
+              className={`px-2 py-1 rounded-md text-[10px] font-semibold cursor-pointer border-none transition-colors ${
+                viewType === 'grid' ? 'bg-gs-accent/10 text-gs-accent' : 'bg-transparent text-gs-dim hover:text-gs-muted'
+              }`}
+              aria-label="Grid view"
+              title="Grid view"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            </button>
+            <button
+              onClick={() => setViewType('list')}
+              className={`px-2 py-1 rounded-md text-[10px] font-semibold cursor-pointer border-none transition-colors ${
+                viewType === 'list' ? 'bg-gs-accent/10 text-gs-accent' : 'bg-transparent text-gs-dim hover:text-gs-muted'
+              }`}
+              aria-label="List view"
+              title="List view with details"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            </button>
+          </div>
+
+          {/* #12 — Card size toggle */}
+          {viewType === 'grid' && (
+            <div className="flex items-center gap-1 bg-[#111] border border-gs-border rounded-lg p-0.5">
+              {CARD_SIZE_OPTIONS.map(s => (
+                <button
+                  key={s}
+                  onClick={() => setCardSize(s)}
+                  className={`px-2 py-1 rounded-md text-[10px] font-semibold cursor-pointer border-none transition-colors capitalize ${
+                    cardSize === s ? 'bg-gs-accent/10 text-gs-accent' : 'bg-transparent text-gs-dim hover:text-gs-muted'
+                  }`}
+                  title={`${s} cards`}
+                >
+                  {s === 'compact' ? 'S' : s === 'normal' ? 'M' : 'L'}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* NEW: View mode toggle (paginated vs load more) */}
           <div className="flex items-center gap-1 bg-[#111] border border-gs-border rounded-lg p-0.5">
             <button
@@ -340,14 +515,70 @@ export default function Paginated({ records, handlers, loading, sortField, sortD
         </div>
       )}
 
-      {/* Card grid with animated page transitions */}
-      <div
-        className={`gs-card-grid grid ${gridColsClass} gap-3.5 transition-opacity duration-150 ${
-          pageTransition ? 'opacity-0' : 'opacity-100'
-        }`}
-      >
-        {visible.map(r => <Card key={r.id} r={r} {...handlers} />)}
-      </div>
+      {/* #17 — Bulk action toolbar */}
+      {showBulkBar && (
+        <div className="flex items-center gap-3 mb-3 p-2.5 bg-gs-accent/5 border border-gs-accent/20 rounded-lg animate-fade-in">
+          <span className="text-[11px] font-semibold text-gs-accent">{selectedIds.size} selected</span>
+          <button onClick={handleBulkSelectAll} className="text-[10px] text-gs-muted bg-transparent border border-gs-border rounded px-2 py-1 cursor-pointer hover:text-gs-text transition-colors">
+            {selectedIds.size === visible.length ? 'Deselect All' : 'Select All'}
+          </button>
+          <button onClick={() => handleBulkAction('like')} className="text-[10px] text-gs-muted bg-transparent border border-gs-border rounded px-2 py-1 cursor-pointer hover:text-gs-text transition-colors">
+            Like All
+          </button>
+          <button onClick={() => handleBulkAction('save')} className="text-[10px] text-gs-muted bg-transparent border border-gs-border rounded px-2 py-1 cursor-pointer hover:text-gs-text transition-colors">
+            Save All
+          </button>
+          <button onClick={() => handleBulkAction('addToPlaylist')} className="text-[10px] text-gs-muted bg-transparent border border-gs-border rounded px-2 py-1 cursor-pointer hover:text-gs-text transition-colors">
+            Add to Playlist
+          </button>
+          <button onClick={() => setSelectedIds(new Set())} className="text-[10px] text-gs-dim bg-transparent border-none cursor-pointer hover:text-gs-muted ml-auto">
+            Clear
+          </button>
+        </div>
+      )}
+
+      {/* #13 — List view */}
+      {viewType === 'list' ? (
+        <div className={`flex flex-col gap-2 transition-opacity duration-150 ${pageTransition ? 'opacity-0' : 'opacity-100'}`}>
+          {/* List header */}
+          <div className="flex items-center gap-4 px-4 py-1.5 text-[10px] text-gs-faint font-mono uppercase tracking-wider">
+            <div className="w-10 shrink-0">Art</div>
+            <div className="flex-1">Title / Artist</div>
+            <div className="shrink-0 w-12">Cond.</div>
+            <div className="shrink-0 w-12">Rating</div>
+            <div className="shrink-0 w-14">Price</div>
+            <div className="shrink-0 w-20">Actions</div>
+          </div>
+          {visible.map(r => <ListRow key={r.id} r={r} handlers={handlers} />)}
+        </div>
+      ) : useVirtualScroll ? (
+        /* #11 — Virtual scrolling for large lists */
+        <div
+          ref={virtualContainerRef}
+          className="overflow-auto"
+          style={{ height: '600px' }}
+        >
+          <div style={{ height: virtualTotalHeight, position: 'relative' }}>
+            <div
+              className={`gs-card-grid grid ${gridColsClass} gap-3.5 absolute w-full`}
+              style={{ top: virtualStartIdx * VIRTUAL_ITEM_HEIGHT }}
+            >
+              {records.slice(virtualStartIdx, virtualEndIdx).map(r => (
+                <Card key={r.id} r={r} {...handlers} size={cardSize} onCompareToggle={handleBulkSelect} isCompareSelected={selectedIds.has(r.id)} />
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Card grid with animated page transitions */
+        <div
+          className={`gs-card-grid grid ${gridColsClass} gap-3.5 transition-opacity duration-150 ${
+            pageTransition ? 'opacity-0' : 'opacity-100'
+          }`}
+        >
+          {visible.map(r => <Card key={r.id} r={r} {...handlers} size={cardSize} onCompareToggle={onBulkAction ? handleBulkSelect : undefined} isCompareSelected={selectedIds.has(r.id)} />)}
+        </div>
+      )}
 
       {/* NEW: Load more button (alternative to pagination) */}
       {viewMode === 'loadmore' && hasMore && (
