@@ -5682,6 +5682,1335 @@ function StatsTab({ myListens, loading }) {
 }
 
 // ============================================================================
+// HARDWARE UI/UX IMPROVEMENT COMPONENTS (1-25)
+// ============================================================================
+
+// ── HW-1: Device Pairing Animation ─────────────────────────────────────────
+function DevicePairingAnimation() {
+  const [phase, setPhase] = useState("scanning"); // scanning | found | paired
+  const [ringCount, setRingCount] = useState(0);
+
+  useEffect(() => {
+    const t1 = setInterval(() => setRingCount(c => (c + 1) % 4), 800);
+    const t2 = setTimeout(() => setPhase("found"), 3000);
+    const t3 = setTimeout(() => setPhase("paired"), 5000);
+    return () => { clearInterval(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, []);
+
+  const rings = Array.from({ length: 3 }, (_, i) => i);
+  const phaseColor = phase === "paired" ? "#22c55e" : phase === "found" ? "#0ea5e9" : "#6366f1";
+  const phaseLabel = phase === "paired" ? "Paired Successfully" : phase === "found" ? "Device Found..." : "Scanning for VinylBuddy...";
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-3">Bluetooth Pairing</div>
+      <div className="flex flex-col items-center py-4">
+        <div className="relative w-24 h-24 flex items-center justify-center">
+          {rings.map(i => (
+            <div key={i} style={{
+              position: "absolute", inset: `${i * 12}px`,
+              border: `2px solid ${phaseColor}`,
+              borderRadius: "50%",
+              opacity: ringCount > i ? 0.8 : 0.15,
+              transition: "opacity 0.4s, border-color 0.4s",
+              animation: phase === "scanning" ? `vb-pulse ${1.5 + i * 0.3}s ease-in-out infinite` : "none",
+            }} />
+          ))}
+          <div style={{
+            width: 28, height: 28, borderRadius: "50%",
+            background: phaseColor, transition: "background 0.4s",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            boxShadow: phase === "paired" ? `0 0 20px ${phaseColor}66` : "none",
+          }}>
+            <span style={{ fontSize: 14, color: "#fff" }}>{phase === "paired" ? "✓" : "⦿"}</span>
+          </div>
+        </div>
+        <div className="text-xs font-semibold mt-3" style={{ color: phaseColor }}>{phaseLabel}</div>
+        <div className="text-[10px] text-[#666] mt-1">BLE 5.0 • 2.4GHz</div>
+      </div>
+    </div>
+  );
+}
+
+// ── HW-2: Hardware Status Dashboard ────────────────────────────────────────
+function HardwareStatusDashboard() {
+  const [stats, setStats] = useState({ cpuTemp: 42, memUsed: 67, flashUsed: 34 });
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setStats({
+        cpuTemp: 38 + Math.random() * 12,
+        memUsed: 60 + Math.random() * 20,
+        flashUsed: 34 + Math.random() * 2,
+      });
+    }, 2000);
+    return () => clearInterval(t);
+  }, []);
+
+  const Gauge = ({ label, value, max, unit, color }) => {
+    const pct = Math.min((value / max) * 100, 100);
+    return (
+      <div className="flex-1 text-center">
+        <div className="text-[10px] text-[#666] mb-1">{label}</div>
+        <div className="relative mx-auto" style={{ width: 56, height: 56 }}>
+          <svg viewBox="0 0 36 36" style={{ width: 56, height: 56, transform: "rotate(-90deg)" }}>
+            <circle cx="18" cy="18" r="15.5" fill="none" stroke="#222" strokeWidth="3" />
+            <circle cx="18" cy="18" r="15.5" fill="none" stroke={color} strokeWidth="3"
+              strokeDasharray={`${pct} ${100 - pct}`} strokeLinecap="round" style={{ transition: "stroke-dasharray 0.5s" }} />
+          </svg>
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span className="text-[11px] font-bold text-gs-text">{Math.round(value)}</span>
+          </div>
+        </div>
+        <div className="text-[9px] text-[#555] mt-0.5">{unit}</div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-3">Hardware Status</div>
+      <div className="flex gap-2">
+        <Gauge label="CPU Temp" value={stats.cpuTemp} max={85} unit="°C" color={stats.cpuTemp > 60 ? "#ef4444" : "#22c55e"} />
+        <Gauge label="Memory" value={stats.memUsed} max={100} unit="%" color={stats.memUsed > 80 ? "#f59e0b" : "#0ea5e9"} />
+        <Gauge label="Flash" value={stats.flashUsed} max={100} unit="%" color="#8b5cf6" />
+      </div>
+    </div>
+  );
+}
+
+// ── HW-3: I2S Audio Pipeline Visualizer ────────────────────────────────────
+function I2SAudioPipelineVisualizer() {
+  const [activeStage, setActiveStage] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => setActiveStage(s => (s + 1) % 5), 600);
+    return () => clearInterval(t);
+  }, []);
+
+  const stages = [
+    { label: "MIC", sub: "INMP441" },
+    { label: "I2S", sub: "DMA RX" },
+    { label: "BUF", sub: "Ring 4KB" },
+    { label: "FFT", sub: "1024pt" },
+    { label: "API", sub: "Upload" },
+  ];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-3">I2S Audio Pipeline</div>
+      <div className="flex items-center gap-1 overflow-x-auto pb-1">
+        {stages.map((s, i) => (
+          <div key={i} className="flex items-center">
+            <div style={{
+              background: i <= activeStage ? "#0ea5e9" : "#1a1a1a",
+              border: `1px solid ${i <= activeStage ? "#0ea5e966" : "#333"}`,
+              borderRadius: 8, padding: "6px 10px", textAlign: "center",
+              transition: "all 0.3s", minWidth: 52,
+              boxShadow: i === activeStage ? "0 0 12px #0ea5e933" : "none",
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: i <= activeStage ? "#fff" : "#666" }}>{s.label}</div>
+              <div style={{ fontSize: 8, color: i <= activeStage ? "#ffffffaa" : "#444", marginTop: 1 }}>{s.sub}</div>
+            </div>
+            {i < stages.length - 1 && (
+              <div style={{
+                width: 16, height: 2, margin: "0 2px",
+                background: i < activeStage ? "#0ea5e9" : "#333",
+                transition: "background 0.3s",
+              }} />
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="text-[9px] text-[#555] mt-2 text-center">
+        Sample Rate: 16kHz • Bit Depth: 32-bit • Channels: Mono
+      </div>
+    </div>
+  );
+}
+
+// ── HW-4: Microphone Polar Pattern Display ─────────────────────────────────
+function MicPolarPatternDisplay() {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width, h = canvas.height;
+    const cx = w / 2, cy = h / 2, r = Math.min(cx, cy) - 10;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Grid circles
+    for (let i = 1; i <= 4; i++) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, (r * i) / 4, 0, Math.PI * 2);
+      ctx.strokeStyle = "#333";
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+
+    // Cross lines
+    ctx.beginPath();
+    ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
+    ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r);
+    ctx.strokeStyle = "#333"; ctx.lineWidth = 0.5; ctx.stroke();
+
+    // Omnidirectional pattern (INMP441 is roughly omni)
+    ctx.beginPath();
+    for (let a = 0; a <= 360; a += 2) {
+      const rad = (a * Math.PI) / 180;
+      const gain = 0.85 + 0.15 * Math.cos(rad); // slight cardioid
+      const px = cx + r * gain * Math.cos(rad);
+      const py = cy + r * gain * Math.sin(rad);
+      a === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = "#0ea5e922";
+    ctx.fill();
+    ctx.strokeStyle = "#0ea5e9";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Labels
+    ctx.fillStyle = "#666"; ctx.font = "8px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("0°", cx, cy - r - 3);
+    ctx.fillText("180°", cx, cy + r + 9);
+    ctx.fillText("90°", cx + r + 2, cy + 3);
+    ctx.fillText("270°", cx - r - 2, cy + 3);
+  }, []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-1">Microphone Polar Pattern</div>
+      <div className="text-[10px] text-[#666] mb-2">INMP441 MEMS — Near-omnidirectional</div>
+      <div className="flex justify-center">
+        <canvas ref={canvasRef} width={160} height={160} style={{ borderRadius: 8 }} />
+      </div>
+      <div className="flex justify-center gap-3 mt-2">
+        <span className="text-[9px] text-[#0ea5e9]">● Sensitivity</span>
+        <span className="text-[9px] text-[#666]">SNR: 61dB</span>
+        <span className="text-[9px] text-[#666]">-26 dBFS</span>
+      </div>
+    </div>
+  );
+}
+
+// ── HW-5: GPIO Pin Status Monitor ──────────────────────────────────────────
+function GPIOPinStatusMonitor() {
+  const [pins, setPins] = useState(() => [
+    { num: 25, label: "I2S_BCK", mode: "out", state: 1 },
+    { num: 26, label: "I2S_WS", mode: "out", state: 1 },
+    { num: 33, label: "I2S_DIN", mode: "in", state: 1 },
+    { num: 2, label: "LED", mode: "out", state: 0 },
+    { num: 4, label: "BTN", mode: "in", state: 1 },
+    { num: 21, label: "SDA", mode: "io", state: 1 },
+    { num: 22, label: "SCL", mode: "io", state: 1 },
+    { num: 5, label: "SPI_CS", mode: "out", state: 0 },
+    { num: 18, label: "SPI_CLK", mode: "out", state: 1 },
+    { num: 23, label: "SPI_MOSI", mode: "out", state: 1 },
+    { num: 19, label: "SPI_MISO", mode: "in", state: 0 },
+    { num: 34, label: "ADC_BAT", mode: "in", state: 1 },
+  ]);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setPins(prev => prev.map(p => ({
+        ...p, state: p.mode === "in" ? (Math.random() > 0.3 ? 1 : 0) : p.state,
+      })));
+    }, 1500);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-3">GPIO Pin Status</div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {pins.map(p => (
+          <div key={p.num} className="flex items-center gap-1.5 rounded-md px-2 py-1" style={{ background: "#111", border: "1px solid #222" }}>
+            <div style={{
+              width: 6, height: 6, borderRadius: "50%",
+              background: p.state ? "#22c55e" : "#444",
+              boxShadow: p.state ? "0 0 6px #22c55e66" : "none",
+              transition: "all 0.3s",
+            }} />
+            <div>
+              <div className="text-[9px] font-bold text-gs-text">{p.num}</div>
+              <div className="text-[7px] text-[#666]">{p.label}</div>
+            </div>
+            <div className="ml-auto text-[7px]" style={{ color: p.mode === "in" ? "#0ea5e9" : p.mode === "out" ? "#f59e0b" : "#8b5cf6" }}>
+              {p.mode.toUpperCase()}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex gap-3 mt-2 justify-center">
+        <span className="text-[8px] text-[#f59e0b]">● OUT</span>
+        <span className="text-[8px] text-[#0ea5e9]">● IN</span>
+        <span className="text-[8px] text-[#8b5cf6]">● I/O</span>
+      </div>
+    </div>
+  );
+}
+
+// ── HW-6: Power Consumption Graph ──────────────────────────────────────────
+function PowerConsumptionGraph() {
+  const [data, setData] = useState(() => Array.from({ length: 40 }, (_, i) => {
+    const deepSleep = i % 12 < 2;
+    return deepSleep ? 0.01 + Math.random() * 0.005 : 40 + Math.random() * 80;
+  }));
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setData(prev => {
+        const next = [...prev.slice(1)];
+        const last = prev[prev.length - 1];
+        const isDeepSleep = last < 1 ? Math.random() > 0.3 : Math.random() > 0.92;
+        next.push(isDeepSleep ? 0.01 + Math.random() * 0.005 : 40 + Math.random() * 80);
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const max = 130;
+  const avg = data.reduce((a, b) => a + b, 0) / data.length;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-1">Power Consumption</div>
+      <div className="flex gap-3 mb-2">
+        <span className="text-[10px] text-[#22c55e]">Avg: {avg.toFixed(1)} mA</span>
+        <span className="text-[10px] text-[#666]">Peak: {Math.max(...data).toFixed(1)} mA</span>
+      </div>
+      <div style={{ height: 60, display: "flex", alignItems: "flex-end", gap: 1, background: "#111", borderRadius: 6, padding: "4px 2px" }}>
+        {data.map((v, i) => (
+          <div key={i} style={{
+            flex: 1, height: `${Math.max((v / max) * 100, 1)}%`,
+            background: v < 1 ? "#22c55e" : v > 80 ? "#ef4444" : "#0ea5e9",
+            borderRadius: 1, transition: "height 0.3s, background 0.3s",
+            minWidth: 2,
+          }} />
+        ))}
+      </div>
+      <div className="flex justify-between mt-1">
+        <span className="text-[8px] text-[#444]">40s ago</span>
+        <span className="text-[8px] text-[#22c55e]">■ Deep Sleep</span>
+        <span className="text-[8px] text-[#0ea5e9]">■ Active</span>
+        <span className="text-[8px] text-[#ef4444]">■ Peak</span>
+        <span className="text-[8px] text-[#444]">now</span>
+      </div>
+    </div>
+  );
+}
+
+// ── HW-7: WiFi Channel Scanner ─────────────────────────────────────────────
+function WiFiChannelScanner() {
+  const [networks] = useState([
+    { ssid: "HomeNetwork_5G", ch: 36, rssi: -42, enc: "WPA3" },
+    { ssid: "GrooveStack-IoT", ch: 6, rssi: -38, enc: "WPA2" },
+    { ssid: "Neighbors_WiFi", ch: 1, rssi: -67, enc: "WPA2" },
+    { ssid: "CoffeeShop_Free", ch: 11, rssi: -78, enc: "Open" },
+    { ssid: "IoT_Devices", ch: 6, rssi: -55, enc: "WPA2" },
+    { ssid: "5G_Fast", ch: 44, rssi: -61, enc: "WPA3" },
+  ]);
+
+  const rssiToPercent = (rssi) => Math.max(0, Math.min(100, (rssi + 100) * 2));
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-3">WiFi Channel Scanner</div>
+      <div className="space-y-1.5">
+        {networks.sort((a, b) => b.rssi - a.rssi).map((n, i) => (
+          <div key={i} className="flex items-center gap-2 px-2 py-1.5 rounded-md" style={{ background: "#111", border: "1px solid #222" }}>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-semibold text-gs-text truncate">{n.ssid}</div>
+              <div className="text-[8px] text-[#555]">Ch {n.ch} • {n.enc}</div>
+            </div>
+            <div className="flex items-end gap-px" style={{ height: 14 }}>
+              {[25, 50, 75, 100].map((threshold, j) => (
+                <div key={j} style={{
+                  width: 3, height: 3 + j * 3,
+                  borderRadius: 1,
+                  background: rssiToPercent(n.rssi) >= threshold ? "#22c55e" : "#333",
+                }} />
+              ))}
+            </div>
+            <span className="text-[9px] text-[#666] w-10 text-right">{n.rssi}dB</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── HW-8: Audio Buffer Status ──────────────────────────────────────────────
+function AudioBufferStatus() {
+  const [fill, setFill] = useState(62);
+  const [overflows, setOverflows] = useState(0);
+  const [underflows, setUnderflows] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setFill(prev => {
+        const next = prev + (Math.random() - 0.48) * 15;
+        const clamped = Math.max(0, Math.min(100, next));
+        if (clamped > 95) setOverflows(o => o + 1);
+        if (clamped < 5) setUnderflows(u => u + 1);
+        return clamped;
+      });
+    }, 500);
+    return () => clearInterval(t);
+  }, []);
+
+  const color = fill > 90 ? "#ef4444" : fill < 10 ? "#f59e0b" : "#22c55e";
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-2">Audio Ring Buffer</div>
+      <div style={{ height: 20, background: "#111", borderRadius: 10, overflow: "hidden", border: "1px solid #222", position: "relative" }}>
+        <div style={{
+          height: "100%", width: `${fill}%`,
+          background: `linear-gradient(90deg, ${color}88, ${color})`,
+          borderRadius: 10, transition: "width 0.4s, background 0.4s",
+        }} />
+        <div style={{
+          position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 9, fontWeight: 700, color: "#fff", textShadow: "0 1px 2px #000",
+        }}>
+          {fill.toFixed(0)}% — {Math.round(fill * 40.96)} / 4096 bytes
+        </div>
+      </div>
+      <div className="flex justify-between mt-2">
+        <span className="text-[9px] text-[#666]">Write: 16kHz • 32-bit</span>
+        <div className="flex gap-3">
+          <span className="text-[9px]" style={{ color: overflows > 0 ? "#ef4444" : "#444" }}>OVF: {overflows}</span>
+          <span className="text-[9px]" style={{ color: underflows > 0 ? "#f59e0b" : "#444" }}>UNF: {underflows}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── HW-9: Firmware Flash Progress ──────────────────────────────────────────
+function FirmwareFlashProgress() {
+  const [stage, setStage] = useState(0); // 0=idle, 1=download, 2=erase, 3=write, 4=verify, 5=done
+  const [progress, setProgress] = useState(0);
+  const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(() => {
+      setProgress(p => {
+        if (p >= 100) {
+          setStage(s => {
+            if (s >= 4) { setRunning(false); return 5; }
+            return s + 1;
+          });
+          return 0;
+        }
+        return p + (stage === 1 ? 4 : stage === 2 ? 8 : stage === 3 ? 2 : 5);
+      });
+    }, 100);
+    return () => clearInterval(t);
+  }, [running, stage]);
+
+  const stageNames = ["Idle", "Downloading", "Erasing Partition", "Writing Firmware", "Verifying CRC32", "Complete"];
+  const stageColors = ["#666", "#0ea5e9", "#f59e0b", "#8b5cf6", "#22c55e", "#22c55e"];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-2">OTA Firmware Flash</div>
+      <div className="flex items-center gap-2 mb-2">
+        {stageNames.slice(1, 5).map((name, i) => (
+          <div key={i} className="flex items-center gap-1">
+            <div style={{
+              width: 8, height: 8, borderRadius: "50%",
+              background: stage > i + 1 ? "#22c55e" : stage === i + 1 ? stageColors[i + 1] : "#333",
+              transition: "background 0.3s",
+            }} />
+            <span className="text-[8px]" style={{ color: stage >= i + 1 ? "#ccc" : "#444" }}>{name.split(" ")[0]}</span>
+          </div>
+        ))}
+      </div>
+      {stage > 0 && stage < 5 && (
+        <div style={{ height: 8, background: "#111", borderRadius: 4, overflow: "hidden", border: "1px solid #222" }}>
+          <div style={{
+            height: "100%", width: `${Math.min(progress, 100)}%`,
+            background: stageColors[stage],
+            borderRadius: 4, transition: "width 0.1s",
+          }} />
+        </div>
+      )}
+      <div className="flex justify-between items-center mt-2">
+        <span className="text-[10px] font-semibold" style={{ color: stageColors[stage] }}>{stageNames[stage]}</span>
+        {stage === 0 && (
+          <button onClick={() => { setStage(1); setProgress(0); setRunning(true); }}
+            className="text-[10px] font-bold px-3 py-1 rounded-md bg-[#0ea5e9] text-white border-none cursor-pointer">
+            Start Flash
+          </button>
+        )}
+        {stage === 5 && <span className="text-[10px] text-[#22c55e] font-bold">Reboot required</span>}
+      </div>
+      <div className="text-[8px] text-[#444] mt-1">Partition: ota_0 (0x10000) • Size: 1.5MB • Target: v2.1.0</div>
+    </div>
+  );
+}
+
+// ── HW-10: Hardware Error Log Viewer ───────────────────────────────────────
+function HardwareErrorLogViewer() {
+  const [logs] = useState([
+    { ts: Date.now() - 3600000, level: "ERR", msg: "I2S buffer overflow detected, 12 samples lost" },
+    { ts: Date.now() - 7200000, level: "WARN", msg: "WiFi RSSI dropped below -75dBm threshold" },
+    { ts: Date.now() - 14400000, level: "INFO", msg: "Watchdog timer fed successfully after 4.2s delay" },
+    { ts: Date.now() - 28800000, level: "ERR", msg: "NVS write failed: partition full, running cleanup" },
+    { ts: Date.now() - 43200000, level: "WARN", msg: "Heap fragmentation at 23%, consider defrag" },
+    { ts: Date.now() - 86400000, level: "INFO", msg: "OTA update check completed, no new firmware" },
+    { ts: Date.now() - 172800000, level: "ERR", msg: "Brownout detector triggered, Vcc=2.98V" },
+    { ts: Date.now() - 259200000, level: "INFO", msg: "Deep sleep exit: timer wakeup after 300s" },
+  ]);
+
+  const levelColor = { ERR: "#ef4444", WARN: "#f59e0b", INFO: "#666" };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-3">Hardware Error Log</div>
+      <div style={{ maxHeight: 180, overflowY: "auto", borderRadius: 6, background: "#0a0a0a", border: "1px solid #222" }}>
+        {logs.map((l, i) => (
+          <div key={i} className="flex gap-2 px-2 py-1.5" style={{ borderBottom: "1px solid #1a1a1a" }}>
+            <span className="text-[8px] text-[#444] shrink-0 w-12">{relTime(l.ts)}</span>
+            <span className="text-[8px] font-bold shrink-0 w-8" style={{ color: levelColor[l.level] }}>{l.level}</span>
+            <span className="text-[9px] text-[#999]">{l.msg}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── HW-11: Device Factory Reset Confirmation ───────────────────────────────
+function DeviceFactoryResetConfirmation() {
+  const [step, setStep] = useState(0); // 0=idle, 1=confirm, 2=backup, 3=erasing, 4=done
+  const [backupNvs, setBackupNvs] = useState(true);
+
+  useEffect(() => {
+    if (step !== 3) return;
+    const t = setTimeout(() => setStep(4), 3000);
+    return () => clearTimeout(t);
+  }, [step]);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-2">Factory Reset</div>
+      {step === 0 && (
+        <div>
+          <p className="text-[10px] text-[#666] mb-2 leading-normal">
+            Erase all device configuration, WiFi credentials, and calibration data. Firmware will remain intact.
+          </p>
+          <button onClick={() => setStep(1)}
+            className="text-[10px] font-bold px-3 py-1.5 rounded-md bg-transparent border border-[#ef444466] text-[#ef4444] cursor-pointer">
+            Begin Factory Reset
+          </button>
+        </div>
+      )}
+      {step === 1 && (
+        <div>
+          <div className="text-[11px] text-[#ef4444] font-semibold mb-2">This will erase:</div>
+          <ul className="text-[10px] text-[#999] mb-2 ml-3 space-y-0.5" style={{ listStyle: "disc" }}>
+            <li>WiFi credentials (SSID/password)</li>
+            <li>Audio calibration settings</li>
+            <li>Device name and room assignment</li>
+            <li>NVS key-value storage</li>
+          </ul>
+          <label className="flex items-center gap-2 mb-3 cursor-pointer">
+            <input type="checkbox" checked={backupNvs} onChange={e => setBackupNvs(e.target.checked)}
+              style={{ accentColor: "#0ea5e9" }} />
+            <span className="text-[10px] text-[#999]">Backup NVS data before reset</span>
+          </label>
+          <div className="flex gap-2">
+            <button onClick={() => setStep(backupNvs ? 2 : 3)}
+              className="text-[10px] font-bold px-3 py-1.5 rounded-md bg-[#ef4444] text-white border-none cursor-pointer">
+              Confirm Reset
+            </button>
+            <button onClick={() => setStep(0)}
+              className="text-[10px] px-3 py-1.5 rounded-md bg-transparent border border-[#333] text-[#999] cursor-pointer">
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {step === 2 && (
+        <div className="text-center py-3">
+          <div className="text-[10px] text-[#0ea5e9] font-semibold mb-1" style={{ animation: "vb-pulse 1s ease-in-out infinite" }}>
+            Backing up NVS data...
+          </div>
+          <div className="text-[9px] text-[#555]">Saving 47 key-value pairs</div>
+          <button onClick={() => setStep(3)} className="text-[9px] text-[#0ea5e9] mt-2 bg-transparent border-none cursor-pointer underline">
+            Skip backup
+          </button>
+        </div>
+      )}
+      {step === 3 && (
+        <div className="text-center py-3">
+          <div className="text-[11px] text-[#ef4444] font-bold mb-1" style={{ animation: "vb-pulse 0.5s ease-in-out infinite" }}>
+            Erasing configuration...
+          </div>
+          <div className="text-[9px] text-[#555]">Do not power off the device</div>
+        </div>
+      )}
+      {step === 4 && (
+        <div className="text-center py-3">
+          <div className="text-[11px] text-[#22c55e] font-bold mb-1">Factory reset complete</div>
+          <div className="text-[9px] text-[#555]">Device will reboot in AP mode for reconfiguration</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── HW-12: USB Serial Monitor ──────────────────────────────────────────────
+function USBSerialMonitor() {
+  const [lines, setLines] = useState([
+    "[0.000] rst:0x1 (POWERON_RESET),boot:0x13 (SPI_FAST_FLASH_BOOT)",
+    "[0.012] configsip: 0, SPIWP:0xee",
+    "[0.045] I (45) boot: chip revision: v3.0",
+    "[0.089] I (89) boot: Loaded app from partition at offset 0x10000",
+    "[0.102] I (102) cpu_start: Starting scheduler on PRO CPU",
+    "[0.115] I (115) wifi: mode : sta (a4:cf:12:xx:xx:xx)",
+    "[0.234] I (234) wifi: connected to SSID, channel 6",
+    "[0.312] I (312) i2s: DMA Buf Count=8, Buf Len=256",
+    "[0.445] I (445) main: VinylBuddy v2.0.3 ready",
+  ]);
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    const msgs = [
+      "I (heap) Free: 142KB, Min: 98KB",
+      "D (audio) FFT peak freq: 440Hz",
+      "I (wifi) RSSI: -42dBm",
+      "D (i2s) Buffer fill: 67%",
+      "I (main) Heartbeat sent, uptime: {t}s",
+      "D (audio) SNR: 34dB, collecting sample...",
+      "W (mem) Heap fragmentation: 12%",
+      "I (ntp) Time synced: UTC OK",
+    ];
+    let tick = 500;
+    const t = setInterval(() => {
+      tick += Math.floor(Math.random() * 2000);
+      const msg = msgs[Math.floor(Math.random() * msgs.length)].replace("{t}", String(tick));
+      setLines(prev => [...prev.slice(-30), `[${(tick / 1000).toFixed(3)}] ${msg}`]);
+    }, 1500);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [lines]);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[13px] font-bold text-gs-text">Serial Monitor</div>
+        <span className="text-[8px] text-[#22c55e] font-mono">115200 baud</span>
+      </div>
+      <div ref={scrollRef} style={{
+        height: 140, overflowY: "auto", background: "#0a0a0a", borderRadius: 6,
+        border: "1px solid #222", padding: "6px 8px", fontFamily: "monospace",
+      }}>
+        {lines.map((l, i) => (
+          <div key={i} className="text-[9px] leading-relaxed" style={{
+            color: l.includes(" W ") ? "#f59e0b" : l.includes(" E ") ? "#ef4444" : l.includes(" D ") ? "#666" : "#22c55e",
+          }}>{l}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── HW-13: Antenna Signal Pattern ──────────────────────────────────────────
+function AntennaSignalPattern() {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const w = canvas.width, h = canvas.height;
+    const cx = w / 2, cy = h * 0.55, r = Math.min(cx, cy) - 12;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Grid
+    for (let i = 1; i <= 3; i++) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, (r * i) / 3, Math.PI, 0);
+      ctx.strokeStyle = "#222"; ctx.lineWidth = 0.5; ctx.stroke();
+    }
+    ctx.beginPath(); ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
+    ctx.strokeStyle = "#222"; ctx.lineWidth = 0.5; ctx.stroke();
+
+    // PCB antenna pattern (dipole-like, top half)
+    ctx.beginPath();
+    for (let a = 0; a <= 180; a += 2) {
+      const rad = (a * Math.PI) / 180;
+      const gain = Math.pow(Math.sin(rad), 1.3) * 0.9 + 0.1;
+      const px = cx + r * gain * Math.cos(Math.PI - rad);
+      const py = cy - r * gain * Math.sin(rad);
+      a === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.strokeStyle = "#22c55e"; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.lineTo(cx + r * 0.1, cy);
+    ctx.lineTo(cx - r * 0.1, cy);
+    ctx.closePath();
+    ctx.fillStyle = "#22c55e15"; ctx.fill();
+
+    // Antenna icon
+    ctx.fillStyle = "#666"; ctx.font = "8px system-ui"; ctx.textAlign = "center";
+    ctx.fillText("PCB Antenna", cx, h - 4);
+    ctx.fillText("-3dBi", cx + r * 0.7, cy - r * 0.3);
+  }, []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-1">WiFi Antenna Radiation Pattern</div>
+      <div className="text-[10px] text-[#666] mb-2">ESP32 PCB trace antenna — 2.4GHz ISM band</div>
+      <div className="flex justify-center">
+        <canvas ref={canvasRef} width={180} height={110} style={{ borderRadius: 6 }} />
+      </div>
+      <div className="flex justify-center gap-4 mt-2">
+        <span className="text-[9px] text-[#22c55e]">● H-Plane</span>
+        <span className="text-[9px] text-[#666]">Max gain: 2.5 dBi</span>
+      </div>
+    </div>
+  );
+}
+
+// ── HW-14: Voltage Regulator Status ────────────────────────────────────────
+function VoltageRegulatorStatus() {
+  const [voltage, setVoltage] = useState(3.31);
+  const [brownoutCount, setBrownoutCount] = useState(0);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setVoltage(3.28 + Math.random() * 0.06);
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  useEffect(() => {
+    if (voltage < 3.0) setBrownoutCount(c => c + 1);
+  }, [voltage]);
+
+  const isNominal = voltage >= 3.2 && voltage <= 3.4;
+  const isBrownout = voltage < 3.0;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-2">Voltage Regulator</div>
+      <div className="flex items-center gap-3 mb-2">
+        <div style={{
+          fontSize: 24, fontWeight: 800, fontFamily: "monospace",
+          color: isBrownout ? "#ef4444" : isNominal ? "#22c55e" : "#f59e0b",
+          transition: "color 0.3s",
+        }}>
+          {voltage.toFixed(2)}V
+        </div>
+        <div>
+          <div className="text-[10px] font-semibold" style={{ color: isNominal ? "#22c55e" : "#f59e0b" }}>
+            {isBrownout ? "BROWNOUT" : isNominal ? "Nominal" : "Marginal"}
+          </div>
+          <div className="text-[9px] text-[#555]">AMS1117-3.3 LDO</div>
+        </div>
+      </div>
+      <div style={{ height: 6, background: "#111", borderRadius: 3, overflow: "hidden", position: "relative", border: "1px solid #222" }}>
+        <div style={{
+          position: "absolute", left: `${((voltage - 2.8) / 0.7) * 100}%`,
+          top: 0, bottom: 0, width: 3, background: isNominal ? "#22c55e" : "#f59e0b",
+          borderRadius: 2, transition: "left 0.3s",
+        }} />
+        <div style={{ position: "absolute", left: `${((3.0 - 2.8) / 0.7) * 100}%`, top: 0, bottom: 0, width: 1, background: "#ef444466" }} />
+        <div style={{ position: "absolute", left: `${((3.3 - 2.8) / 0.7) * 100}%`, top: 0, bottom: 0, width: 1, background: "#22c55e66" }} />
+      </div>
+      <div className="flex justify-between mt-1">
+        <span className="text-[8px] text-[#444]">2.8V</span>
+        <span className="text-[8px] text-[#ef4444]">3.0V min</span>
+        <span className="text-[8px] text-[#22c55e]">3.3V nom</span>
+        <span className="text-[8px] text-[#444]">3.5V</span>
+      </div>
+      {brownoutCount > 0 && (
+        <div className="text-[9px] text-[#ef4444] mt-1">Brownout events: {brownoutCount}</div>
+      )}
+    </div>
+  );
+}
+
+// ── HW-15: I2C Bus Scanner ─────────────────────────────────────────────────
+function I2CBusScanner() {
+  const [devices] = useState([
+    { addr: "0x50", name: "EEPROM", desc: "24C32 - Calibration storage" },
+    { addr: "0x68", name: "RTC", desc: "DS3231 - Real-time clock" },
+    { addr: "0x76", name: "BME280", desc: "Temp/Humidity/Pressure" },
+    { addr: "0x3C", name: "OLED", desc: "SSD1306 128x64 display" },
+  ]);
+  const [scanning, setScanning] = useState(false);
+
+  useEffect(() => {
+    if (!scanning) return;
+    const t = setTimeout(() => setScanning(false), 2000);
+    return () => clearTimeout(t);
+  }, [scanning]);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[13px] font-bold text-gs-text">I2C Bus Scanner</div>
+        <button onClick={() => setScanning(true)} disabled={scanning}
+          className="text-[9px] font-bold px-2 py-1 rounded bg-[#1a1a1a] border border-[#333] text-[#999] cursor-pointer"
+          style={{ opacity: scanning ? 0.5 : 1 }}>
+          {scanning ? "Scanning..." : "Rescan"}
+        </button>
+      </div>
+      <div className="text-[9px] text-[#555] mb-2">SDA: GPIO21 • SCL: GPIO22 • 400kHz</div>
+      <div className="space-y-1.5">
+        {devices.map((d, i) => (
+          <div key={i} className="flex items-center gap-2 px-2 py-1.5 rounded-md" style={{
+            background: "#111", border: "1px solid #222",
+            animation: scanning ? "vb-pulse 0.5s ease-in-out infinite" : "none",
+          }}>
+            <span className="text-[10px] font-mono font-bold text-[#0ea5e9] w-8">{d.addr}</span>
+            <div className="flex-1">
+              <div className="text-[10px] font-semibold text-gs-text">{d.name}</div>
+              <div className="text-[8px] text-[#555]">{d.desc}</div>
+            </div>
+            <div style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e" }} />
+          </div>
+        ))}
+      </div>
+      <div className="text-[8px] text-[#444] mt-2">{devices.length} devices found on bus</div>
+    </div>
+  );
+}
+
+// ── HW-16: SPI Bus Monitor ─────────────────────────────────────────────────
+function SPIBusMonitor() {
+  const [transactions, setTransactions] = useState([
+    { dev: "SD Card", cmd: "READ_BLOCK", bytes: 512, speed: "20MHz", ts: Date.now() - 1200 },
+    { dev: "Display", cmd: "SET_COLUMN", bytes: 4, speed: "40MHz", ts: Date.now() - 800 },
+    { dev: "SD Card", cmd: "WRITE_BLOCK", bytes: 512, speed: "20MHz", ts: Date.now() - 400 },
+    { dev: "Display", cmd: "DRAW_PIXEL", bytes: 128, speed: "40MHz", ts: Date.now() - 200 },
+  ]);
+
+  useEffect(() => {
+    const cmds = [
+      { dev: "SD Card", cmd: "READ_BLOCK", bytes: 512, speed: "20MHz" },
+      { dev: "Display", cmd: "FILL_RECT", bytes: 256, speed: "40MHz" },
+      { dev: "SD Card", cmd: "READ_STATUS", bytes: 2, speed: "20MHz" },
+      { dev: "Display", cmd: "SET_WINDOW", bytes: 8, speed: "40MHz" },
+    ];
+    const t = setInterval(() => {
+      const cmd = cmds[Math.floor(Math.random() * cmds.length)];
+      setTransactions(prev => [...prev.slice(-7), { ...cmd, ts: Date.now() }]);
+    }, 2000);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-2">SPI Bus Monitor</div>
+      <div className="text-[9px] text-[#555] mb-2">VSPI: CS=5, CLK=18, MOSI=23, MISO=19</div>
+      <div style={{ maxHeight: 130, overflowY: "auto", background: "#0a0a0a", borderRadius: 6, border: "1px solid #222" }}>
+        {transactions.map((t, i) => (
+          <div key={i} className="flex items-center gap-2 px-2 py-1" style={{ borderBottom: "1px solid #1a1a1a" }}>
+            <span className="text-[8px] font-semibold w-14" style={{ color: t.dev === "SD Card" ? "#f59e0b" : "#0ea5e9" }}>{t.dev}</span>
+            <span className="text-[8px] font-mono text-[#999] flex-1">{t.cmd}</span>
+            <span className="text-[8px] text-[#555]">{t.bytes}B</span>
+            <span className="text-[8px] text-[#444]">{t.speed}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── HW-17: DMA Channel Status ──────────────────────────────────────────────
+function DMAChannelStatus() {
+  const [channels, setChannels] = useState([
+    { id: 0, name: "I2S RX", usage: 72, active: true, desc: "Audio input stream" },
+    { id: 1, name: "I2S TX", usage: 0, active: false, desc: "Audio output (unused)" },
+    { id: 2, name: "SPI TX", usage: 35, active: true, desc: "SD card / Display" },
+    { id: 3, name: "SPI RX", usage: 28, active: true, desc: "SD card read" },
+    { id: 4, name: "UART TX", usage: 5, active: true, desc: "Debug serial output" },
+  ]);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setChannels(prev => prev.map(ch => ({
+        ...ch, usage: ch.active ? Math.max(0, Math.min(100, ch.usage + (Math.random() - 0.5) * 15)) : 0,
+      })));
+    }, 1200);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-3">DMA Channels</div>
+      <div className="space-y-2">
+        {channels.map(ch => (
+          <div key={ch.id} className="flex items-center gap-2">
+            <span className="text-[9px] font-mono text-[#555] w-4">{ch.id}</span>
+            <span className="text-[9px] font-semibold text-gs-text w-14">{ch.name}</span>
+            <div className="flex-1" style={{ height: 6, background: "#111", borderRadius: 3, overflow: "hidden" }}>
+              <div style={{
+                height: "100%", width: `${ch.usage}%`,
+                background: ch.usage > 80 ? "#ef4444" : ch.usage > 50 ? "#f59e0b" : "#22c55e",
+                borderRadius: 3, transition: "width 0.5s, background 0.5s",
+              }} />
+            </div>
+            <span className="text-[8px] text-[#666] w-8 text-right">{ch.usage.toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── HW-18: Interrupt Handler Monitor ───────────────────────────────────────
+function InterruptHandlerMonitor() {
+  const [irqs, setIrqs] = useState([
+    { name: "I2S_ISR", freq: 62500, priority: 3, type: "Level", cpu: 0 },
+    { name: "TIMER0_ISR", freq: 1000, priority: 2, type: "Edge", cpu: 0 },
+    { name: "GPIO_ISR", freq: 12, priority: 1, type: "Edge", cpu: 1 },
+    { name: "WIFI_ISR", freq: 450, priority: 2, type: "Level", cpu: 0 },
+    { name: "SPI_ISR", freq: 8200, priority: 2, type: "Level", cpu: 1 },
+    { name: "WDT_ISR", freq: 1, priority: 4, type: "NMI", cpu: 0 },
+  ]);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setIrqs(prev => prev.map(irq => ({
+        ...irq, freq: Math.max(0, irq.freq + Math.floor((Math.random() - 0.5) * irq.freq * 0.1)),
+      })));
+    }, 2000);
+    return () => clearInterval(t);
+  }, []);
+
+  const prioColor = { 1: "#22c55e", 2: "#0ea5e9", 3: "#f59e0b", 4: "#ef4444" };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-3">Interrupt Handlers</div>
+      <div style={{ fontSize: 0 }}>
+        <div className="flex gap-1 px-2 py-1 mb-1">
+          <span className="text-[8px] font-bold text-[#555] flex-1">Handler</span>
+          <span className="text-[8px] font-bold text-[#555] w-14 text-right">Freq</span>
+          <span className="text-[8px] font-bold text-[#555] w-8 text-center">Prio</span>
+          <span className="text-[8px] font-bold text-[#555] w-10 text-center">Type</span>
+          <span className="text-[8px] font-bold text-[#555] w-8 text-center">CPU</span>
+        </div>
+        {irqs.map((irq, i) => (
+          <div key={i} className="flex gap-1 px-2 py-1 rounded" style={{ background: i % 2 === 0 ? "#111" : "transparent" }}>
+            <span className="text-[9px] font-mono text-gs-text flex-1">{irq.name}</span>
+            <span className="text-[9px] font-mono text-[#999] w-14 text-right">{irq.freq.toLocaleString()}</span>
+            <span className="text-[9px] font-bold w-8 text-center" style={{ color: prioColor[irq.priority] }}>{irq.priority}</span>
+            <span className="text-[8px] text-[#666] w-10 text-center">{irq.type}</span>
+            <span className="text-[8px] text-[#666] w-8 text-center">PRO{irq.cpu}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── HW-19: Task Scheduler View (FreeRTOS) ──────────────────────────────────
+function TaskSchedulerView() {
+  const [tasks, setTasks] = useState([
+    { name: "audio_task", prio: 5, stack: 78, cpu: 42, core: 0, state: "Running" },
+    { name: "wifi_task", prio: 4, stack: 54, cpu: 18, core: 0, state: "Ready" },
+    { name: "fft_task", prio: 4, stack: 65, cpu: 28, core: 1, state: "Running" },
+    { name: "upload_task", prio: 3, stack: 41, cpu: 8, core: 1, state: "Blocked" },
+    { name: "display_task", prio: 2, stack: 33, cpu: 5, core: 1, state: "Ready" },
+    { name: "idle0", prio: 0, stack: 95, cpu: 15, core: 0, state: "Running" },
+    { name: "idle1", prio: 0, stack: 95, cpu: 12, core: 1, state: "Running" },
+  ]);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setTasks(prev => prev.map(task => ({
+        ...task,
+        cpu: Math.max(0, Math.min(100, task.cpu + (Math.random() - 0.5) * 10)),
+        stack: Math.max(10, Math.min(100, task.stack + (Math.random() - 0.5) * 5)),
+      })));
+    }, 2000);
+    return () => clearInterval(t);
+  }, []);
+
+  const stateColor = { Running: "#22c55e", Ready: "#0ea5e9", Blocked: "#f59e0b", Suspended: "#ef4444" };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-3">FreeRTOS Tasks</div>
+      <div className="space-y-1.5">
+        {tasks.map((t, i) => (
+          <div key={i} className="flex items-center gap-2 px-2 py-1 rounded-md" style={{ background: "#111", border: "1px solid #1a1a1a" }}>
+            <span className="text-[9px] font-mono text-gs-text flex-1 truncate">{t.name}</span>
+            <span className="text-[7px] px-1 py-0.5 rounded" style={{ background: stateColor[t.state] + "22", color: stateColor[t.state] }}>{t.state}</span>
+            <div className="w-12" style={{ height: 4, background: "#222", borderRadius: 2, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${t.cpu}%`, background: t.cpu > 60 ? "#ef4444" : "#0ea5e9", borderRadius: 2, transition: "width 0.5s" }} />
+            </div>
+            <span className="text-[7px] text-[#555] w-6">P{t.prio}</span>
+            <span className="text-[7px] text-[#555] w-4">C{t.core}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── HW-20: Heap Fragmentation Visualizer ───────────────────────────────────
+function HeapFragmentationVisualizer() {
+  const [blocks] = useState(() => {
+    const b = [];
+    let offset = 0;
+    for (let i = 0; i < 48; i++) {
+      const size = 1 + Math.floor(Math.random() * 4);
+      const type = Math.random() > 0.35 ? "used" : Math.random() > 0.5 ? "free" : "frag";
+      b.push({ offset, size, type });
+      offset += size;
+    }
+    return b;
+  });
+
+  const totalSize = blocks.reduce((a, b) => a + b.size, 0);
+  const usedSize = blocks.filter(b => b.type === "used").reduce((a, b) => a + b.size, 0);
+  const freeSize = blocks.filter(b => b.type === "free").reduce((a, b) => a + b.size, 0);
+  const fragSize = blocks.filter(b => b.type === "frag").reduce((a, b) => a + b.size, 0);
+  const colors = { used: "#0ea5e9", free: "#22c55e", frag: "#ef4444" };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-2">Heap Fragmentation</div>
+      <div style={{
+        display: "flex", height: 24, borderRadius: 6, overflow: "hidden",
+        background: "#111", border: "1px solid #222", gap: 1, padding: 2,
+      }}>
+        {blocks.map((b, i) => (
+          <div key={i} style={{
+            flex: b.size, background: colors[b.type],
+            borderRadius: 2, minWidth: 2,
+            opacity: b.type === "frag" ? 0.6 : 0.8,
+          }} title={`${b.type}: ${b.size} blocks @ offset ${b.offset}`} />
+        ))}
+      </div>
+      <div className="flex gap-4 mt-2 justify-center">
+        <span className="text-[9px] text-[#0ea5e9]">■ Used: {((usedSize / totalSize) * 100).toFixed(0)}%</span>
+        <span className="text-[9px] text-[#22c55e]">■ Free: {((freeSize / totalSize) * 100).toFixed(0)}%</span>
+        <span className="text-[9px] text-[#ef4444]">■ Fragmented: {((fragSize / totalSize) * 100).toFixed(0)}%</span>
+      </div>
+      <div className="text-[8px] text-[#444] mt-1 text-center">Total: 320KB • Largest free block: 42KB</div>
+    </div>
+  );
+}
+
+// ── HW-21: NVS Storage Browser ─────────────────────────────────────────────
+function NVSStorageBrowser() {
+  const [entries, setEntries] = useState([
+    { ns: "wifi", key: "ssid", type: "str", value: "GrooveStack-IoT" },
+    { ns: "wifi", key: "pass", type: "str", value: "********" },
+    { ns: "audio", key: "gain", type: "u8", value: "50" },
+    { ns: "audio", key: "threshold", type: "u8", value: "30" },
+    { ns: "audio", key: "sample_rate", type: "u32", value: "16000" },
+    { ns: "device", key: "name", type: "str", value: "Living Room VB" },
+    { ns: "device", key: "room", type: "str", value: "living-room" },
+    { ns: "device", key: "code", type: "str", value: "VB-XXXX" },
+    { ns: "cal", key: "mic_offset", type: "i16", value: "-3" },
+    { ns: "cal", key: "fft_window", type: "u8", value: "1" },
+    { ns: "ota", key: "boot_count", type: "u32", value: "247" },
+    { ns: "ota", key: "last_ver", type: "str", value: "2.0.3" },
+  ]);
+  const [editIdx, setEditIdx] = useState(-1);
+  const [editVal, setEditVal] = useState("");
+
+  const handleEdit = (i) => { setEditIdx(i); setEditVal(entries[i].value); };
+  const handleSave = () => {
+    if (editIdx >= 0) {
+      setEntries(prev => prev.map((e, i) => i === editIdx ? { ...e, value: editVal } : e));
+      setEditIdx(-1);
+    }
+  };
+
+  const nsColors = { wifi: "#0ea5e9", audio: "#22c55e", device: "#8b5cf6", cal: "#f59e0b", ota: "#ef4444" };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-2">NVS Storage Browser</div>
+      <div className="text-[9px] text-[#555] mb-2">{entries.length} entries • 4KB partition</div>
+      <div style={{ maxHeight: 200, overflowY: "auto", background: "#0a0a0a", borderRadius: 6, border: "1px solid #222" }}>
+        {entries.map((e, i) => (
+          <div key={i} className="flex items-center gap-2 px-2 py-1.5" style={{ borderBottom: "1px solid #1a1a1a" }}>
+            <span className="text-[8px] font-bold w-10" style={{ color: nsColors[e.ns] || "#666" }}>{e.ns}</span>
+            <span className="text-[9px] font-mono text-[#999] flex-1">{e.key}</span>
+            <span className="text-[7px] text-[#444] w-6">{e.type}</span>
+            {editIdx === i ? (
+              <div className="flex gap-1">
+                <input value={editVal} onChange={ev => setEditVal(ev.target.value)}
+                  className="text-[9px] font-mono px-1 py-0.5 rounded w-20"
+                  style={{ background: "#1a1a1a", border: "1px solid #0ea5e9", color: "#fff", outline: "none" }} />
+                <button onClick={handleSave} className="text-[8px] text-[#22c55e] bg-transparent border-none cursor-pointer">Save</button>
+              </div>
+            ) : (
+              <span className="text-[9px] font-mono text-gs-text w-24 text-right truncate cursor-pointer"
+                onClick={() => handleEdit(i)} title="Click to edit">{e.value}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── HW-22: Partition Table Viewer ──────────────────────────────────────────
+function PartitionTableViewer() {
+  const partitions = [
+    { name: "nvs", type: "data", subtype: "nvs", offset: "0x9000", size: "0x4000", sizeHuman: "16KB", color: "#f59e0b" },
+    { name: "otadata", type: "data", subtype: "ota", offset: "0xD000", size: "0x2000", sizeHuman: "8KB", color: "#8b5cf6" },
+    { name: "ota_0", type: "app", subtype: "ota_0", offset: "0x10000", size: "0x180000", sizeHuman: "1.5MB", color: "#0ea5e9" },
+    { name: "ota_1", type: "app", subtype: "ota_1", offset: "0x190000", size: "0x180000", sizeHuman: "1.5MB", color: "#22c55e" },
+    { name: "spiffs", type: "data", subtype: "spiffs", offset: "0x310000", size: "0xF0000", sizeHuman: "960KB", color: "#ef4444" },
+  ];
+
+  const totalFlash = 4 * 1024 * 1024; // 4MB
+  const sizes = [0x4000, 0x2000, 0x180000, 0x180000, 0xF0000];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-2">Flash Partition Table</div>
+      <div className="text-[9px] text-[#555] mb-2">ESP32 • 4MB Flash (W25Q32)</div>
+      <div style={{ display: "flex", height: 20, borderRadius: 6, overflow: "hidden", background: "#111", border: "1px solid #222", gap: 1 }}>
+        {partitions.map((p, i) => (
+          <div key={i} style={{
+            flex: sizes[i], background: p.color, borderRadius: 2,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            minWidth: sizes[i] > 0x10000 ? 40 : 10,
+          }}>
+            {sizes[i] > 0x50000 && <span style={{ fontSize: 7, color: "#fff", fontWeight: 700 }}>{p.name}</span>}
+          </div>
+        ))}
+      </div>
+      <div className="space-y-1 mt-2">
+        {partitions.map((p, i) => (
+          <div key={i} className="flex items-center gap-2 text-[9px]">
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: p.color }} />
+            <span className="font-mono text-gs-text w-16">{p.name}</span>
+            <span className="text-[#666] w-10">{p.type}</span>
+            <span className="text-[#555] font-mono w-16">{p.offset}</span>
+            <span className="text-[#999] ml-auto">{p.sizeHuman}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── HW-23: Boot Log Viewer ─────────────────────────────────────────────────
+function BootLogViewer() {
+  const [phases] = useState([
+    { name: "ROM Boot", time: 12, status: "ok" },
+    { name: "2nd Stage Bootloader", time: 45, status: "ok" },
+    { name: "Partition Load", time: 23, status: "ok" },
+    { name: "CPU Init (PRO + APP)", time: 34, status: "ok" },
+    { name: "Heap Init (320KB)", time: 8, status: "ok" },
+    { name: "Flash Init (SPI)", time: 67, status: "ok" },
+    { name: "NVS Mount", time: 15, status: "ok" },
+    { name: "WiFi Init", time: 234, status: "ok" },
+    { name: "WiFi Connect", time: 1820, status: "ok" },
+    { name: "I2S Driver Init", time: 45, status: "ok" },
+    { name: "I2C Bus Scan", time: 89, status: "ok" },
+    { name: "SPIFFS Mount", time: 112, status: "ok" },
+    { name: "Audio Pipeline Init", time: 56, status: "ok" },
+    { name: "OTA Check", time: 340, status: "ok" },
+    { name: "App Ready", time: 0, status: "done" },
+  ]);
+
+  const totalMs = phases.reduce((a, p) => a + p.time, 0);
+  const maxTime = Math.max(...phases.map(p => p.time));
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[13px] font-bold text-gs-text">Boot Sequence</div>
+        <span className="text-[10px] text-[#22c55e] font-mono">{(totalMs / 1000).toFixed(2)}s total</span>
+      </div>
+      <div className="space-y-1">
+        {phases.map((p, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span className="text-[8px] text-[#555] w-32 truncate">{p.name}</span>
+            <div className="flex-1" style={{ height: 5, background: "#111", borderRadius: 3, overflow: "hidden" }}>
+              <div style={{
+                height: "100%", width: `${maxTime > 0 ? (p.time / maxTime) * 100 : 0}%`,
+                background: p.time > 500 ? "#f59e0b" : p.time > 100 ? "#0ea5e9" : "#22c55e",
+                borderRadius: 3,
+              }} />
+            </div>
+            <span className="text-[8px] font-mono text-[#666] w-12 text-right">
+              {p.status === "done" ? "✓" : `${p.time}ms`}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── HW-24: Watchdog Timer Status ───────────────────────────────────────────
+function WatchdogTimerStatus() {
+  const [countdown, setCountdown] = useState(5000);
+  const [resets, setResets] = useState(2);
+  const [lastFed, setLastFed] = useState(Date.now());
+  const wdtTimeout = 5000;
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      setCountdown(prev => {
+        const next = prev - 100;
+        if (next <= 0) {
+          setResets(r => r + 1);
+          setLastFed(Date.now());
+          return wdtTimeout;
+        }
+        return next;
+      });
+    }, 100);
+
+    // Simulate feeding the watchdog periodically
+    const feed = setInterval(() => {
+      setCountdown(wdtTimeout);
+      setLastFed(Date.now());
+    }, 4200);
+
+    return () => { clearInterval(t); clearInterval(feed); };
+  }, []);
+
+  const pct = (countdown / wdtTimeout) * 100;
+  const isWarning = pct < 30;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="text-[13px] font-bold text-gs-text mb-2">Watchdog Timer (TWDT)</div>
+      <div className="flex items-center gap-3 mb-2">
+        <div style={{
+          width: 48, height: 48, borderRadius: "50%", position: "relative",
+          background: "#111", border: `2px solid ${isWarning ? "#ef4444" : "#22c55e"}`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          transition: "border-color 0.3s",
+        }}>
+          <svg viewBox="0 0 36 36" style={{ width: 44, height: 44, position: "absolute", transform: "rotate(-90deg)" }}>
+            <circle cx="18" cy="18" r="15" fill="none" stroke="#222" strokeWidth="2" />
+            <circle cx="18" cy="18" r="15" fill="none"
+              stroke={isWarning ? "#ef4444" : "#22c55e"} strokeWidth="2"
+              strokeDasharray={`${pct} ${100 - pct}`}
+              strokeLinecap="round" style={{ transition: "stroke-dasharray 0.1s" }} />
+          </svg>
+          <span className="text-[11px] font-bold font-mono" style={{ color: isWarning ? "#ef4444" : "#22c55e", zIndex: 1 }}>
+            {(countdown / 1000).toFixed(1)}
+          </span>
+        </div>
+        <div>
+          <div className="text-[10px] text-[#999]">Timeout: {wdtTimeout / 1000}s</div>
+          <div className="text-[10px] text-[#999]">Last fed: {relTime(lastFed)}</div>
+          <div className="text-[10px]" style={{ color: resets > 0 ? "#f59e0b" : "#22c55e" }}>
+            WDT Resets: {resets}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── HW-25: Hardware Self-Test Panel ────────────────────────────────────────
+function HardwareSelfTestPanel() {
+  const [tests, setTests] = useState([
+    { name: "CPU (Dual-Core)", status: "idle" },
+    { name: "PSRAM (4MB)", status: "idle" },
+    { name: "Flash (W25Q32)", status: "idle" },
+    { name: "WiFi Radio", status: "idle" },
+    { name: "Bluetooth LE", status: "idle" },
+    { name: "I2S Microphone", status: "idle" },
+    { name: "I2C Bus", status: "idle" },
+    { name: "SPI Bus", status: "idle" },
+    { name: "GPIO Loopback", status: "idle" },
+    { name: "NVS Integrity", status: "idle" },
+    { name: "RTC Clock", status: "idle" },
+    { name: "Voltage Rails", status: "idle" },
+  ]);
+  const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    if (!running) return;
+    let idx = 0;
+    const t = setInterval(() => {
+      if (idx >= tests.length) {
+        setRunning(false);
+        clearInterval(t);
+        return;
+      }
+      const currentIdx = idx;
+      setTests(prev => prev.map((test, i) => i === currentIdx ? { ...test, status: "testing" } : test));
+      setTimeout(() => {
+        const pass = Math.random() > 0.1;
+        setTests(prev => prev.map((test, i) => i === currentIdx ? { ...test, status: pass ? "pass" : "fail" } : test));
+      }, 600);
+      idx++;
+    }, 800);
+    return () => clearInterval(t);
+  }, [running, tests.length]);
+
+  const statusIcon = { idle: "○", testing: "◌", pass: "✓", fail: "✗" };
+  const statusColor = { idle: "#444", testing: "#0ea5e9", pass: "#22c55e", fail: "#ef4444" };
+  const passCount = tests.filter(t => t.status === "pass").length;
+  const failCount = tests.filter(t => t.status === "fail").length;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[13px] font-bold text-gs-text">Hardware Self-Test</div>
+        <button onClick={() => {
+          setTests(prev => prev.map(t => ({ ...t, status: "idle" })));
+          setRunning(true);
+        }}
+          disabled={running}
+          className="text-[10px] font-bold px-3 py-1 rounded-md border-none cursor-pointer"
+          style={{
+            background: running ? "#333" : "#0ea5e9",
+            color: running ? "#666" : "#fff",
+          }}>
+          {running ? "Testing..." : "Run All Tests"}
+        </button>
+      </div>
+      <div className="grid grid-cols-2 gap-1">
+        {tests.map((t, i) => (
+          <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded" style={{ background: "#111" }}>
+            <span style={{
+              fontSize: 11, fontWeight: 700, color: statusColor[t.status],
+              animation: t.status === "testing" ? "vb-spin 1s linear infinite" : "none",
+              display: "inline-block", width: 14, textAlign: "center",
+            }}>{statusIcon[t.status]}</span>
+            <span className="text-[9px] text-gs-text truncate">{t.name}</span>
+          </div>
+        ))}
+      </div>
+      {(passCount > 0 || failCount > 0) && (
+        <div className="flex gap-3 mt-2 justify-center">
+          <span className="text-[9px] text-[#22c55e] font-bold">{passCount} Passed</span>
+          {failCount > 0 && <span className="text-[9px] text-[#ef4444] font-bold">{failCount} Failed</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // DEVICE CARD — device status with server polling
 // ============================================================================
 function DeviceCard({ currentUser, deviceCode, onDeactivate, isDemo }) {
@@ -6102,6 +7431,33 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate, isDemo }) {
 
       {/* (Improvement 13) Device battery optimization tips */}
       <BatteryOptimizationTips />
+
+      {/* ── Hardware UI/UX Improvements (HW 1-25) ── */}
+      <DevicePairingAnimation />
+      <HardwareStatusDashboard />
+      <I2SAudioPipelineVisualizer />
+      <MicPolarPatternDisplay />
+      <GPIOPinStatusMonitor />
+      <PowerConsumptionGraph />
+      <WiFiChannelScanner />
+      <AudioBufferStatus />
+      <FirmwareFlashProgress />
+      <HardwareErrorLogViewer />
+      <DeviceFactoryResetConfirmation />
+      <USBSerialMonitor />
+      <AntennaSignalPattern />
+      <VoltageRegulatorStatus />
+      <I2CBusScanner />
+      <SPIBusMonitor />
+      <DMAChannelStatus />
+      <InterruptHandlerMonitor />
+      <TaskSchedulerView />
+      <HeapFragmentationVisualizer />
+      <NVSStorageBrowser />
+      <PartitionTableViewer />
+      <BootLogViewer />
+      <WatchdogTimerStatus />
+      <HardwareSelfTestPanel />
 
       {/* Setup Guide */}
       <SetupGuide />

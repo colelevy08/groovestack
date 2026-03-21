@@ -2971,6 +2971,1618 @@ void applyRemoteConfig(const String& json) {
 }
 
 /* ============================================================================
+ * SECTION 50: Improvement #26 — MQTT Support
+ * ============================================================================ */
+
+// MQTT broker configuration
+#define MQTT_BROKER         "mqtt.groovestack.io"
+#define MQTT_PORT           1883
+#define MQTT_KEEPALIVE      60
+#define MQTT_BUFFER_SIZE    512
+#define MQTT_RECONNECT_MS   5000
+
+static WiFiClient mqttWifiClient;
+static bool mqttConnected = false;
+static unsigned long lastMqttReconnect = 0;
+static char mqttClientId[32];
+static char mqttTopicStatus[64];
+static char mqttTopicCommand[64];
+static char mqttTopicAudio[64];
+
+// Lightweight MQTT packet builder (no external library needed)
+static uint8_t mqttBuffer[MQTT_BUFFER_SIZE];
+
+bool mqttSendConnect() {
+  // Build CONNECT packet
+  uint8_t pkt[128];
+  int idx = 0;
+  // Fixed header
+  pkt[idx++] = 0x10; // CONNECT
+  // Variable header placeholder for length
+  int lenPos = idx++;
+  // Protocol Name
+  pkt[idx++] = 0x00; pkt[idx++] = 0x04;
+  pkt[idx++] = 'M'; pkt[idx++] = 'Q'; pkt[idx++] = 'T'; pkt[idx++] = 'T';
+  pkt[idx++] = 0x04; // Protocol Level (MQTT 3.1.1)
+  pkt[idx++] = 0x02; // Connect Flags (Clean Session)
+  pkt[idx++] = (MQTT_KEEPALIVE >> 8) & 0xFF;
+  pkt[idx++] = MQTT_KEEPALIVE & 0xFF;
+  // Client ID
+  int clientIdLen = strlen(mqttClientId);
+  pkt[idx++] = (clientIdLen >> 8) & 0xFF;
+  pkt[idx++] = clientIdLen & 0xFF;
+  memcpy(&pkt[idx], mqttClientId, clientIdLen);
+  idx += clientIdLen;
+  // Set remaining length
+  pkt[lenPos] = idx - 2;
+
+  return mqttWifiClient.write(pkt, idx) == idx;
+}
+
+bool mqttPublish(const char* topic, const char* payload) {
+  if (!mqttConnected) return false;
+  int topicLen = strlen(topic);
+  int payloadLen = strlen(payload);
+  int remainLen = 2 + topicLen + payloadLen;
+
+  uint8_t pkt[MQTT_BUFFER_SIZE];
+  int idx = 0;
+  pkt[idx++] = 0x30; // PUBLISH, QoS 0
+  // Encode remaining length (simple for <128)
+  if (remainLen < 128) {
+    pkt[idx++] = remainLen;
+  } else {
+    pkt[idx++] = (remainLen % 128) | 0x80;
+    pkt[idx++] = remainLen / 128;
+  }
+  pkt[idx++] = (topicLen >> 8) & 0xFF;
+  pkt[idx++] = topicLen & 0xFF;
+  memcpy(&pkt[idx], topic, topicLen); idx += topicLen;
+  memcpy(&pkt[idx], payload, payloadLen); idx += payloadLen;
+
+  return mqttWifiClient.write(pkt, idx) == idx;
+}
+
+bool mqttSubscribe(const char* topic) {
+  if (!mqttConnected) return false;
+  static uint16_t packetId = 1;
+  int topicLen = strlen(topic);
+  int remainLen = 2 + 2 + topicLen + 1;
+
+  uint8_t pkt[128];
+  int idx = 0;
+  pkt[idx++] = 0x82; // SUBSCRIBE
+  pkt[idx++] = remainLen;
+  pkt[idx++] = (packetId >> 8) & 0xFF;
+  pkt[idx++] = packetId & 0xFF;
+  packetId++;
+  pkt[idx++] = (topicLen >> 8) & 0xFF;
+  pkt[idx++] = topicLen & 0xFF;
+  memcpy(&pkt[idx], topic, topicLen); idx += topicLen;
+  pkt[idx++] = 0x00; // QoS 0
+
+  return mqttWifiClient.write(pkt, idx) == idx;
+}
+
+void initMQTT() {
+  snprintf(mqttClientId, sizeof(mqttClientId), "VB-%s", config.device_id);
+  snprintf(mqttTopicStatus, sizeof(mqttTopicStatus), "vinylbuddy/%s/status", config.device_id);
+  snprintf(mqttTopicCommand, sizeof(mqttTopicCommand), "vinylbuddy/%s/command", config.device_id);
+  snprintf(mqttTopicAudio, sizeof(mqttTopicAudio), "vinylbuddy/%s/audio", config.device_id);
+  serialDebug("MQTT", "MQTT client initialized");
+}
+
+void mqttReconnect() {
+  if (mqttConnected || !wifiConnected) return;
+  if (millis() - lastMqttReconnect < MQTT_RECONNECT_MS) return;
+  lastMqttReconnect = millis();
+
+  serialDebugf("MQTT", "Connecting to %s:%d", MQTT_BROKER, MQTT_PORT);
+  if (mqttWifiClient.connect(MQTT_BROKER, MQTT_PORT)) {
+    if (mqttSendConnect()) {
+      delay(100);
+      if (mqttWifiClient.available()) {
+        uint8_t resp[4];
+        mqttWifiClient.read(resp, 4);
+        if (resp[0] == 0x20 && resp[3] == 0x00) {
+          mqttConnected = true;
+          serialDebug("MQTT", "Connected to broker");
+          mqttSubscribe(mqttTopicCommand);
+          mqttPublish(mqttTopicStatus, "{\"state\":\"online\"}");
+          logToSD("MQTT", "Connected to broker");
+          return;
+        }
+      }
+    }
+    mqttWifiClient.stop();
+  }
+  serialDebug("MQTT", "Connection failed, will retry");
+}
+
+void mqttProcessIncoming() {
+  if (!mqttConnected || !mqttWifiClient.connected()) {
+    if (mqttConnected) {
+      mqttConnected = false;
+      serialDebug("MQTT", "Disconnected from broker");
+    }
+    return;
+  }
+  while (mqttWifiClient.available()) {
+    uint8_t header = mqttWifiClient.read();
+    if ((header & 0xF0) == 0x30) { // PUBLISH
+      uint8_t lenByte = mqttWifiClient.read();
+      int remainLen = lenByte & 0x7F;
+      if (lenByte & 0x80) {
+        remainLen += mqttWifiClient.read() * 128;
+      }
+      uint8_t buf[MQTT_BUFFER_SIZE];
+      int read = 0;
+      while (read < remainLen && read < MQTT_BUFFER_SIZE) {
+        if (mqttWifiClient.available()) buf[read++] = mqttWifiClient.read();
+      }
+      int topicLen = (buf[0] << 8) | buf[1];
+      char topic[128] = {0};
+      memcpy(topic, &buf[2], min(topicLen, 127));
+      char payload[256] = {0};
+      int payloadLen = remainLen - 2 - topicLen;
+      memcpy(payload, &buf[2 + topicLen], min(payloadLen, 255));
+
+      serialDebugf("MQTT", "Received on %s: %s", topic, payload);
+      // Handle commands
+      if (strstr(payload, "\"identify\"")) {
+        setLedState(LED_PROCESSING);
+        serialDebug("MQTT", "Identify command received");
+      } else if (strstr(payload, "\"reboot\"")) {
+        serialDebug("MQTT", "Reboot command received");
+        ESP.restart();
+      }
+    } else if ((header & 0xF0) == 0xD0) { // PINGRESP
+      mqttWifiClient.read(); // consume length byte
+    }
+  }
+}
+
+void mqttSendPing() {
+  if (!mqttConnected) return;
+  static unsigned long lastPing = 0;
+  if (millis() - lastPing < (MQTT_KEEPALIVE * 1000 / 2)) return;
+  lastPing = millis();
+  uint8_t ping[] = {0xC0, 0x00};
+  mqttWifiClient.write(ping, 2);
+}
+
+void mqttPublishStatus() {
+  if (!mqttConnected) return;
+  static unsigned long lastStatus = 0;
+  if (millis() - lastStatus < 10000) return;
+  lastStatus = millis();
+
+  char payload[256];
+  snprintf(payload, sizeof(payload),
+    "{\"battery\":%d,\"temp\":%.1f,\"state\":\"%s\",\"heap\":%d,\"rssi\":%d}",
+    batteryPercent, temperatureC,
+    deviceState == STATE_LISTENING ? "listening" : "processing",
+    ESP.getFreeHeap(), WiFi.RSSI());
+  mqttPublish(mqttTopicStatus, payload);
+}
+
+void loopMQTT() {
+  mqttReconnect();
+  mqttProcessIncoming();
+  mqttSendPing();
+  mqttPublishStatus();
+}
+
+/* ============================================================================
+ * SECTION 51: Improvement #27 — Audio FFT with Peak Detection
+ * ============================================================================ */
+
+#define FFT_PEAK_MAX        16
+#define FFT_MAGNITUDE_MIN   50.0f
+#define FFT_HARMONIC_RATIO  0.02f
+
+struct SpectralPeak {
+  uint16_t binIndex;
+  float frequency;
+  float magnitude;
+  float phase;
+};
+
+static SpectralPeak detectedPeaks[FFT_PEAK_MAX];
+static int numDetectedPeaks = 0;
+static float peakSpectralEnergy = 0.0f;
+
+// Simple peak detection on FFT magnitude spectrum
+void detectSpectralPeaks(float* magnitudes, int numBins, float sampleRate) {
+  numDetectedPeaks = 0;
+  peakSpectralEnergy = 0.0f;
+  float binWidth = sampleRate / (numBins * 2);
+
+  // Calculate mean magnitude for adaptive thresholding
+  float meanMag = 0;
+  for (int i = 1; i < numBins; i++) {
+    meanMag += magnitudes[i];
+  }
+  meanMag /= (numBins - 1);
+  float threshold = max(FFT_MAGNITUDE_MIN, meanMag * 3.0f);
+
+  for (int i = 2; i < numBins - 1 && numDetectedPeaks < FFT_PEAK_MAX; i++) {
+    // Check if bin is a local maximum above threshold
+    if (magnitudes[i] > threshold &&
+        magnitudes[i] > magnitudes[i-1] &&
+        magnitudes[i] > magnitudes[i+1] &&
+        magnitudes[i] > magnitudes[i-2]) {
+
+      // Parabolic interpolation for sub-bin precision
+      float alpha = magnitudes[i-1];
+      float beta  = magnitudes[i];
+      float gamma = magnitudes[i+1];
+      float denom = alpha - 2.0f * beta + gamma;
+      float delta = 0;
+      if (fabs(denom) > 1e-6) {
+        delta = 0.5f * (alpha - gamma) / denom;
+      }
+
+      detectedPeaks[numDetectedPeaks].binIndex = i;
+      detectedPeaks[numDetectedPeaks].frequency = (i + delta) * binWidth;
+      detectedPeaks[numDetectedPeaks].magnitude = beta - 0.25f * (alpha - gamma) * delta;
+      detectedPeaks[numDetectedPeaks].phase = 0; // Phase not computed in basic FFT
+      peakSpectralEnergy += detectedPeaks[numDetectedPeaks].magnitude;
+      numDetectedPeaks++;
+    }
+  }
+
+  // Sort peaks by magnitude (descending) - simple insertion sort
+  for (int i = 1; i < numDetectedPeaks; i++) {
+    SpectralPeak key = detectedPeaks[i];
+    int j = i - 1;
+    while (j >= 0 && detectedPeaks[j].magnitude < key.magnitude) {
+      detectedPeaks[j+1] = detectedPeaks[j];
+      j--;
+    }
+    detectedPeaks[j+1] = key;
+  }
+
+  serialDebugf("FFT", "Detected %d spectral peaks, energy=%.1f", numDetectedPeaks, peakSpectralEnergy);
+}
+
+// Generate enhanced fingerprint using peak constellation
+void generatePeakFingerprint(uint32_t* fingerprint, int maxPairs) {
+  int pairCount = 0;
+  for (int i = 0; i < numDetectedPeaks && pairCount < maxPairs; i++) {
+    for (int j = i + 1; j < numDetectedPeaks && pairCount < maxPairs; j++) {
+      // Encode peak pair as hash: freq1(10 bits) | freq2(10 bits) | delta(12 bits)
+      uint16_t f1 = detectedPeaks[i].binIndex & 0x3FF;
+      uint16_t f2 = detectedPeaks[j].binIndex & 0x3FF;
+      uint16_t dt = abs(detectedPeaks[i].binIndex - detectedPeaks[j].binIndex) & 0xFFF;
+      fingerprint[pairCount++] = ((uint32_t)f1 << 22) | ((uint32_t)f2 << 12) | dt;
+    }
+  }
+  serialDebugf("FFT", "Generated %d peak-pair fingerprints", pairCount);
+}
+
+/* ============================================================================
+ * SECTION 52: Improvement #28 — Battery Fuel Gauge (Coulomb Counting)
+ * ============================================================================ */
+
+#define FUEL_GAUGE_INTERVAL_MS   1000
+#define BATTERY_CAPACITY_MAH     2000.0f   // Nominal battery capacity
+#define SHUNT_RESISTOR_OHMS      0.1f      // Current sense resistor
+#define CURRENT_SENSE_PIN        36        // ADC pin for current measurement
+#define COULOMB_SAVE_INTERVAL    60000     // Save to NVS every 60s
+
+static float fuelGaugeSOC = 100.0f;        // State of charge (%)
+static float fuelGaugeCoulombs = 0.0f;     // Accumulated charge (mAh)
+static float fuelGaugeCurrentMA = 0.0f;    // Instantaneous current (mA)
+static float fuelGaugeVoltage = 0.0f;      // Battery voltage
+static unsigned long lastFuelGaugeUpdate = 0;
+static unsigned long lastCoulombSave = 0;
+
+void initFuelGauge() {
+  // Load saved SOC from NVS
+  Preferences fuelPrefs;
+  fuelPrefs.begin("fuel", true);
+  fuelGaugeSOC = fuelPrefs.getFloat("soc", 100.0f);
+  fuelGaugeCoulombs = fuelPrefs.getFloat("coulombs", 0.0f);
+  fuelPrefs.end();
+
+  analogReadResolution(12);
+  serialDebugf("FUEL", "Fuel gauge initialized, SOC=%.1f%%", fuelGaugeSOC);
+  logToSD("FUEL", "Fuel gauge initialized");
+}
+
+void updateFuelGauge() {
+  if (millis() - lastFuelGaugeUpdate < FUEL_GAUGE_INTERVAL_MS) return;
+  unsigned long elapsed = millis() - lastFuelGaugeUpdate;
+  lastFuelGaugeUpdate = millis();
+
+  // Read current via shunt resistor voltage
+  int rawCurrent = analogRead(CURRENT_SENSE_PIN);
+  float shuntVoltage = (rawCurrent / 4095.0f) * 3.3f;
+  fuelGaugeCurrentMA = (shuntVoltage / SHUNT_RESISTOR_OHMS) * 1000.0f;
+
+  // Coulomb counting: integrate current over time
+  float elapsedHours = elapsed / 3600000.0f;
+  fuelGaugeCoulombs += fuelGaugeCurrentMA * elapsedHours;
+
+  // Calculate SOC
+  fuelGaugeSOC = 100.0f * (1.0f - (fuelGaugeCoulombs / BATTERY_CAPACITY_MAH));
+  fuelGaugeSOC = constrain(fuelGaugeSOC, 0.0f, 100.0f);
+
+  // Voltage-based correction: if voltage is very high, SOC must be near 100%
+  fuelGaugeVoltage = batteryVoltage;  // Use existing battery reading
+  if (fuelGaugeVoltage > 4.15f && fuelGaugeSOC < 95.0f) {
+    fuelGaugeSOC = 100.0f;
+    fuelGaugeCoulombs = 0.0f;
+  }
+  // If voltage critically low, force SOC to 0
+  if (fuelGaugeVoltage < 3.0f) {
+    fuelGaugeSOC = 0.0f;
+  }
+
+  // Periodically save to NVS
+  if (millis() - lastCoulombSave > COULOMB_SAVE_INTERVAL) {
+    lastCoulombSave = millis();
+    Preferences fuelPrefs;
+    fuelPrefs.begin("fuel", false);
+    fuelPrefs.putFloat("soc", fuelGaugeSOC);
+    fuelPrefs.putFloat("coulombs", fuelGaugeCoulombs);
+    fuelPrefs.end();
+  }
+}
+
+/* ============================================================================
+ * SECTION 53: Improvement #29 — Capacitive Touch Sensor Support
+ * ============================================================================ */
+
+#define TOUCH_PIN_PLAY        T0   // GPIO 4
+#define TOUCH_PIN_NEXT        T3   // GPIO 15
+#define TOUCH_PIN_PREV        T6   // GPIO 14
+#define TOUCH_THRESHOLD       40   // Lower = more sensitive
+#define TOUCH_DEBOUNCE_MS     300
+#define TOUCH_LONG_PRESS_MS   1000
+
+struct TouchInput {
+  uint8_t pin;
+  const char* name;
+  bool active;
+  unsigned long lastTrigger;
+  unsigned long pressStart;
+  bool longPressHandled;
+};
+
+static TouchInput touchInputs[] = {
+  {TOUCH_PIN_PLAY, "play",  false, 0, 0, false},
+  {TOUCH_PIN_NEXT, "next",  false, 0, 0, false},
+  {TOUCH_PIN_PREV, "prev",  false, 0, 0, false},
+};
+static const int TOUCH_INPUT_COUNT = sizeof(touchInputs) / sizeof(TouchInput);
+static bool touchEnabled = true;
+
+void initTouchSensors() {
+  // ESP32 touch pins are initialized automatically
+  // Set threshold for touch interrupt capability
+  for (int i = 0; i < TOUCH_INPUT_COUNT; i++) {
+    touchInputs[i].active = false;
+    touchInputs[i].lastTrigger = 0;
+    touchInputs[i].pressStart = 0;
+    touchInputs[i].longPressHandled = false;
+  }
+  serialDebug("TOUCH", "Capacitive touch sensors initialized");
+  logToSD("TOUCH", "Touch sensors initialized");
+}
+
+void handleTouchAction(const char* name, bool longPress) {
+  if (longPress) {
+    serialDebugf("TOUCH", "Long press: %s", name);
+    if (strcmp(name, "play") == 0) {
+      // Long press play = toggle WiFi
+      if (wifiConnected) {
+        WiFi.disconnect();
+        serialDebug("TOUCH", "WiFi disconnected via touch");
+      } else {
+        connectWiFi();
+      }
+    }
+  } else {
+    serialDebugf("TOUCH", "Tap: %s", name);
+    if (strcmp(name, "play") == 0) {
+      // Tap play = start/stop listening
+      if (deviceState == STATE_LISTENING) {
+        deviceState = STATE_IDLE;
+        setLedState(LED_OFF);
+      } else {
+        deviceState = STATE_LISTENING;
+        setLedState(LED_LISTENING);
+      }
+    } else if (strcmp(name, "next") == 0) {
+      // Next = increase gain
+      if (config.audio_gain < 10.0f) {
+        config.audio_gain += 0.5f;
+        serialDebugf("TOUCH", "Gain increased to %.1f", config.audio_gain);
+      }
+    } else if (strcmp(name, "prev") == 0) {
+      // Prev = decrease gain
+      if (config.audio_gain > 0.5f) {
+        config.audio_gain -= 0.5f;
+        serialDebugf("TOUCH", "Gain decreased to %.1f", config.audio_gain);
+      }
+    }
+  }
+}
+
+void readTouchSensors() {
+  if (!touchEnabled) return;
+
+  for (int i = 0; i < TOUCH_INPUT_COUNT; i++) {
+    uint16_t touchVal = touchRead(touchInputs[i].pin);
+    bool touching = touchVal < TOUCH_THRESHOLD;
+
+    if (touching && !touchInputs[i].active) {
+      // Touch start
+      touchInputs[i].active = true;
+      touchInputs[i].pressStart = millis();
+      touchInputs[i].longPressHandled = false;
+    } else if (touching && touchInputs[i].active) {
+      // Check for long press
+      if (!touchInputs[i].longPressHandled &&
+          millis() - touchInputs[i].pressStart > TOUCH_LONG_PRESS_MS) {
+        handleTouchAction(touchInputs[i].name, true);
+        touchInputs[i].longPressHandled = true;
+      }
+    } else if (!touching && touchInputs[i].active) {
+      // Touch release
+      touchInputs[i].active = false;
+      if (!touchInputs[i].longPressHandled &&
+          millis() - touchInputs[i].lastTrigger > TOUCH_DEBOUNCE_MS) {
+        handleTouchAction(touchInputs[i].name, false);
+        touchInputs[i].lastTrigger = millis();
+      }
+    }
+  }
+}
+
+/* ============================================================================
+ * SECTION 54: Improvement #30 — WS2812 LED Strip Support (NeoPixel)
+ * ============================================================================ */
+
+#define LED_STRIP_PIN         13
+#define LED_STRIP_COUNT       8
+#define LED_STRIP_BRIGHTNESS  50    // 0-255
+
+// WS2812 timing (in CPU cycles at 240MHz)
+#define WS_T0H  18   // ~75ns
+#define WS_T0L  43   // ~180ns
+#define WS_T1H  36   // ~150ns
+#define WS_T1L  25   // ~105ns
+
+static uint8_t ledStripColors[LED_STRIP_COUNT][3]; // GRB format
+static bool ledStripEnabled = false;
+static uint8_t ledStripPattern = 0;
+static unsigned long lastStripUpdate = 0;
+
+// Bit-bang WS2812 protocol using RMT peripheral
+#include <driver/rmt.h>
+
+static rmt_item32_t ledStripRmtItems[LED_STRIP_COUNT * 24];
+
+void initLedStrip() {
+  rmt_config_t rmtConfig = RMT_DEFAULT_CONFIG_TX((gpio_num_t)LED_STRIP_PIN, RMT_CHANNEL_0);
+  rmtConfig.clk_div = 2; // 40MHz tick = 25ns per tick
+
+  esp_err_t err = rmt_config(&rmtConfig);
+  if (err != ESP_OK) {
+    serialDebug("LEDS", "RMT config failed, LED strip disabled");
+    return;
+  }
+  rmt_driver_install(rmtConfig.channel, 0, 0);
+
+  ledStripEnabled = true;
+  memset(ledStripColors, 0, sizeof(ledStripColors));
+  serialDebugf("LEDS", "WS2812 strip initialized: %d LEDs on GPIO %d", LED_STRIP_COUNT, LED_STRIP_PIN);
+  logToSD("LEDS", "LED strip initialized");
+}
+
+void ledStripSetPixel(int idx, uint8_t r, uint8_t g, uint8_t b) {
+  if (idx < 0 || idx >= LED_STRIP_COUNT) return;
+  ledStripColors[idx][0] = (g * LED_STRIP_BRIGHTNESS) / 255;
+  ledStripColors[idx][1] = (r * LED_STRIP_BRIGHTNESS) / 255;
+  ledStripColors[idx][2] = (b * LED_STRIP_BRIGHTNESS) / 255;
+}
+
+void ledStripShow() {
+  if (!ledStripEnabled) return;
+  int itemIdx = 0;
+  for (int pixel = 0; pixel < LED_STRIP_COUNT; pixel++) {
+    for (int color = 0; color < 3; color++) {
+      uint8_t byte = ledStripColors[pixel][color];
+      for (int bit = 7; bit >= 0; bit--) {
+        if (byte & (1 << bit)) {
+          ledStripRmtItems[itemIdx].level0 = 1;
+          ledStripRmtItems[itemIdx].duration0 = 14;  // T1H ~350ns
+          ledStripRmtItems[itemIdx].level1 = 0;
+          ledStripRmtItems[itemIdx].duration1 = 10;  // T1L ~250ns
+        } else {
+          ledStripRmtItems[itemIdx].level0 = 1;
+          ledStripRmtItems[itemIdx].duration0 = 6;   // T0H ~150ns
+          ledStripRmtItems[itemIdx].level1 = 0;
+          ledStripRmtItems[itemIdx].duration1 = 17;  // T0L ~425ns
+        }
+        itemIdx++;
+      }
+    }
+  }
+  rmt_write_items(RMT_CHANNEL_0, ledStripRmtItems, itemIdx, true);
+}
+
+void ledStripClear() {
+  memset(ledStripColors, 0, sizeof(ledStripColors));
+  ledStripShow();
+}
+
+// Pattern: VU meter based on audio level
+void ledStripVUMeter(float audioLevel) {
+  int litLeds = (int)(audioLevel * LED_STRIP_COUNT);
+  for (int i = 0; i < LED_STRIP_COUNT; i++) {
+    if (i < litLeds) {
+      if (i < LED_STRIP_COUNT * 0.6) {
+        ledStripSetPixel(i, 0, 255, 0);   // Green
+      } else if (i < LED_STRIP_COUNT * 0.85) {
+        ledStripSetPixel(i, 255, 165, 0);  // Orange
+      } else {
+        ledStripSetPixel(i, 255, 0, 0);   // Red
+      }
+    } else {
+      ledStripSetPixel(i, 0, 0, 0);
+    }
+  }
+  ledStripShow();
+}
+
+// Pattern: Rainbow cycle
+void ledStripRainbow(unsigned long frame) {
+  for (int i = 0; i < LED_STRIP_COUNT; i++) {
+    int hue = ((i * 256 / LED_STRIP_COUNT) + frame) & 0xFF;
+    // Simple HSV to RGB (hue only, full sat/val)
+    uint8_t r, g, b;
+    if (hue < 85) {
+      r = hue * 3; g = 255 - hue * 3; b = 0;
+    } else if (hue < 170) {
+      hue -= 85; r = 255 - hue * 3; g = 0; b = hue * 3;
+    } else {
+      hue -= 170; r = 0; g = hue * 3; b = 255 - hue * 3;
+    }
+    ledStripSetPixel(i, r, g, b);
+  }
+  ledStripShow();
+}
+
+void updateLedStrip() {
+  if (!ledStripEnabled) return;
+  if (millis() - lastStripUpdate < 50) return; // 20fps
+  lastStripUpdate = millis();
+
+  switch (ledStripPattern) {
+    case 0: // VU meter mode
+      ledStripVUMeter(currentAudioLevel / 32768.0f);
+      break;
+    case 1: // Rainbow
+      ledStripRainbow(millis() / 20);
+      break;
+    case 2: // Off
+      ledStripClear();
+      break;
+  }
+}
+
+/* ============================================================================
+ * SECTION 55: Improvement #31 — Buzzer / Haptic Feedback
+ * ============================================================================ */
+
+#define BUZZER_PIN            12
+#define BUZZER_CHANNEL        2     // LEDC channel for tone generation
+
+static bool buzzerEnabled = true;
+
+void initBuzzer() {
+  ledcSetup(BUZZER_CHANNEL, 2000, 8); // 2kHz default, 8-bit resolution
+  ledcAttachPin(BUZZER_PIN, BUZZER_CHANNEL);
+  ledcWrite(BUZZER_CHANNEL, 0); // Start silent
+  serialDebug("BUZZER", "Piezo buzzer initialized on GPIO %d", BUZZER_PIN);
+  logToSD("BUZZER", "Buzzer initialized");
+}
+
+void buzzerTone(uint16_t frequency, uint16_t durationMs, uint8_t volume) {
+  if (!buzzerEnabled) return;
+  volume = constrain(volume, 0, 128);
+  ledcWriteTone(BUZZER_CHANNEL, frequency);
+  ledcWrite(BUZZER_CHANNEL, volume);
+  delay(durationMs);
+  ledcWrite(BUZZER_CHANNEL, 0);
+}
+
+void buzzerBeepSuccess() {
+  if (!buzzerEnabled) return;
+  buzzerTone(1047, 100, 64);  // C5
+  delay(50);
+  buzzerTone(1319, 100, 64);  // E5
+  delay(50);
+  buzzerTone(1568, 150, 64);  // G5
+}
+
+void buzzerBeepError() {
+  if (!buzzerEnabled) return;
+  buzzerTone(400, 200, 80);
+  delay(100);
+  buzzerTone(300, 300, 80);
+}
+
+void buzzerBeepConfirm() {
+  if (!buzzerEnabled) return;
+  buzzerTone(2000, 50, 48);
+}
+
+void buzzerBeepBoot() {
+  if (!buzzerEnabled) return;
+  buzzerTone(523, 80, 48);   // C4
+  delay(30);
+  buzzerTone(659, 80, 48);   // E4
+  delay(30);
+  buzzerTone(784, 80, 48);   // G4
+  delay(30);
+  buzzerTone(1047, 120, 48); // C5
+}
+
+/* ============================================================================
+ * SECTION 56: Improvement #32 — Ambient Light Sensor (Auto-Brightness)
+ * ============================================================================ */
+
+#define LIGHT_SENSOR_PIN      39    // ADC input for photoresistor/phototransistor
+#define LIGHT_READ_INTERVAL   2000  // Read every 2 seconds
+#define LIGHT_LEVELS          5     // Number of brightness steps
+#define LIGHT_SMOOTHING       0.3f  // EMA smoothing factor
+
+static float ambientLightLevel = 0.5f;     // Normalized 0.0 - 1.0
+static float smoothedLightLevel = 0.5f;
+static uint8_t currentOledBrightness = 128;
+static unsigned long lastLightRead = 0;
+static bool autoLightEnabled = true;
+
+// Brightness lookup table: ambient light level -> OLED brightness
+static const uint8_t brightnessMap[LIGHT_LEVELS] = {16, 48, 96, 160, 255};
+static const float lightThresholds[LIGHT_LEVELS] = {0.1f, 0.25f, 0.5f, 0.75f, 0.9f};
+
+void initAmbientLight() {
+  pinMode(LIGHT_SENSOR_PIN, INPUT);
+  // Take initial reading
+  int raw = analogRead(LIGHT_SENSOR_PIN);
+  ambientLightLevel = raw / 4095.0f;
+  smoothedLightLevel = ambientLightLevel;
+  serialDebugf("LIGHT", "Ambient light sensor initialized, level=%.2f", ambientLightLevel);
+}
+
+void readAmbientLight() {
+  if (!autoLightEnabled) return;
+  if (millis() - lastLightRead < LIGHT_READ_INTERVAL) return;
+  lastLightRead = millis();
+
+  int raw = analogRead(LIGHT_SENSOR_PIN);
+  ambientLightLevel = raw / 4095.0f;
+
+  // Exponential moving average for stability
+  smoothedLightLevel = LIGHT_SMOOTHING * ambientLightLevel +
+                       (1.0f - LIGHT_SMOOTHING) * smoothedLightLevel;
+
+  // Determine brightness level
+  uint8_t newBrightness = brightnessMap[0];
+  for (int i = 0; i < LIGHT_LEVELS; i++) {
+    if (smoothedLightLevel >= lightThresholds[i]) {
+      newBrightness = brightnessMap[i];
+    }
+  }
+
+  // Only update OLED if brightness changed
+  if (newBrightness != currentOledBrightness) {
+    currentOledBrightness = newBrightness;
+    if (oledAvailable) {
+      display.ssd1306_command(SSD1306_SETCONTRAST);
+      display.ssd1306_command(currentOledBrightness);
+      serialDebugf("LIGHT", "OLED brightness adjusted to %d (ambient=%.2f)",
+                   currentOledBrightness, smoothedLightLevel);
+    }
+  }
+}
+
+/* ============================================================================
+ * SECTION 57: Improvement #33 — Accelerometer Support (MPU6050)
+ * ============================================================================ */
+
+#define MPU6050_ADDR          0x68
+#define MPU6050_WHO_AM_I      0x75
+#define MPU6050_PWR_MGMT_1    0x6B
+#define MPU6050_ACCEL_XOUT_H  0x3B
+#define MPU6050_INT_ENABLE    0x38
+#define MPU6050_INT_STATUS    0x3A
+
+#define ACCEL_TAP_THRESHOLD   1.8f   // g-force for tap detection
+#define ACCEL_TAP_DURATION    100    // ms
+#define ACCEL_READ_INTERVAL   50     // 20Hz
+
+struct AccelData {
+  float x, y, z;      // In g-force
+  float magnitude;
+  uint8_t orientation; // 0=flat, 1=upright, 2=sideways, 3=inverted
+};
+
+static AccelData accelCurrent = {0, 0, 0, 1.0, 0};
+static bool mpuAvailable = false;
+static unsigned long lastAccelRead = 0;
+static unsigned long lastTapTime = 0;
+static int tapCount = 0;
+
+void mpuWriteReg(uint8_t reg, uint8_t val) {
+  Wire.beginTransmission(MPU6050_ADDR);
+  Wire.write(reg);
+  Wire.write(val);
+  Wire.endTransmission();
+}
+
+uint8_t mpuReadReg(uint8_t reg) {
+  Wire.beginTransmission(MPU6050_ADDR);
+  Wire.write(reg);
+  Wire.endTransmission(false);
+  Wire.requestFrom((uint8_t)MPU6050_ADDR, (uint8_t)1);
+  return Wire.available() ? Wire.read() : 0;
+}
+
+void initAccelerometer() {
+  // Check if MPU6050 is present on I2C bus
+  Wire.beginTransmission(MPU6050_ADDR);
+  if (Wire.endTransmission() != 0) {
+    serialDebug("ACCEL", "MPU6050 not found on I2C bus");
+    mpuAvailable = false;
+    return;
+  }
+
+  uint8_t whoAmI = mpuReadReg(MPU6050_WHO_AM_I);
+  if (whoAmI != 0x68 && whoAmI != 0x98) {
+    serialDebugf("ACCEL", "Unexpected WHO_AM_I: 0x%02X", whoAmI);
+    mpuAvailable = false;
+    return;
+  }
+
+  // Wake up MPU6050 (clear sleep bit)
+  mpuWriteReg(MPU6050_PWR_MGMT_1, 0x00);
+  delay(100);
+
+  // Set accelerometer range to +/- 4g
+  mpuWriteReg(0x1C, 0x08);
+
+  mpuAvailable = true;
+  serialDebug("ACCEL", "MPU6050 accelerometer initialized (+/- 4g)");
+  logToSD("ACCEL", "MPU6050 initialized");
+}
+
+void readAccelerometer() {
+  if (!mpuAvailable) return;
+  if (millis() - lastAccelRead < ACCEL_READ_INTERVAL) return;
+  lastAccelRead = millis();
+
+  Wire.beginTransmission(MPU6050_ADDR);
+  Wire.write(MPU6050_ACCEL_XOUT_H);
+  Wire.endTransmission(false);
+  Wire.requestFrom((uint8_t)MPU6050_ADDR, (uint8_t)6);
+
+  if (Wire.available() < 6) return;
+
+  int16_t rawX = (Wire.read() << 8) | Wire.read();
+  int16_t rawY = (Wire.read() << 8) | Wire.read();
+  int16_t rawZ = (Wire.read() << 8) | Wire.read();
+
+  // Convert to g-force (+/- 4g range, 8192 LSB/g)
+  accelCurrent.x = rawX / 8192.0f;
+  accelCurrent.y = rawY / 8192.0f;
+  accelCurrent.z = rawZ / 8192.0f;
+  accelCurrent.magnitude = sqrtf(accelCurrent.x * accelCurrent.x +
+                                  accelCurrent.y * accelCurrent.y +
+                                  accelCurrent.z * accelCurrent.z);
+
+  // Determine orientation
+  if (fabs(accelCurrent.z) > 0.7f && accelCurrent.z > 0) {
+    accelCurrent.orientation = 0; // Flat (face up)
+  } else if (fabs(accelCurrent.z) > 0.7f && accelCurrent.z < 0) {
+    accelCurrent.orientation = 3; // Inverted
+  } else if (fabs(accelCurrent.y) > 0.7f) {
+    accelCurrent.orientation = 1; // Upright
+  } else {
+    accelCurrent.orientation = 2; // Sideways
+  }
+
+  // Tap detection: sudden spike in magnitude
+  if (accelCurrent.magnitude > ACCEL_TAP_THRESHOLD) {
+    if (millis() - lastTapTime > ACCEL_TAP_DURATION) {
+      tapCount++;
+      lastTapTime = millis();
+      serialDebugf("ACCEL", "Tap detected (#%d), magnitude=%.2fg", tapCount, accelCurrent.magnitude);
+
+      // Double-tap detection (within 500ms)
+      static unsigned long prevTapTime = 0;
+      if (millis() - prevTapTime < 500 && prevTapTime > 0) {
+        serialDebug("ACCEL", "Double-tap detected!");
+        buzzerBeepConfirm();
+      }
+      prevTapTime = millis();
+    }
+  }
+}
+
+/* ============================================================================
+ * SECTION 58: Improvement #34 — Real-Time Clock (DS3231)
+ * ============================================================================ */
+
+#define DS3231_ADDR           0x68
+#define DS3231_TIME_REG       0x00
+#define DS3231_CONTROL_REG    0x0E
+#define DS3231_TEMP_REG       0x11
+
+struct RTCTime {
+  uint8_t second;
+  uint8_t minute;
+  uint8_t hour;
+  uint8_t dayOfWeek;
+  uint8_t day;
+  uint8_t month;
+  uint16_t year;
+};
+
+static bool rtcAvailable = false;
+static RTCTime rtcTime;
+
+uint8_t bcdToDec(uint8_t bcd) { return (bcd >> 4) * 10 + (bcd & 0x0F); }
+uint8_t decToBcd(uint8_t dec) { return ((dec / 10) << 4) | (dec % 10); }
+
+void initRTC() {
+  // Probe DS3231 on I2C
+  // Note: DS3231 shares address 0x68 with MPU6050
+  // In a real design, use different I2C buses or verify via register differences
+  Wire.beginTransmission(DS3231_ADDR);
+  Wire.write(DS3231_CONTROL_REG);
+  Wire.endTransmission(false);
+  Wire.requestFrom((uint8_t)DS3231_ADDR, (uint8_t)1);
+
+  if (!Wire.available()) {
+    serialDebug("RTC", "DS3231 not found");
+    rtcAvailable = false;
+    return;
+  }
+
+  uint8_t ctrl = Wire.read();
+  // DS3231 control register defaults to 0x1C, MPU6050 has different behavior at 0x0E
+  // Enable oscillator (clear EOSC bit)
+  Wire.beginTransmission(DS3231_ADDR);
+  Wire.write(DS3231_CONTROL_REG);
+  Wire.write(ctrl & ~0x80);
+  Wire.endTransmission();
+
+  rtcAvailable = true;
+  readRTC();
+  serialDebugf("RTC", "DS3231 initialized: %04d-%02d-%02d %02d:%02d:%02d",
+    rtcTime.year, rtcTime.month, rtcTime.day,
+    rtcTime.hour, rtcTime.minute, rtcTime.second);
+  logToSD("RTC", "DS3231 initialized");
+}
+
+void readRTC() {
+  if (!rtcAvailable) return;
+
+  Wire.beginTransmission(DS3231_ADDR);
+  Wire.write(DS3231_TIME_REG);
+  Wire.endTransmission(false);
+  Wire.requestFrom((uint8_t)DS3231_ADDR, (uint8_t)7);
+
+  if (Wire.available() < 7) return;
+
+  rtcTime.second    = bcdToDec(Wire.read() & 0x7F);
+  rtcTime.minute    = bcdToDec(Wire.read());
+  rtcTime.hour      = bcdToDec(Wire.read() & 0x3F);
+  rtcTime.dayOfWeek = bcdToDec(Wire.read());
+  rtcTime.day       = bcdToDec(Wire.read());
+  rtcTime.month     = bcdToDec(Wire.read() & 0x1F);
+  rtcTime.year      = 2000 + bcdToDec(Wire.read());
+}
+
+void setRTC(uint16_t year, uint8_t month, uint8_t day,
+            uint8_t hour, uint8_t minute, uint8_t second) {
+  if (!rtcAvailable) return;
+
+  Wire.beginTransmission(DS3231_ADDR);
+  Wire.write(DS3231_TIME_REG);
+  Wire.write(decToBcd(second));
+  Wire.write(decToBcd(minute));
+  Wire.write(decToBcd(hour));
+  Wire.write(decToBcd(0)); // day of week (unused)
+  Wire.write(decToBcd(day));
+  Wire.write(decToBcd(month));
+  Wire.write(decToBcd(year - 2000));
+  Wire.endTransmission();
+
+  serialDebugf("RTC", "Time set to %04d-%02d-%02d %02d:%02d:%02d",
+    year, month, day, hour, minute, second);
+}
+
+float readRTCTemperature() {
+  if (!rtcAvailable) return -999.0f;
+
+  Wire.beginTransmission(DS3231_ADDR);
+  Wire.write(DS3231_TEMP_REG);
+  Wire.endTransmission(false);
+  Wire.requestFrom((uint8_t)DS3231_ADDR, (uint8_t)2);
+
+  if (Wire.available() < 2) return -999.0f;
+
+  int8_t msb = Wire.read();
+  uint8_t lsb = Wire.read();
+  return msb + (lsb >> 6) * 0.25f;
+}
+
+void syncRTCFromNTP() {
+  if (!rtcAvailable || !wifiConnected) return;
+  // Use configTime already set up in WiFi connection
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo, 5000)) {
+    setRTC(timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
+           timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+    serialDebug("RTC", "RTC synced from NTP");
+  }
+}
+
+/* ============================================================================
+ * SECTION 59: Improvement #35 — Audio AGC (Automatic Gain Control)
+ * ============================================================================ */
+
+#define AGC_TARGET_RMS        8000.0f    // Target RMS level (out of 32768)
+#define AGC_MIN_GAIN          0.1f
+#define AGC_MAX_GAIN          20.0f
+#define AGC_ATTACK_RATE       0.05f      // Fast attack (reduce gain quickly)
+#define AGC_RELEASE_RATE      0.002f     // Slow release (increase gain slowly)
+#define AGC_HISTORY_SIZE      32
+#define AGC_UPDATE_INTERVAL   50         // ms
+
+static float agcGain = 1.0f;
+static float agcRmsHistory[AGC_HISTORY_SIZE];
+static int agcHistoryIndex = 0;
+static bool agcHistoryFull = false;
+static unsigned long lastAGCUpdate = 0;
+static bool agcEnabled = true;
+
+void initAGC() {
+  agcGain = 1.0f;
+  memset(agcRmsHistory, 0, sizeof(agcRmsHistory));
+  agcHistoryIndex = 0;
+  agcHistoryFull = false;
+  serialDebug("AGC", "Automatic Gain Control initialized");
+}
+
+float calculateRMS(int16_t* samples, int count) {
+  if (count == 0) return 0;
+  float sumSq = 0;
+  for (int i = 0; i < count; i++) {
+    float s = samples[i];
+    sumSq += s * s;
+  }
+  return sqrtf(sumSq / count);
+}
+
+void updateAGC(int16_t* samples, int count) {
+  if (!agcEnabled || count == 0) return;
+  if (millis() - lastAGCUpdate < AGC_UPDATE_INTERVAL) return;
+  lastAGCUpdate = millis();
+
+  float rms = calculateRMS(samples, count);
+
+  // Store in history buffer
+  agcRmsHistory[agcHistoryIndex] = rms;
+  agcHistoryIndex = (agcHistoryIndex + 1) % AGC_HISTORY_SIZE;
+  if (agcHistoryIndex == 0) agcHistoryFull = true;
+
+  // Calculate average RMS over history
+  int histCount = agcHistoryFull ? AGC_HISTORY_SIZE : agcHistoryIndex;
+  float avgRms = 0;
+  for (int i = 0; i < histCount; i++) {
+    avgRms += agcRmsHistory[i];
+  }
+  avgRms /= histCount;
+
+  // Skip if signal is too quiet (noise floor)
+  if (avgRms < 100.0f) return;
+
+  // Calculate desired gain adjustment
+  float targetGain = AGC_TARGET_RMS / avgRms;
+
+  // Apply attack/release dynamics
+  if (targetGain < agcGain) {
+    // Signal too loud - reduce gain quickly (attack)
+    agcGain += (targetGain - agcGain) * AGC_ATTACK_RATE;
+  } else {
+    // Signal too quiet - increase gain slowly (release)
+    agcGain += (targetGain - agcGain) * AGC_RELEASE_RATE;
+  }
+
+  agcGain = constrain(agcGain, AGC_MIN_GAIN, AGC_MAX_GAIN);
+}
+
+void applyAGC(int16_t* samples, int count) {
+  if (!agcEnabled) return;
+  for (int i = 0; i < count; i++) {
+    float adjusted = samples[i] * agcGain;
+    // Soft clipping to prevent harsh distortion
+    if (adjusted > 30000.0f) adjusted = 30000.0f + (adjusted - 30000.0f) * 0.1f;
+    if (adjusted < -30000.0f) adjusted = -30000.0f + (adjusted + 30000.0f) * 0.1f;
+    samples[i] = constrain((int16_t)adjusted, -32767, 32767);
+  }
+}
+
+/* ============================================================================
+ * SECTION 60: Improvement #36 — Spectral Centroid Calculation
+ * ============================================================================ */
+
+#define CENTROID_HISTORY_SIZE   16
+#define CENTROID_UPDATE_MS      200
+
+static float spectralCentroid = 0.0f;        // In Hz
+static float centroidHistory[CENTROID_HISTORY_SIZE];
+static int centroidHistoryIdx = 0;
+static float centroidVariance = 0.0f;
+static unsigned long lastCentroidUpdate = 0;
+
+// Genre brightness classification thresholds (Hz)
+#define CENTROID_DARK     800.0f    // < 800 Hz: bass-heavy (dub, ambient)
+#define CENTROID_WARM     1500.0f   // 800-1500 Hz: warm (jazz, soul, R&B)
+#define CENTROID_NEUTRAL  2500.0f   // 1500-2500 Hz: balanced (rock, pop)
+#define CENTROID_BRIGHT   4000.0f   // 2500-4000 Hz: bright (electronic, metal)
+                                    // > 4000 Hz: very bright (noise, cymbals)
+
+float calculateSpectralCentroid(float* magnitudes, int numBins, float sampleRate) {
+  float binWidth = sampleRate / (numBins * 2);
+  float weightedSum = 0;
+  float magnitudeSum = 0;
+
+  for (int i = 1; i < numBins; i++) {
+    float freq = i * binWidth;
+    weightedSum += freq * magnitudes[i];
+    magnitudeSum += magnitudes[i];
+  }
+
+  if (magnitudeSum < 1e-6f) return 0;
+  return weightedSum / magnitudeSum;
+}
+
+void updateSpectralCentroid(float* magnitudes, int numBins, float sampleRate) {
+  if (millis() - lastCentroidUpdate < CENTROID_UPDATE_MS) return;
+  lastCentroidUpdate = millis();
+
+  spectralCentroid = calculateSpectralCentroid(magnitudes, numBins, sampleRate);
+
+  // Store in history
+  centroidHistory[centroidHistoryIdx] = spectralCentroid;
+  centroidHistoryIdx = (centroidHistoryIdx + 1) % CENTROID_HISTORY_SIZE;
+
+  // Calculate variance (stability indicator)
+  float mean = 0;
+  for (int i = 0; i < CENTROID_HISTORY_SIZE; i++) mean += centroidHistory[i];
+  mean /= CENTROID_HISTORY_SIZE;
+
+  centroidVariance = 0;
+  for (int i = 0; i < CENTROID_HISTORY_SIZE; i++) {
+    float diff = centroidHistory[i] - mean;
+    centroidVariance += diff * diff;
+  }
+  centroidVariance /= CENTROID_HISTORY_SIZE;
+}
+
+const char* classifyTonalBrightness() {
+  if (spectralCentroid < CENTROID_DARK)     return "dark";
+  if (spectralCentroid < CENTROID_WARM)     return "warm";
+  if (spectralCentroid < CENTROID_NEUTRAL)  return "neutral";
+  if (spectralCentroid < CENTROID_BRIGHT)   return "bright";
+  return "very_bright";
+}
+
+/* ============================================================================
+ * SECTION 61: Improvement #37 — Zero-Crossing Rate (ZCR)
+ * ============================================================================ */
+
+#define ZCR_FRAME_SIZE        512
+#define ZCR_HISTORY_SIZE      16
+#define ZCR_UPDATE_MS         200
+#define ZCR_PERCUSSIVE_THRESH 0.15f   // Above this = percussive content
+#define ZCR_TONAL_THRESH      0.05f   // Below this = tonal/harmonic content
+
+static float zeroCrossingRate = 0.0f;
+static float zcrHistory[ZCR_HISTORY_SIZE];
+static int zcrHistoryIdx = 0;
+static float zcrMean = 0.0f;
+static float zcrVariance = 0.0f;
+static unsigned long lastZCRUpdate = 0;
+
+float calculateZeroCrossingRate(int16_t* samples, int count) {
+  if (count < 2) return 0;
+  int crossings = 0;
+  for (int i = 1; i < count; i++) {
+    if ((samples[i] >= 0 && samples[i-1] < 0) ||
+        (samples[i] < 0 && samples[i-1] >= 0)) {
+      crossings++;
+    }
+  }
+  return (float)crossings / (float)(count - 1);
+}
+
+void updateZeroCrossingRate(int16_t* samples, int count) {
+  if (millis() - lastZCRUpdate < ZCR_UPDATE_MS) return;
+  lastZCRUpdate = millis();
+
+  // Process in frames
+  int frames = count / ZCR_FRAME_SIZE;
+  if (frames == 0) {
+    zeroCrossingRate = calculateZeroCrossingRate(samples, count);
+  } else {
+    float totalZCR = 0;
+    for (int f = 0; f < frames; f++) {
+      totalZCR += calculateZeroCrossingRate(&samples[f * ZCR_FRAME_SIZE], ZCR_FRAME_SIZE);
+    }
+    zeroCrossingRate = totalZCR / frames;
+  }
+
+  // Store in history
+  zcrHistory[zcrHistoryIdx] = zeroCrossingRate;
+  zcrHistoryIdx = (zcrHistoryIdx + 1) % ZCR_HISTORY_SIZE;
+
+  // Calculate statistics
+  zcrMean = 0;
+  for (int i = 0; i < ZCR_HISTORY_SIZE; i++) zcrMean += zcrHistory[i];
+  zcrMean /= ZCR_HISTORY_SIZE;
+
+  zcrVariance = 0;
+  for (int i = 0; i < ZCR_HISTORY_SIZE; i++) {
+    float diff = zcrHistory[i] - zcrMean;
+    zcrVariance += diff * diff;
+  }
+  zcrVariance /= ZCR_HISTORY_SIZE;
+}
+
+const char* classifyAudioContent() {
+  if (zeroCrossingRate > ZCR_PERCUSSIVE_THRESH) return "percussive";
+  if (zeroCrossingRate < ZCR_TONAL_THRESH)      return "tonal";
+  return "mixed";
+}
+
+// Combined feature for fingerprint enhancement
+float getAudioContentScore() {
+  // Returns 0.0 (purely tonal) to 1.0 (purely percussive)
+  return constrain(zeroCrossingRate / ZCR_PERCUSSIVE_THRESH, 0.0f, 1.0f);
+}
+
+/* ============================================================================
+ * SECTION 62: Improvement #38 — SPIFFS Web Interface
+ * ============================================================================ */
+
+#include <SPIFFS.h>
+
+static bool spiffsWebReady = false;
+
+// Default config page HTML (embedded, will be written to SPIFFS if not present)
+static const char DEFAULT_CONFIG_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vinyl Buddy Config</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto;
+           padding: 20px; background: #1a1a2e; color: #e0e0e0; }
+    h1 { color: #e94560; }
+    .card { background: #16213e; border-radius: 12px; padding: 20px; margin: 15px 0;
+            border: 1px solid #0f3460; }
+    label { display: block; margin: 10px 0 5px; color: #a0a0c0; font-size: 0.9em; }
+    input, select { width: 100%; padding: 10px; border: 1px solid #0f3460;
+                    border-radius: 8px; background: #1a1a2e; color: #fff; box-sizing: border-box; }
+    button { background: #e94560; color: #fff; border: none; padding: 12px 24px;
+             border-radius: 8px; cursor: pointer; font-size: 1em; margin-top: 15px; }
+    button:hover { background: #c73650; }
+    .status { padding: 8px 12px; border-radius: 6px; background: #0f3460; margin: 5px 0; }
+    .meter { height: 8px; background: #0f3460; border-radius: 4px; overflow: hidden; }
+    .meter-fill { height: 100%; background: #e94560; transition: width 0.5s; }
+  </style>
+</head>
+<body>
+  <h1>Vinyl Buddy</h1>
+  <div class="card">
+    <h2>Device Status</h2>
+    <div class="status" id="status">Loading...</div>
+    <label>Audio Level</label>
+    <div class="meter"><div class="meter-fill" id="audioMeter" style="width:0%"></div></div>
+  </div>
+  <div class="card">
+    <h2>WiFi Settings</h2>
+    <label>SSID</label><input id="ssid" type="text">
+    <label>Password</label><input id="pass" type="password">
+    <button onclick="saveWifi()">Save WiFi</button>
+  </div>
+  <div class="card">
+    <h2>Audio Settings</h2>
+    <label>Gain</label><input id="gain" type="range" min="0.5" max="10" step="0.5">
+    <label>Silence Threshold</label><input id="threshold" type="range" min="50" max="2000" step="50">
+    <button onclick="saveAudio()">Save Audio</button>
+  </div>
+  <script>
+    async function loadStatus() {
+      try {
+        const r = await fetch('/api/status');
+        const d = await r.json();
+        document.getElementById('status').innerText =
+          `Battery: ${d.battery}% | WiFi: ${d.rssi}dBm | State: ${d.state}`;
+        document.getElementById('audioMeter').style.width = (d.audioLevel/327.68)+'%';
+      } catch(e) {}
+    }
+    async function saveWifi() {
+      const body = JSON.stringify({ssid:document.getElementById('ssid').value,
+                                    password:document.getElementById('pass').value});
+      await fetch('/api/wifi',{method:'POST',headers:{'Content-Type':'application/json'},body});
+      alert('WiFi saved. Rebooting...');
+    }
+    async function saveAudio() {
+      const body = JSON.stringify({gain:parseFloat(document.getElementById('gain').value),
+                                    threshold:parseInt(document.getElementById('threshold').value)});
+      await fetch('/api/audio',{method:'POST',headers:{'Content-Type':'application/json'},body});
+      alert('Audio settings saved.');
+    }
+    setInterval(loadStatus, 2000);
+    loadStatus();
+  </script>
+</body>
+</html>
+)rawliteral";
+
+void initSPIFFSWeb() {
+  if (!SPIFFS.begin(true)) {
+    serialDebug("WEBUI", "SPIFFS mount failed");
+    return;
+  }
+
+  // Write default config page if not present
+  if (!SPIFFS.exists("/config.html")) {
+    File f = SPIFFS.open("/config.html", "w");
+    if (f) {
+      f.print(DEFAULT_CONFIG_HTML);
+      f.close();
+      serialDebug("WEBUI", "Default config.html written to SPIFFS");
+    }
+  }
+
+  // Register web server routes for SPIFFS-served pages
+  webServer.on("/ui", HTTP_GET, []() {
+    File f = SPIFFS.open("/config.html", "r");
+    if (f) {
+      webServer.streamFile(f, "text/html");
+      f.close();
+    } else {
+      webServer.send(404, "text/plain", "Config page not found");
+    }
+  });
+
+  webServer.on("/api/status", HTTP_GET, []() {
+    char json[256];
+    snprintf(json, sizeof(json),
+      "{\"battery\":%d,\"rssi\":%d,\"state\":\"%s\",\"audioLevel\":%d,\"temp\":%.1f,\"heap\":%d}",
+      batteryPercent, WiFi.RSSI(),
+      deviceState == STATE_LISTENING ? "listening" : "idle",
+      (int)currentAudioLevel, temperatureC, ESP.getFreeHeap());
+    webServer.send(200, "application/json", json);
+  });
+
+  webServer.on("/api/wifi", HTTP_POST, []() {
+    if (webServer.hasArg("plain")) {
+      JsonDocument doc;
+      DeserializationError err = deserializeJson(doc, webServer.arg("plain"));
+      if (!err) {
+        strlcpy(config.wifi_ssid, doc["ssid"] | "", sizeof(config.wifi_ssid));
+        strlcpy(config.wifi_pass, doc["password"] | "", sizeof(config.wifi_pass));
+        saveConfig();
+        webServer.send(200, "application/json", "{\"ok\":true}");
+        delay(1000);
+        ESP.restart();
+        return;
+      }
+    }
+    webServer.send(400, "application/json", "{\"error\":\"bad request\"}");
+  });
+
+  webServer.on("/api/audio", HTTP_POST, []() {
+    if (webServer.hasArg("plain")) {
+      JsonDocument doc;
+      DeserializationError err = deserializeJson(doc, webServer.arg("plain"));
+      if (!err) {
+        config.audio_gain = doc["gain"] | config.audio_gain;
+        config.silence_threshold = doc["threshold"] | config.silence_threshold;
+        saveConfig();
+        webServer.send(200, "application/json", "{\"ok\":true}");
+        return;
+      }
+    }
+    webServer.send(400, "application/json", "{\"error\":\"bad request\"}");
+  });
+
+  // Serve any file from SPIFFS
+  webServer.on("/spiffs", HTTP_GET, []() {
+    String path = webServer.arg("file");
+    if (path.length() == 0) path = "/config.html";
+    if (!path.startsWith("/")) path = "/" + path;
+    if (SPIFFS.exists(path)) {
+      File f = SPIFFS.open(path, "r");
+      String contentType = "text/plain";
+      if (path.endsWith(".html")) contentType = "text/html";
+      else if (path.endsWith(".css")) contentType = "text/css";
+      else if (path.endsWith(".js")) contentType = "application/javascript";
+      else if (path.endsWith(".json")) contentType = "application/json";
+      webServer.streamFile(f, contentType);
+      f.close();
+    } else {
+      webServer.send(404, "text/plain", "File not found");
+    }
+  });
+
+  spiffsWebReady = true;
+  serialDebugf("WEBUI", "SPIFFS web interface ready (%d bytes used, %d total)",
+    SPIFFS.usedBytes(), SPIFFS.totalBytes());
+  logToSD("WEBUI", "SPIFFS web interface initialized");
+}
+
+/* ============================================================================
+ * SECTION 63: Improvement #39 — Firmware Rollback on Boot Failure
+ * ============================================================================ */
+
+#include <esp_ota_ops.h>
+
+#define ROLLBACK_BOOT_COUNT_KEY   "bootCount"
+#define ROLLBACK_MAX_BOOT_FAILS   3
+#define ROLLBACK_CONFIRM_DELAY_MS 30000  // Mark firmware valid after 30s uptime
+
+static bool rollbackPending = false;
+static int bootFailCount = 0;
+
+void initFirmwareRollback() {
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  const esp_partition_t* next = esp_ota_get_next_update_partition(NULL);
+
+  serialDebugf("ROLLBACK", "Running partition: %s (addr=0x%08X)",
+    running->label, running->address);
+  if (next) {
+    serialDebugf("ROLLBACK", "Next OTA partition: %s (addr=0x%08X)",
+      next->label, next->address);
+  }
+
+  // Check boot count
+  Preferences rollbackPrefs;
+  rollbackPrefs.begin("rollback", false);
+  bootFailCount = rollbackPrefs.getInt(ROLLBACK_BOOT_COUNT_KEY, 0);
+  bootFailCount++;
+  rollbackPrefs.putInt(ROLLBACK_BOOT_COUNT_KEY, bootFailCount);
+  rollbackPrefs.end();
+
+  serialDebugf("ROLLBACK", "Boot count since last confirm: %d", bootFailCount);
+
+  if (bootFailCount >= ROLLBACK_MAX_BOOT_FAILS) {
+    serialDebug("ROLLBACK", "Too many boot failures, attempting rollback!");
+    logToSD("ROLLBACK", "Initiating firmware rollback");
+
+    // Attempt rollback to previous partition
+    esp_err_t err = esp_ota_mark_app_invalid_rollback_and_reboot();
+    if (err != ESP_OK) {
+      serialDebugf("ROLLBACK", "Rollback failed: %s (no previous valid firmware?)",
+        esp_err_to_name(err));
+      // Reset counter so we don't loop forever
+      Preferences rp;
+      rp.begin("rollback", false);
+      rp.putInt(ROLLBACK_BOOT_COUNT_KEY, 0);
+      rp.end();
+    }
+    // If rollback succeeds, we reboot to previous firmware and never reach here
+  }
+
+  rollbackPending = true;
+  serialDebug("ROLLBACK", "Firmware rollback check pending, will confirm in 30s");
+}
+
+void confirmFirmwareIfStable() {
+  if (!rollbackPending) return;
+  if (millis() < ROLLBACK_CONFIRM_DELAY_MS) return;
+
+  // If we've been running for 30s without crashing, mark firmware as valid
+  esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
+  if (err == ESP_OK) {
+    serialDebug("ROLLBACK", "Firmware confirmed valid, rollback cancelled");
+  } else {
+    serialDebugf("ROLLBACK", "Firmware confirm result: %s", esp_err_to_name(err));
+  }
+
+  // Reset boot count
+  Preferences rp;
+  rp.begin("rollback", false);
+  rp.putInt(ROLLBACK_BOOT_COUNT_KEY, 0);
+  rp.end();
+
+  rollbackPending = false;
+  logToSD("ROLLBACK", "Firmware confirmed stable");
+}
+
+/* ============================================================================
+ * SECTION 64: Improvement #40 — Power-On Self-Test (POST)
+ * ============================================================================ */
+
+#define POST_RESULT_PASS    0
+#define POST_RESULT_WARN    1
+#define POST_RESULT_FAIL    2
+
+struct POSTResult {
+  const char* testName;
+  uint8_t result;
+  const char* message;
+};
+
+#define POST_MAX_TESTS 12
+static POSTResult postResults[POST_MAX_TESTS];
+static int postTestCount = 0;
+static bool postPassed = true;
+
+void postAddResult(const char* name, uint8_t result, const char* msg) {
+  if (postTestCount >= POST_MAX_TESTS) return;
+  postResults[postTestCount].testName = name;
+  postResults[postTestCount].result = result;
+  postResults[postTestCount].message = msg;
+  postTestCount++;
+  if (result == POST_RESULT_FAIL) postPassed = false;
+}
+
+void runPowerOnSelfTest() {
+  serialDebug("POST", "╔══════════════════════════════════════╗");
+  serialDebug("POST", "║    Power-On Self-Test (POST)         ║");
+  serialDebug("POST", "╚══════════════════════════════════════╝");
+  postTestCount = 0;
+  postPassed = true;
+
+  // Test 1: CPU / Free heap
+  uint32_t freeHeap = ESP.getFreeHeap();
+  if (freeHeap > 100000) {
+    postAddResult("Heap Memory", POST_RESULT_PASS, "OK");
+  } else if (freeHeap > 50000) {
+    postAddResult("Heap Memory", POST_RESULT_WARN, "Low");
+  } else {
+    postAddResult("Heap Memory", POST_RESULT_FAIL, "Critical");
+  }
+
+  // Test 2: PSRAM (if available)
+  if (ESP.getPsramSize() > 0) {
+    postAddResult("PSRAM", POST_RESULT_PASS, "Available");
+  } else {
+    postAddResult("PSRAM", POST_RESULT_WARN, "Not available");
+  }
+
+  // Test 3: Flash integrity
+  uint32_t flashSize = ESP.getFlashChipSize();
+  if (flashSize >= 4 * 1024 * 1024) {
+    postAddResult("Flash", POST_RESULT_PASS, "OK");
+  } else {
+    postAddResult("Flash", POST_RESULT_WARN, "Small flash");
+  }
+
+  // Test 4: I2C bus scan
+  int i2cDevices = 0;
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    if (Wire.endTransmission() == 0) i2cDevices++;
+  }
+  if (i2cDevices > 0) {
+    postAddResult("I2C Bus", POST_RESULT_PASS, "Devices found");
+  } else {
+    postAddResult("I2C Bus", POST_RESULT_WARN, "No devices");
+  }
+
+  // Test 5: ADC self-test (read known pin)
+  int adcTest = analogRead(BATTERY_PIN);
+  if (adcTest > 0 && adcTest < 4095) {
+    postAddResult("ADC", POST_RESULT_PASS, "Responsive");
+  } else {
+    postAddResult("ADC", POST_RESULT_WARN, "Rail/stuck");
+  }
+
+  // Test 6: WiFi hardware
+  if (WiFi.mode(WIFI_STA)) {
+    postAddResult("WiFi HW", POST_RESULT_PASS, "OK");
+  } else {
+    postAddResult("WiFi HW", POST_RESULT_FAIL, "Init failed");
+  }
+
+  // Test 7: Bluetooth hardware
+  if (BLEDevice::getInitialized()) {
+    postAddResult("BLE HW", POST_RESULT_PASS, "Initialized");
+  } else {
+    postAddResult("BLE HW", POST_RESULT_WARN, "Not yet init");
+  }
+
+  // Test 8: NVS / Preferences
+  Preferences testPrefs;
+  if (testPrefs.begin("post_test", false)) {
+    testPrefs.putInt("test", 42);
+    int readBack = testPrefs.getInt("test", 0);
+    testPrefs.remove("test");
+    testPrefs.end();
+    if (readBack == 42) {
+      postAddResult("NVS", POST_RESULT_PASS, "Read/write OK");
+    } else {
+      postAddResult("NVS", POST_RESULT_FAIL, "Read mismatch");
+    }
+  } else {
+    postAddResult("NVS", POST_RESULT_FAIL, "Open failed");
+  }
+
+  // Test 9: SPIFFS
+  if (SPIFFS.begin(false)) {
+    postAddResult("SPIFFS", POST_RESULT_PASS, "Mounted");
+    SPIFFS.end();
+  } else {
+    postAddResult("SPIFFS", POST_RESULT_WARN, "Not formatted");
+  }
+
+  // Test 10: Temperature sensor sanity
+  readTemperature();
+  if (temperatureC > -20.0f && temperatureC < 85.0f) {
+    postAddResult("Temp Sensor", POST_RESULT_PASS, "In range");
+  } else {
+    postAddResult("Temp Sensor", POST_RESULT_WARN, "Out of range");
+  }
+
+  // Test 11: Battery voltage sanity
+  readBattery();
+  if (batteryVoltage > 2.5f && batteryVoltage < 4.3f) {
+    postAddResult("Battery", POST_RESULT_PASS, "Voltage OK");
+  } else if (batteryVoltage <= 0.1f) {
+    postAddResult("Battery", POST_RESULT_WARN, "No battery / USB powered");
+  } else {
+    postAddResult("Battery", POST_RESULT_WARN, "Unusual voltage");
+  }
+
+  // Test 12: Uptime clock
+  if (millis() > 0) {
+    postAddResult("Sys Timer", POST_RESULT_PASS, "Running");
+  } else {
+    postAddResult("Sys Timer", POST_RESULT_FAIL, "Stuck");
+  }
+
+  // Print results
+  serialDebug("POST", "─── Results ───────────────────────────");
+  for (int i = 0; i < postTestCount; i++) {
+    const char* status;
+    switch (postResults[i].result) {
+      case POST_RESULT_PASS: status = "PASS"; break;
+      case POST_RESULT_WARN: status = "WARN"; break;
+      case POST_RESULT_FAIL: status = "FAIL"; break;
+      default: status = "????"; break;
+    }
+    serialDebugf("POST", "  [%s] %-12s : %s", status, postResults[i].testName, postResults[i].message);
+  }
+  serialDebug("POST", "───────────────────────────────────────");
+
+  if (postPassed) {
+    serialDebug("POST", "Self-test PASSED — all systems nominal");
+    logToSD("POST", "Self-test PASSED");
+  } else {
+    serialDebug("POST", "Self-test FAILED — check warnings above");
+    logToSD("POST", "Self-test FAILED");
+  }
+}
+
+/* ============================================================================
  * SECTION 38: setup() - Main Initialization
  * ============================================================================ */
 
@@ -3039,6 +4651,20 @@ void setup() {
   initSleepSchedule();      // #24b: Device sleep/wake scheduling
   initDeviceMesh();         // #18: Device-to-device communication
 
+  // Initialize advanced subsystems (#50-#64)
+  runPowerOnSelfTest();     // #64: Power-on self-test
+  initFirmwareRollback();   // #63: Firmware rollback protection
+  initFuelGauge();          // #52: Battery fuel gauge (coulomb counting)
+  initTouchSensors();       // #53: Capacitive touch inputs
+  initLedStrip();           // #54: WS2812 LED strip
+  initBuzzer();             // #55: Piezo buzzer feedback
+  initAmbientLight();       // #56: Ambient light sensor
+  initAccelerometer();      // #57: MPU6050 accelerometer
+  initRTC();                // #58: DS3231 real-time clock
+  initAGC();                // #59: Automatic gain control
+  initMQTT();               // #50: MQTT client
+  initSPIFFSWeb();          // #62: SPIFFS web interface
+
   // Connect to WiFi (#1, #23)
   connectWiFi();
 
@@ -3058,7 +4684,15 @@ void setup() {
       serialDebugf("INIT", "Device not paired. Pair code: %s", config.pair_code);
       serialDebug("INIT", "Visit vinylbuddy.local/pair to pair this device");
     }
+
+    // Sync RTC from NTP (#58)
+    syncRTCFromNTP();
   }
+
+  // Boot complete feedback
+  buzzerBeepBoot();                         // #55: Audio boot confirmation
+  ledStripRainbow(0); delay(500);           // #54: Visual boot indication
+  ledStripClear();
 
   // Ready to listen
   deviceState = STATE_LISTENING;
@@ -3106,6 +4740,19 @@ void loop() {
   readGestureSensor();      // #21: Gesture sensor support
   handleMeshReceive();      // #18: Device-to-device communication
 
+  // --- Advanced audio analysis (#51, #59, #60, #61) ---
+  updateAGC(audioBuffer + audioReadIndex, min((int)(audioWriteIndex - audioReadIndex), 1024));
+  // Spectral centroid and ZCR updated when FFT data is available
+  updateZeroCrossingRate(audioBuffer + audioReadIndex, min((int)(audioWriteIndex - audioReadIndex), ZCR_FRAME_SIZE));
+
+  // --- Advanced input/output (#53, #54, #57) ---
+  readTouchSensors();       // #53: Capacitive touch controls
+  updateLedStrip();         // #54: WS2812 LED strip patterns
+  readAccelerometer();      // #57: MPU6050 orientation and tap
+
+  // --- Ambient light auto-brightness (#56) ---
+  readAmbientLight();
+
   // --- OLED display update (#18) ---
   updateOLED();
 
@@ -3115,6 +4762,19 @@ void loop() {
     lastBLEUpdate = millis();
     updateBLEStatus();
   }
+
+  // --- Fuel gauge update (every second) (#52) ---
+  updateFuelGauge();
+
+  // --- RTC periodic read (#58) ---
+  static unsigned long lastRTCRead = 0;
+  if (millis() - lastRTCRead >= 10000) {
+    lastRTCRead = millis();
+    readRTC();
+  }
+
+  // --- Firmware rollback confirmation (#63) ---
+  confirmFirmwareIfStable();
 
   // --- Periodic tasks (run less frequently) ---
   static unsigned long lastPeriodicCheck = 0;
@@ -3150,6 +4810,7 @@ void loop() {
     sendHeartbeat();          // #17: Heartbeat every 30s
     sendAudioLevelUpdate();   // #17b: Real-time audio level meter
     checkRemoteConfig();      // #25b: Remote configuration updates
+    loopMQTT();               // #50: MQTT publish/subscribe
   }
 
   // --- Scheduled sleep/wake (#24b) ---

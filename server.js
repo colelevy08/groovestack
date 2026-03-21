@@ -12429,6 +12429,747 @@ app.get('/api/analytics/notifications', authMiddleware, async (req, res) => {
   }
 });
 
+// ── Vinyl Buddy: stream raw audio chunks for server-side processing ─────────
+app.post('/api/vinyl-buddy/stream', authMiddleware, express.raw({ type: 'application/octet-stream', limit: '8mb' }), async (req, res) => {
+  try {
+    const pcm = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+    if (!pcm.length) {
+      return res.status(400).json({ error: 'Empty audio payload.' });
+    }
+
+    const deviceId = String(req.get('X-Device-Id') || '').trim();
+    const username = req.user.username;
+
+    if (!deviceId) {
+      return res.status(400).json({ error: 'X-Device-Id header is required.' });
+    }
+
+    const chunkId = `chunk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    if (pool) {
+      await pool.query(
+        `INSERT INTO vinyl_audio_chunks (chunk_id, device_id, username, size_bytes, received_at)
+         VALUES ($1, $2, $3, $4, now())`,
+        [chunkId, deviceId, username, pcm.length]
+      );
+    }
+
+    return res.json({
+      success: true,
+      chunkId,
+      sizeBytes: pcm.length,
+      deviceId,
+      message: 'Audio chunk received for processing.',
+    });
+  } catch (err) {
+    console.error('[vinyl-buddy] stream error:', err.message);
+    return res.status(500).json({ error: 'Failed to process audio stream.' });
+  }
+});
+
+// ── Vinyl Buddy: list all paired devices for a user ─────────────────────────
+app.get('/api/vinyl-buddy/devices/:userId', authMiddleware, async (req, res) => {
+  try {
+    const userId = String(req.params.userId || '').trim();
+    if (!userId) return res.status(400).json({ error: 'userId is required.' });
+
+    if (pool) {
+      const result = await pool.query(
+        `SELECT d.device_id, d.username, d.last_seen, d.heartbeats, d.uptime_sec, d.free_heap, d.first_seen,
+                p.paired_at, p.device_name
+         FROM vinyl_devices d
+         LEFT JOIN vinyl_paired_devices p ON d.device_id = p.device_id
+         WHERE d.username = $1
+         ORDER BY d.last_seen DESC`,
+        [userId]
+      );
+      return res.json({
+        userId,
+        devices: result.rows.map(r => ({
+          deviceId: r.device_id,
+          name: r.device_name || r.device_id,
+          lastSeen: r.last_seen,
+          firstSeen: r.first_seen,
+          heartbeats: r.heartbeats,
+          uptime: r.uptime_sec,
+          freeHeap: r.free_heap,
+          pairedAt: r.paired_at,
+        })),
+        count: result.rows.length,
+      });
+    }
+
+    // Fallback to in-memory
+    const devices = Array.from(devicesById.values())
+      .filter(d => d.username === userId)
+      .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime());
+
+    return res.json({ userId, devices, count: devices.length });
+  } catch (err) {
+    console.error('[vinyl-buddy] devices list error:', err.message);
+    return res.status(500).json({ error: 'Failed to fetch devices.' });
+  }
+});
+
+// ── Vinyl Buddy: send command to a device ───────────────────────────────────
+app.post('/api/vinyl-buddy/devices/:deviceId/command', authMiddleware, async (req, res) => {
+  try {
+    const deviceId = String(req.params.deviceId || '').trim();
+    const { command } = req.body || {};
+    const validCommands = ['identify', 'calibrate', 'reset', 'update'];
+
+    if (!deviceId) return res.status(400).json({ error: 'deviceId is required.' });
+    if (!command || !validCommands.includes(command)) {
+      return res.status(400).json({ error: `Invalid command. Must be one of: ${validCommands.join(', ')}` });
+    }
+
+    const commandId = `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    if (pool) {
+      await pool.query(
+        `INSERT INTO vinyl_device_commands (command_id, device_id, command, issued_by, issued_at, status)
+         VALUES ($1, $2, $3, $4, now(), 'pending')`,
+        [commandId, deviceId, command, req.user.username]
+      );
+    }
+
+    return res.json({
+      success: true,
+      commandId,
+      deviceId,
+      command,
+      status: 'pending',
+      message: `Command '${command}' queued for device.`,
+    });
+  } catch (err) {
+    console.error('[vinyl-buddy] device command error:', err.message);
+    return res.status(500).json({ error: 'Failed to send device command.' });
+  }
+});
+
+// ── Vinyl Buddy: get device telemetry history ───────────────────────────────
+app.get('/api/vinyl-buddy/devices/:deviceId/telemetry', authMiddleware, async (req, res) => {
+  try {
+    const deviceId = String(req.params.deviceId || '').trim();
+    if (!deviceId) return res.status(400).json({ error: 'deviceId is required.' });
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 100, 1), 1000);
+    const since = req.query.since || null;
+
+    if (pool) {
+      const params = [deviceId, limit];
+      let query = `SELECT device_id, battery_pct, temperature_c, signal_strength, uptime_sec, recorded_at
+                    FROM vinyl_device_telemetry
+                    WHERE device_id = $1`;
+      if (since) {
+        query += ` AND recorded_at >= $3`;
+        params.push(since);
+      }
+      query += ` ORDER BY recorded_at DESC LIMIT $2`;
+
+      const result = await pool.query(query, params);
+      return res.json({
+        deviceId,
+        telemetry: result.rows.map(r => ({
+          battery: r.battery_pct,
+          temperature: r.temperature_c,
+          signalStrength: r.signal_strength,
+          uptime: r.uptime_sec,
+          recordedAt: r.recorded_at,
+        })),
+        count: result.rows.length,
+      });
+    }
+
+    // Fallback: return device info from in-memory
+    const device = devicesById.get(deviceId);
+    return res.json({
+      deviceId,
+      telemetry: device ? [{
+        battery: null,
+        temperature: null,
+        signalStrength: null,
+        uptime: device.uptime,
+        recordedAt: device.lastSeen,
+      }] : [],
+      count: device ? 1 : 0,
+    });
+  } catch (err) {
+    console.error('[vinyl-buddy] telemetry error:', err.message);
+    return res.status(500).json({ error: 'Failed to fetch telemetry.' });
+  }
+});
+
+// ── Vinyl Buddy: rename a device ────────────────────────────────────────────
+app.post('/api/vinyl-buddy/devices/:deviceId/name', authMiddleware, async (req, res) => {
+  try {
+    const deviceId = String(req.params.deviceId || '').trim();
+    const name = String(req.body.name || '').trim();
+
+    if (!deviceId) return res.status(400).json({ error: 'deviceId is required.' });
+    if (!name || name.length > 64) {
+      return res.status(400).json({ error: 'name is required and must be 64 characters or fewer.' });
+    }
+
+    if (pool) {
+      const result = await pool.query(
+        `UPDATE vinyl_paired_devices SET device_name = $1, updated_at = now()
+         WHERE device_id = $2 RETURNING device_id, device_name`,
+        [name, deviceId]
+      );
+      if (result.rowCount === 0) {
+        return res.status(404).json({ error: 'Device not found.' });
+      }
+      return res.json({ success: true, deviceId, name });
+    }
+
+    // Fallback: check in-memory
+    const device = devicesById.get(deviceId);
+    if (!device) return res.status(404).json({ error: 'Device not found.' });
+    device.name = name;
+    return res.json({ success: true, deviceId, name });
+  } catch (err) {
+    console.error('[vinyl-buddy] rename device error:', err.message);
+    return res.status(500).json({ error: 'Failed to rename device.' });
+  }
+});
+
+// ── Vinyl Buddy: full identification history with stats ─────────────────────
+app.get('/api/vinyl-buddy/identification-history/:userId', authMiddleware, async (req, res) => {
+  try {
+    const userId = String(req.params.userId || '').trim();
+    if (!userId) return res.status(400).json({ error: 'userId is required.' });
+
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const perPage = Math.min(Math.max(parseInt(req.query.perPage) || 50, 1), 200);
+    const offset = (page - 1) * perPage;
+
+    if (pool) {
+      const countResult = await pool.query(
+        'SELECT COUNT(*) FROM vinyl_identifications WHERE username = $1',
+        [userId]
+      );
+      const total = parseInt(countResult.rows[0].count);
+
+      const result = await pool.query(
+        `SELECT id, track_title, track_artist, track_album, device_id, confidence, identified_at, corrected
+         FROM vinyl_identifications
+         WHERE username = $1
+         ORDER BY identified_at DESC
+         LIMIT $2 OFFSET $3`,
+        [userId, perPage, offset]
+      );
+
+      return res.json({
+        userId,
+        history: result.rows.map(r => ({
+          id: r.id,
+          title: r.track_title,
+          artist: r.track_artist,
+          album: r.track_album,
+          deviceId: r.device_id,
+          confidence: r.confidence,
+          identifiedAt: r.identified_at,
+          corrected: r.corrected || false,
+        })),
+        pagination: { page, perPage, total, totalPages: Math.ceil(total / perPage) },
+      });
+    }
+
+    // Fallback to in-memory
+    const sessions = vinylSessions.filter(s => s.username === userId);
+    const paginated = sessions.slice(offset, offset + perPage);
+    return res.json({
+      userId,
+      history: paginated.map((s, i) => ({
+        id: offset + i + 1,
+        title: s.track?.title,
+        artist: s.track?.artist,
+        album: s.track?.album,
+        deviceId: s.deviceId,
+        confidence: s.confidence,
+        identifiedAt: new Date(s.timestampMs).toISOString(),
+        corrected: false,
+      })),
+      pagination: { page, perPage, total: sessions.length, totalPages: Math.ceil(sessions.length / perPage) },
+    });
+  } catch (err) {
+    console.error('[vinyl-buddy] identification history error:', err.message);
+    return res.status(500).json({ error: 'Failed to fetch identification history.' });
+  }
+});
+
+// ── Vinyl Buddy: submit correction for misidentified track ──────────────────
+app.post('/api/vinyl-buddy/identification/:id/correct', authMiddleware, async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    const { title, artist, album } = req.body || {};
+
+    if (!id) return res.status(400).json({ error: 'Identification id is required.' });
+    if (!title && !artist && !album) {
+      return res.status(400).json({ error: 'At least one of title, artist, or album must be provided.' });
+    }
+
+    if (pool) {
+      const result = await pool.query(
+        `UPDATE vinyl_identifications
+         SET corrected = true,
+             corrected_title = COALESCE($2, track_title),
+             corrected_artist = COALESCE($3, track_artist),
+             corrected_album = COALESCE($4, track_album),
+             corrected_by = $5,
+             corrected_at = now()
+         WHERE id = $1
+         RETURNING id, corrected_title, corrected_artist, corrected_album`,
+        [id, title || null, artist || null, album || null, req.user.username]
+      );
+      if (result.rowCount === 0) {
+        return res.status(404).json({ error: 'Identification not found.' });
+      }
+      return res.json({ success: true, correction: result.rows[0] });
+    }
+
+    return res.json({
+      success: true,
+      correction: { id, title, artist, album, correctedBy: req.user.username },
+      message: 'Correction recorded (in-memory mode).',
+    });
+  } catch (err) {
+    console.error('[vinyl-buddy] correction error:', err.message);
+    return res.status(500).json({ error: 'Failed to submit correction.' });
+  }
+});
+
+// ── Vinyl Buddy: global identification leaderboard ──────────────────────────
+app.get('/api/vinyl-buddy/leaderboard', async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 25, 1), 100);
+    const period = req.query.period || 'all'; // all, week, month
+
+    if (pool) {
+      let dateFilter = '';
+      if (period === 'week') dateFilter = "AND identified_at >= now() - interval '7 days'";
+      else if (period === 'month') dateFilter = "AND identified_at >= now() - interval '30 days'";
+
+      const result = await pool.query(
+        `SELECT username,
+                COUNT(*) as total_identifications,
+                COUNT(DISTINCT track_artist) as unique_artists,
+                COUNT(DISTINCT track_album) as unique_albums
+         FROM vinyl_identifications
+         WHERE 1=1 ${dateFilter}
+         GROUP BY username
+         ORDER BY total_identifications DESC
+         LIMIT $1`,
+        [limit]
+      );
+
+      return res.json({
+        period,
+        leaderboard: result.rows.map((r, i) => ({
+          rank: i + 1,
+          username: r.username,
+          totalIdentifications: parseInt(r.total_identifications),
+          uniqueArtists: parseInt(r.unique_artists),
+          uniqueAlbums: parseInt(r.unique_albums),
+        })),
+      });
+    }
+
+    // Fallback to in-memory
+    const userCounts = {};
+    for (const s of vinylSessions) {
+      if (!userCounts[s.username]) {
+        userCounts[s.username] = { total: 0, artists: new Set(), albums: new Set() };
+      }
+      userCounts[s.username].total++;
+      if (s.track?.artist) userCounts[s.username].artists.add(s.track.artist);
+      if (s.track?.album) userCounts[s.username].albums.add(s.track.album);
+    }
+
+    const leaderboard = Object.entries(userCounts)
+      .sort(([, a], [, b]) => b.total - a.total)
+      .slice(0, limit)
+      .map(([username, data], i) => ({
+        rank: i + 1,
+        username,
+        totalIdentifications: data.total,
+        uniqueArtists: data.artists.size,
+        uniqueAlbums: data.albums.size,
+      }));
+
+    return res.json({ period, leaderboard });
+  } catch (err) {
+    console.error('[vinyl-buddy] leaderboard error:', err.message);
+    return res.status(500).json({ error: 'Failed to fetch leaderboard.' });
+  }
+});
+
+// ── Vinyl Buddy: create a listening party room ──────────────────────────────
+const listeningParties = new Map();
+
+app.post('/api/vinyl-buddy/listening-party', authMiddleware, (req, res) => {
+  try {
+    const { name, maxParticipants } = req.body || {};
+    const partyName = String(name || '').trim();
+
+    if (!partyName || partyName.length > 100) {
+      return res.status(400).json({ error: 'name is required and must be 100 characters or fewer.' });
+    }
+
+    const partyId = `party_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const party = {
+      id: partyId,
+      name: partyName,
+      host: req.user.username,
+      maxParticipants: Math.min(Math.max(parseInt(maxParticipants) || 10, 2), 50),
+      participants: [{ username: req.user.username, joinedAt: new Date().toISOString(), role: 'host' }],
+      createdAt: new Date().toISOString(),
+      status: 'active',
+    };
+
+    listeningParties.set(partyId, party);
+
+    if (pool) {
+      pool.query(
+        `INSERT INTO vinyl_listening_parties (party_id, name, host, max_participants, status, created_at)
+         VALUES ($1, $2, $3, $4, 'active', now())`,
+        [partyId, partyName, req.user.username, party.maxParticipants]
+      ).catch(err => console.error('Party persist error:', err.message));
+    }
+
+    return res.json({ success: true, party });
+  } catch (err) {
+    console.error('[vinyl-buddy] create party error:', err.message);
+    return res.status(500).json({ error: 'Failed to create listening party.' });
+  }
+});
+
+// ── Vinyl Buddy: join a listening party ─────────────────────────────────────
+app.post('/api/vinyl-buddy/listening-party/:id/join', authMiddleware, (req, res) => {
+  try {
+    const partyId = String(req.params.id || '').trim();
+    if (!partyId) return res.status(400).json({ error: 'Party id is required.' });
+
+    const party = listeningParties.get(partyId);
+    if (!party) return res.status(404).json({ error: 'Listening party not found.' });
+    if (party.status !== 'active') return res.status(410).json({ error: 'Listening party is no longer active.' });
+
+    if (party.participants.length >= party.maxParticipants) {
+      return res.status(409).json({ error: 'Listening party is full.' });
+    }
+
+    const alreadyJoined = party.participants.find(p => p.username === req.user.username);
+    if (alreadyJoined) {
+      return res.json({ success: true, message: 'Already in this party.', party });
+    }
+
+    party.participants.push({
+      username: req.user.username,
+      joinedAt: new Date().toISOString(),
+      role: 'listener',
+    });
+
+    if (pool) {
+      pool.query(
+        `INSERT INTO vinyl_party_participants (party_id, username, role, joined_at)
+         VALUES ($1, $2, 'listener', now())
+         ON CONFLICT (party_id, username) DO NOTHING`,
+        [partyId, req.user.username]
+      ).catch(err => console.error('Party join persist error:', err.message));
+    }
+
+    return res.json({ success: true, party });
+  } catch (err) {
+    console.error('[vinyl-buddy] join party error:', err.message);
+    return res.status(500).json({ error: 'Failed to join listening party.' });
+  }
+});
+
+// ── Vinyl Buddy: get party status and participants ──────────────────────────
+app.get('/api/vinyl-buddy/listening-party/:id', authMiddleware, async (req, res) => {
+  try {
+    const partyId = String(req.params.id || '').trim();
+    if (!partyId) return res.status(400).json({ error: 'Party id is required.' });
+
+    // Try in-memory first
+    const party = listeningParties.get(partyId);
+    if (party) return res.json({ party });
+
+    // Try database
+    if (pool) {
+      const result = await pool.query(
+        'SELECT * FROM vinyl_listening_parties WHERE party_id = $1',
+        [partyId]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ error: 'Listening party not found.' });
+
+      const row = result.rows[0];
+      const participants = await pool.query(
+        'SELECT username, role, joined_at FROM vinyl_party_participants WHERE party_id = $1 ORDER BY joined_at',
+        [partyId]
+      );
+
+      return res.json({
+        party: {
+          id: row.party_id,
+          name: row.name,
+          host: row.host,
+          maxParticipants: row.max_participants,
+          participants: participants.rows.map(p => ({
+            username: p.username,
+            role: p.role,
+            joinedAt: p.joined_at,
+          })),
+          createdAt: row.created_at,
+          status: row.status,
+        },
+      });
+    }
+
+    return res.status(404).json({ error: 'Listening party not found.' });
+  } catch (err) {
+    console.error('[vinyl-buddy] get party error:', err.message);
+    return res.status(500).json({ error: 'Failed to fetch listening party.' });
+  }
+});
+
+// ── Vinyl Buddy: request device diagnostic report ───────────────────────────
+app.post('/api/vinyl-buddy/devices/:deviceId/diagnostics', authMiddleware, async (req, res) => {
+  try {
+    const deviceId = String(req.params.deviceId || '').trim();
+    if (!deviceId) return res.status(400).json({ error: 'deviceId is required.' });
+
+    const reportId = `diag_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    if (pool) {
+      await pool.query(
+        `INSERT INTO vinyl_device_diagnostics (report_id, device_id, requested_by, requested_at, status)
+         VALUES ($1, $2, $3, now(), 'pending')`,
+        [reportId, deviceId, req.user.username]
+      );
+    }
+
+    // Gather what we can from in-memory
+    const device = devicesById.get(deviceId);
+    const calibration = calibrationByDevice.get(deviceId);
+    const paired = pairedDevices.get(deviceId);
+
+    return res.json({
+      success: true,
+      reportId,
+      deviceId,
+      status: 'pending',
+      snapshot: {
+        online: device ? (Date.now() - new Date(device.lastSeen).getTime() < 120000) : false,
+        uptime: device?.uptime || null,
+        freeHeap: device?.freeHeap || null,
+        calibration: calibration || null,
+        paired: !!paired,
+        lastSeen: device?.lastSeen || null,
+      },
+      message: 'Diagnostic report requested. Full report will be available once device responds.',
+    });
+  } catch (err) {
+    console.error('[vinyl-buddy] diagnostics error:', err.message);
+    return res.status(500).json({ error: 'Failed to request diagnostics.' });
+  }
+});
+
+// ── Vinyl Buddy: list all available firmware versions ───────────────────────
+app.get('/api/vinyl-buddy/firmware/versions', async (req, res) => {
+  try {
+    if (pool) {
+      const result = await pool.query(
+        `SELECT version, release_date, changelog, min_hardware_rev, is_stable, size_bytes
+         FROM vinyl_firmware_versions
+         ORDER BY release_date DESC`
+      );
+      if (result.rows.length > 0) {
+        return res.json({
+          versions: result.rows.map(r => ({
+            version: r.version,
+            releaseDate: r.release_date,
+            changelog: r.changelog,
+            minHardwareRev: r.min_hardware_rev,
+            stable: r.is_stable,
+            sizeBytes: r.size_bytes,
+          })),
+        });
+      }
+    }
+
+    // Fallback: return known firmware versions
+    return res.json({
+      versions: [
+        { version: '2.1.0', releaseDate: '2026-03-15', changelog: 'Improved audio capture quality', stable: true },
+        { version: '2.0.1', releaseDate: '2026-02-28', changelog: 'Bug fixes for BLE connectivity', stable: true },
+        { version: '2.0.0', releaseDate: '2026-02-01', changelog: 'Major release: new audio pipeline', stable: true },
+        { version: '1.9.5', releaseDate: '2026-01-15', changelog: 'Battery optimization', stable: true },
+      ],
+    });
+  } catch (err) {
+    console.error('[vinyl-buddy] firmware versions error:', err.message);
+    return res.status(500).json({ error: 'Failed to fetch firmware versions.' });
+  }
+});
+
+// ── Vinyl Buddy: rollback device to previous firmware ───────────────────────
+app.post('/api/vinyl-buddy/firmware/rollback/:deviceId', authMiddleware, async (req, res) => {
+  try {
+    const deviceId = String(req.params.deviceId || '').trim();
+    const { targetVersion } = req.body || {};
+
+    if (!deviceId) return res.status(400).json({ error: 'deviceId is required.' });
+    if (!targetVersion) return res.status(400).json({ error: 'targetVersion is required.' });
+
+    // Validate version format (semver-like)
+    if (!/^\d+\.\d+\.\d+$/.test(targetVersion)) {
+      return res.status(400).json({ error: 'Invalid version format. Expected semver (e.g. 2.0.1).' });
+    }
+
+    const rollbackId = `rb_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    if (pool) {
+      // Verify device exists
+      const deviceCheck = await pool.query(
+        'SELECT device_id FROM vinyl_devices WHERE device_id = $1',
+        [deviceId]
+      );
+      if (deviceCheck.rows.length === 0) {
+        return res.status(404).json({ error: 'Device not found.' });
+      }
+
+      // Verify target version exists
+      const versionCheck = await pool.query(
+        'SELECT version FROM vinyl_firmware_versions WHERE version = $1',
+        [targetVersion]
+      );
+      if (versionCheck.rows.length === 0) {
+        return res.status(404).json({ error: `Firmware version ${targetVersion} not found.` });
+      }
+
+      await pool.query(
+        `INSERT INTO vinyl_firmware_rollbacks (rollback_id, device_id, target_version, requested_by, requested_at, status)
+         VALUES ($1, $2, $3, $4, now(), 'pending')`,
+        [rollbackId, deviceId, targetVersion, req.user.username]
+      );
+    }
+
+    return res.json({
+      success: true,
+      rollbackId,
+      deviceId,
+      targetVersion,
+      status: 'pending',
+      message: `Firmware rollback to ${targetVersion} queued. Device will update on next check-in.`,
+    });
+  } catch (err) {
+    console.error('[vinyl-buddy] firmware rollback error:', err.message);
+    return res.status(500).json({ error: 'Failed to initiate firmware rollback.' });
+  }
+});
+
+// ── Vinyl Buddy: deep listening analytics ───────────────────────────────────
+app.get('/api/vinyl-buddy/analytics/:userId', authMiddleware, async (req, res) => {
+  try {
+    const userId = String(req.params.userId || '').trim();
+    if (!userId) return res.status(400).json({ error: 'userId is required.' });
+
+    const sessions = vinylSessions.filter(s => s.username === userId);
+
+    // Genre breakdown
+    const genreMap = {
+      "Led Zeppelin": "Rock", "Pink Floyd": "Prog Rock", "Queen": "Rock",
+      "The Doors": "Rock", "The Beatles": "Rock", "The Who": "Rock",
+      "Eagles": "Rock", "Nirvana": "Grunge", "The Rolling Stones": "Rock",
+      "John Coltrane": "Jazz", "Miles Davis": "Jazz", "Charles Mingus": "Jazz",
+      "Fleetwood Mac": "Rock", "Daft Punk": "Electronic",
+    };
+    const genreCounts = {};
+    for (const s of sessions) {
+      const genre = genreMap[s.track?.artist] || 'Other';
+      genreCounts[genre] = (genreCounts[genre] || 0) + 1;
+    }
+
+    // Top artists
+    const artistCounts = {};
+    for (const s of sessions) {
+      const a = s.track?.artist || 'Unknown';
+      artistCounts[a] = (artistCounts[a] || 0) + 1;
+    }
+
+    // Peak listening hours
+    const hourCounts = new Array(24).fill(0);
+    for (const s of sessions) {
+      const hour = new Date(s.timestampMs).getHours();
+      hourCounts[hour]++;
+    }
+
+    // Listening streaks (consecutive days)
+    const listenDays = new Set(
+      sessions.map(s => new Date(s.timestampMs).toISOString().slice(0, 10))
+    );
+    const sortedDays = Array.from(listenDays).sort();
+    let currentStreak = 0;
+    let maxStreak = 0;
+    for (let i = 0; i < sortedDays.length; i++) {
+      if (i === 0) {
+        currentStreak = 1;
+      } else {
+        const prev = new Date(sortedDays[i - 1]);
+        const curr = new Date(sortedDays[i]);
+        const diffDays = (curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24);
+        currentStreak = diffDays === 1 ? currentStreak + 1 : 1;
+      }
+      maxStreak = Math.max(maxStreak, currentStreak);
+    }
+
+    // Mood estimation based on genre
+    const moodMap = {
+      'Rock': 'energetic', 'Prog Rock': 'contemplative', 'Grunge': 'intense',
+      'Jazz': 'mellow', 'Electronic': 'upbeat', 'Other': 'eclectic',
+    };
+    const moodCounts = {};
+    for (const [genre, count] of Object.entries(genreCounts)) {
+      const mood = moodMap[genre] || 'eclectic';
+      moodCounts[mood] = (moodCounts[mood] || 0) + count;
+    }
+
+    // Total listening time
+    const totalSeconds = sessions.reduce((sum, s) => sum + (Number(s.listenedSeconds) || 0), 0);
+
+    return res.json({
+      userId,
+      totalListens: sessions.length,
+      totalMinutes: Math.round(totalSeconds / 60),
+      uniqueArtists: Object.keys(artistCounts).length,
+      uniqueAlbums: new Set(sessions.map(s => `${s.track?.artist}::${s.track?.album}`)).size,
+      genres: Object.entries(genreCounts)
+        .sort(([, a], [, b]) => b - a)
+        .map(([genre, count]) => ({ genre, count, percentage: sessions.length ? Math.round((count / sessions.length) * 100) : 0 })),
+      topArtists: Object.entries(artistCounts)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 15)
+        .map(([artist, count]) => ({ artist, count })),
+      peakHours: hourCounts
+        .map((count, hour) => ({ hour, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5),
+      streaks: {
+        longest: maxStreak,
+        totalDays: listenDays.size,
+      },
+      moods: Object.entries(moodCounts)
+        .sort(([, a], [, b]) => b - a)
+        .map(([mood, count]) => ({ mood, count })),
+    });
+  } catch (err) {
+    console.error('[vinyl-buddy] analytics error:', err.message);
+    return res.status(500).json({ error: 'Failed to fetch listening analytics.' });
+  }
+});
+
 // ── Feature 20: Server startup banner with configuration summary ──────────────
 
 const PORT = process.env.PORT || process.env.SERVER_PORT || 3001;
