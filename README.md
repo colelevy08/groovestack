@@ -4,7 +4,7 @@
 
 GrooveStack is a full-stack web application where collectors buy, sell, trade, and discover vinyl records within an active community. It combines a Discogs-powered marketplace, a social feed, deep collection analytics, and a custom ESP32 hardware device (Vinyl Buddy) that identifies records playing on your turntable in real time.
 
-Built across nine development waves, the platform includes 1,100+ improvements, 170+ API endpoints, 35+ database tables, and supports 41 active users.
+Built across twenty development waves, the platform includes 1,800+ improvements, 275+ API endpoints, 35+ database tables, and supports 51 active users with 100+ seed records.
 
 ---
 
@@ -15,6 +15,9 @@ Built across nine development waves, the platform includes 1,100+ improvements, 
 - [Getting Started](#getting-started)
 - [API Reference](#api-reference)
 - [Architecture](#architecture)
+- [Performance Optimizations](#performance-optimizations)
+- [Security Features](#security-features)
+- [Accessibility Features](#accessibility-features)
 - [Vinyl Buddy Hardware](#vinyl-buddy-hardware)
 - [Deployment](#deployment)
 - [Troubleshooting](#troubleshooting)
@@ -32,9 +35,12 @@ Built across nine development waves, the platform includes 1,100+ improvements, 
 - **Discogs-powered pricing** with real-time market value lookups and price history tracking
 - **Stripe Checkout** integration with a 5% platform fee and webhook-driven order confirmation
 - **Offers and negotiations** — send cash, trade, or combo offers with counter-offer support and full negotiation history
+- **Auctions** — timed auction listings with minimum bids, reserve prices, real-time bid tracking, auto-close with winner notification, and sniping protection with time extension
 - **Escrow holds** — funds held in escrow until buyer confirms receipt; supports release and refund flows
 - **Disputes** — file and resolve disputes on transactions with admin review
+- **Featured listings** — promoted listing placements for increased visibility
 - **Promo codes and referrals** — create and validate promotional codes; referral tracking with credit system
+- **Loyalty points** — earn points on purchases, redeemable for listing credits and discounts
 - **Shipping rate calculator** with address validation and tax estimation
 - **Bulk price updates** for sellers managing large inventories
 - **Fee calculator** so sellers can preview net proceeds before listing
@@ -53,6 +59,7 @@ Built across nine development waves, the platform includes 1,100+ improvements, 
 
 - **Social feed** with posts, record tags, likes, bookmarks, and comments
 - **Create posts** with text, record references, and image attachments
+- **Stories** — ephemeral 24-hour stories with photo and text formats, story ring indicators, view counts, tap-through navigation, and profile highlights
 - **Comments** on both records and posts with threaded replies
 - **Follow system** — follow other collectors, view follower/following lists
 - **Activity feed** filtered by followed users
@@ -67,6 +74,8 @@ Built across nine development waves, the platform includes 1,100+ improvements, 
 
 - **Full CRUD** for vinyl records with rich metadata (artist, album, year, genre, condition, pressing details, notes)
 - **Collection statistics** — total value, genre distribution, condition breakdown, decade spread, average price
+- **Virtual scrolling** for collections with 1,000+ records, rendering only visible items for 60fps performance
+- **Card flip animations** — 3D CSS card flip for quick record previews (front: art/price, back: condition/actions)
 - **Duplicate detection** before adding records to prevent accidental duplicates
 - **Bulk import** from CSV or JSON files
 - **Discogs import** — pull your existing Discogs collection directly into GrooveStack
@@ -90,23 +99,35 @@ Built across nine development waves, the platform includes 1,100+ improvements, 
 - **Activity metrics** — platform-wide engagement statistics
 - **Most valuable records** and top artists in your collection
 - **Price paid vs. market value** comparisons
+- **Taste evolution** — track how your genre preferences change over time
+- **Mood detection** — music mood tagging based on listening patterns
 
 ### Vinyl Buddy
 
 - **ESP32 hardware device** that captures 2-second audio samples from your turntable
 - **Audio fingerprinting** via AudD API — automatically identifies the track playing
+- **BLE (Bluetooth Low Energy)** pairing and configuration mode
+- **OLED display** (SSD1306 128x64) — shows device code, connection status, track info, and animations
+- **SD card slot** for offline session caching when WiFi is unavailable
+- **APDS-9960 gesture sensor** — wave to skip, swipe to control playback
+- **Active noise cancellation** for cleaner audio capture in noisy environments
+- **Auto-gain control** for adapting to varying room volumes
+- **ESP-NOW mesh networking** — peer-to-peer communication between devices for multi-room sync
 - **Listening history** with timestamped session logs
 - **Listening statistics** — total sessions, unique tracks, favorite artists, genre breakdown
 - **Device pairing** with 12-character activation codes displayed on the OLED screen
-- **Multi-device support** — pair and manage multiple Vinyl Buddy units
+- **Multi-device support** — pair and manage up to 4 Vinyl Buddy units
 - **Device calibration** for optimal audio capture
-- **Firmware update checking** with version management
-- **Heartbeat monitoring** — device health status and connectivity tracking
-- **Achievement system** — earn badges for listening milestones
+- **Firmware update checking** with OTA update support
+- **Heartbeat monitoring** — device health status and connectivity tracking every 30 seconds
+- **Achievement system** — earn badges for listening milestones (First Spin, Century Club, etc.)
 - **Streaks** — track consecutive days of vinyl listening
 - **Mood detection** — music mood tagging based on listening patterns
 - **Now Playing** display with equalizer visualization
+- **Side A/B and RPM tracking** (33/45/78) per session
 - **Overview, History, Stats, and Device** tabs in a dedicated dashboard
+- **Deep sleep mode** for power conservation
+- **LED status indicators** for WiFi, BLE, and listening state
 
 ### User Profiles
 
@@ -134,6 +155,7 @@ Built across nine development waves, the platform includes 1,100+ improvements, 
 - **Read receipts** and typing indicators
 - **Conversation archiving** for inbox management
 - **Scheduled messages** — compose now, send later
+- **Drawer modal interface** for quick DM access
 - **Dedicated Messages screen** with full conversation management
 
 ### Wishlist
@@ -153,6 +175,7 @@ Built across nine development waves, the platform includes 1,100+ improvements, 
 - **Inline actions** — accept/decline offers, reply to messages directly from notifications
 - **Mark as read** individually or mark all as read
 - **Email notification triggers** for critical events
+- **Push notification support** via service workers
 - **Unread count badges** in the navigation
 - **Notification preferences** — granular control over which categories generate alerts
 
@@ -170,21 +193,6 @@ Built across nine development waves, the platform includes 1,100+ improvements, 
 - **GDPR data export** — download all personal data in a structured format
 - **Session management** — view and revoke active sessions
 
-### Security
-
-- **JWT authentication** with bcrypt password hashing
-- **Two-factor authentication (TOTP)** — setup and verification with authenticator app support
-- **CSRF token generation** for form protection
-- **Rate limiting** — 100 requests/minute general, 10 requests/minute for auth endpoints
-- **Email verification** with token-based confirmation flow
-- **Password reset** with secure token generation and expiry
-- **User blocking** at the application level
-- **Content moderation queue** with reporting and admin review
-- **Request ID tracing** — every request tagged with a unique ID for debugging
-- **Input validation** and SQL injection prevention
-- **CORS** configuration with allowed origin management
-- **Request body size limits** — 10 MB for JSON, 1 MB for URL-encoded
-
 ---
 
 ## Tech Stack
@@ -200,9 +208,10 @@ Built across nine development waves, the platform includes 1,100+ improvements, 
 | **Pricing** | Discogs API (market value lookups) |
 | **Album Art** | iTunes Search API |
 | **Artist Info** | Wikipedia API |
-| **Auth** | JWT + bcrypt + TOTP |
+| **Auth** | JWT + bcrypt + TOTP 2FA |
 | **Deployment** | Vercel (frontend), Railway (backend + PostgreSQL) |
-| **Hardware** | ESP32-DevKitC V4 with INMP441 MEMS microphone and SSD1306 OLED |
+| **Hardware** | ESP32-DevKitC V4 with INMP441 mic, SSD1306 OLED, SD card, APDS-9960 gesture sensor |
+| **Mesh Network** | ESP-NOW peer-to-peer protocol |
 
 ---
 
@@ -267,9 +276,9 @@ The frontend proxies API requests to `localhost:3001` during development via the
 
 ## API Reference
 
-The server exposes 170+ RESTful endpoints organized into the following groups. Full documentation is available at `GET /api/docs` and an OpenAPI spec at `GET /api/openapi.json`.
+The server exposes 275+ RESTful endpoints organized into the following groups. Full documentation is available at `GET /api/docs` and an OpenAPI spec at `GET /api/openapi.json`.
 
-### Authentication
+### Authentication (19 endpoints)
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -293,7 +302,7 @@ The server exposes 170+ RESTful endpoints organized into the following groups. F
 | POST | `/api/auth/deactivate` | Deactivate account |
 | DELETE | `/api/auth/delete-account` | Permanently delete account |
 
-### Records
+### Records (22 endpoints)
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -320,7 +329,7 @@ The server exposes 170+ RESTful endpoints organized into the following groups. F
 | GET | `/api/records/duplicates/check` | Duplicate detection |
 | PUT | `/api/records/bulk-price` | Bulk price update |
 
-### Marketplace
+### Marketplace (17 endpoints)
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -342,7 +351,31 @@ The server exposes 170+ RESTful endpoints organized into the following groups. F
 | GET | `/api/disputes` | List disputes |
 | PUT | `/api/disputes/:id/resolve` | Resolve a dispute |
 
-### Social
+### Auctions (8 endpoints)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/auctions` | Create an auction listing |
+| GET | `/api/auctions` | List active auctions |
+| GET | `/api/auctions/:id` | Get auction details |
+| POST | `/api/auctions/:id/bid` | Place a bid |
+| GET | `/api/auctions/:id/bids` | Get bid history |
+| PUT | `/api/auctions/:id/close` | Close auction manually |
+| GET | `/api/auctions/won` | List won auctions |
+| GET | `/api/auctions/selling` | List your auction listings |
+
+### Loyalty & Seller Tiers (6 endpoints)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/loyalty/points` | Get loyalty point balance |
+| POST | `/api/loyalty/redeem` | Redeem points for credits |
+| GET | `/api/loyalty/history` | Point transaction history |
+| GET | `/api/seller-tiers` | Get seller tier info |
+| GET | `/api/seller-tiers/:username` | Get seller's tier and benefits |
+| GET | `/api/featured-listings` | Get featured/promoted listings |
+
+### Social (11 endpoints)
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -358,7 +391,18 @@ The server exposes 170+ RESTful endpoints organized into the following groups. F
 | GET | `/api/follows/:username` | Get follower/following lists |
 | GET | `/api/feed` | Activity feed |
 
-### Vinyl Buddy
+### Stories (6 endpoints)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/stories` | Create a story |
+| GET | `/api/stories` | List active stories |
+| GET | `/api/stories/:id` | Get story details |
+| POST | `/api/stories/:id/view` | Mark story as viewed |
+| GET | `/api/stories/:username/highlights` | Get story highlights |
+| DELETE | `/api/stories/:id` | Delete a story |
+
+### Vinyl Buddy (12 endpoints)
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -375,7 +419,20 @@ The server exposes 170+ RESTful endpoints organized into the following groups. F
 | GET | `/api/vinyl-buddy/recent/:username` | Recent identifications |
 | GET | `/api/vinyl-buddy/debug/last-identify` | Debug last identification |
 
-### Analytics
+### Vinyl Buddy Mesh & Hardware (8 endpoints)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/vinyl-buddy/mesh/register` | Register device in mesh network |
+| GET | `/api/vinyl-buddy/mesh/peers/:deviceId` | List mesh peers |
+| POST | `/api/vinyl-buddy/mesh/sync` | Sync listening session across mesh |
+| GET | `/api/vinyl-buddy/sd/sessions/:deviceId` | Get offline-cached sessions from SD |
+| POST | `/api/vinyl-buddy/sd/upload/:deviceId` | Upload cached sessions from SD card |
+| POST | `/api/vinyl-buddy/gesture/configure` | Configure gesture sensor mappings |
+| GET | `/api/vinyl-buddy/gesture/:deviceId` | Get gesture configuration |
+| POST | `/api/vinyl-buddy/noise-cancel/calibrate` | Calibrate noise cancellation |
+
+### Analytics (9 endpoints)
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -389,7 +446,7 @@ The server exposes 170+ RESTful endpoints organized into the following groups. F
 | GET | `/api/collection/stats` | Collection statistics |
 | GET | `/api/dashboard/stats` | Dashboard summary |
 
-### Utility
+### Utility (15 endpoints)
 
 | Method | Endpoint | Description |
 |---|---|---|
@@ -417,13 +474,22 @@ The server exposes 170+ RESTful endpoints organized into the following groups. F
 
 ```
 groovestack/
-├── server.js                          # Express API server (5,900+ lines)
+├── server.js                          # Express API server (7,500+ lines)
 ├── package.json                       # Dependencies and scripts
 ├── tailwind.config.js                 # Tailwind configuration
 ├── Procfile                           # Railway deployment config
 ├── firmware/                          # ESP32 Vinyl Buddy firmware
+│   ├── main.cpp                       # Main firmware entry point
+│   ├── audio_capture.cpp              # I2S microphone handling
+│   ├── ble_config.cpp                 # BLE pairing and configuration
+│   ├── oled_display.cpp               # SSD1306 display driver
+│   ├── sd_cache.cpp                   # SD card offline caching
+│   ├── gesture_sensor.cpp             # APDS-9960 gesture handling
+│   ├── noise_cancel.cpp               # Active noise cancellation
+│   ├── esp_now_mesh.cpp               # ESP-NOW mesh networking
+│   └── config.h                       # Hardware pin definitions
 ├── scripts/
-│   └── generate-deck.js               # Pitch deck generator
+│   └── generate-deck.js               # Pitch deck generator (36 slides)
 ├── public/                            # Static assets
 └── src/
     ├── App.js                         # Root component — all shared state
@@ -439,10 +505,12 @@ groovestack/
     └── components/
         ├── AuthScreen.jsx             # Login / signup flow
         ├── Sidebar.jsx                # Desktop sidebar + mobile bottom nav
-        ├── Card.jsx                   # Record card component
+        ├── Card.jsx                   # Record card with flip animation
         ├── Paginated.jsx              # Pagination wrapper
         ├── UserChip.jsx               # Inline user reference
         ├── UserLink.jsx               # Clickable user link
+        ├── VirtualList.jsx            # Virtual scrolling container
+        ├── DrawerModal.jsx            # Bottom drawer modal
         ├── screens/
         │   ├── ExploreScreen.jsx      # Marketplace browsing
         │   ├── SocialFeedScreen.jsx   # Social feed with posts
@@ -451,6 +519,7 @@ groovestack/
         │   ├── UserProfilePage.jsx    # Public user profiles
         │   ├── FollowingScreen.jsx    # Following feed
         │   ├── TransactionsScreen.jsx # Orders, offers, cart
+        │   ├── AuctionsScreen.jsx     # Auction browsing and bidding
         │   ├── VinylBuddyScreen.jsx   # Vinyl Buddy dashboard
         │   ├── AnalyticsScreen.jsx    # Collection analytics
         │   ├── MessagesScreen.jsx     # Direct messages
@@ -473,6 +542,7 @@ groovestack/
             ├── AlbumArt.jsx           # Album artwork display
             ├── Avatar.jsx             # User avatar
             ├── Badge.jsx              # Status badges
+            ├── CardFlip.jsx           # 3D card flip component
             ├── CommandPalette.jsx     # Cmd+K search palette
             ├── Confetti.jsx           # Celebration animation
             ├── DataSyncIndicator.jsx  # Sync status indicator
@@ -502,7 +572,10 @@ groovestack/
 - **Single-page application** with all shared state managed in `App.js`
 - **Screen-based navigation** — `nav` state determines which screen renders (no client-side router)
 - **Modal system** for overlays (record details, offers, messaging, profiles)
+- **Drawer modals** with bottom-sheet UX, swipe-to-dismiss, and snap points (collapsed, half, full)
 - **Lazy-loaded screens** via `React.lazy` and `Suspense` for faster initial load
+- **Virtual scrolling** for long lists (1,000+ items) rendering only visible rows
+- **Card flip animations** with 3D CSS transforms for interactive record cards
 - **localStorage persistence** for user data, records, following lists, and DM history
 - **Responsive layout** — desktop sidebar navigation + mobile bottom tab bar
 - **Undo/redo system** with a 30-step history stack
@@ -515,6 +588,7 @@ groovestack/
 
 - **Express.js 5** REST API with JWT authentication
 - **PostgreSQL** with 35+ tables and an 8-version migration system that auto-applies on startup
+- **275+ API endpoints** across authentication, records, marketplace, auctions, social, stories, Vinyl Buddy, mesh, analytics, and utility
 - **In-memory rate limiting** — configurable per-bucket with sliding windows
 - **Stripe webhook handling** for payment confirmation
 - **API response envelope** — standardized `{ data, meta, error }` format with request IDs
@@ -529,17 +603,73 @@ The database contains 35+ tables organized by domain:
 
 **Core:** `profiles`, `records`, `schema_migrations`
 
-**Social:** `posts`, `comments`, `follows`, `post_likes`, `post_bookmarks`, `record_likes`, `record_saves`
+**Social:** `posts`, `comments`, `follows`, `post_likes`, `post_bookmarks`, `record_likes`, `record_saves`, `stories`, `story_views`
 
-**Marketplace:** `offers`, `offer_negotiations`, `purchases`, `order_cancellations`, `escrow_holds`, `disputes`, `promo_codes`, `referrals`
+**Marketplace:** `offers`, `offer_negotiations`, `purchases`, `order_cancellations`, `escrow_holds`, `disputes`, `promo_codes`, `referrals`, `auctions`, `auction_bids`, `featured_listings`, `loyalty_points`, `loyalty_transactions`
 
 **Messaging:** `messages`, `notifications`
 
 **Collection:** `wishlist`, `price_history`, `price_alerts`, `record_views`, `condition_verification_log`, `condition_change_history`, `collection_shares`, `record_provenance`, `authenticity_queue`
 
-**Vinyl Buddy:** `vinyl_sessions`, `vinyl_devices`
+**Vinyl Buddy:** `vinyl_sessions`, `vinyl_devices`, `mesh_peers`, `sd_cache_log`, `gesture_config`
 
-**Account:** `user_preferences`, `user_verification`, `user_blocks`, `activity_log`, `api_keys`, `webhooks`, `moderation_queue`
+**Account:** `user_preferences`, `user_verification`, `user_blocks`, `activity_log`, `api_keys`, `webhooks`, `moderation_queue`, `seller_tiers`
+
+---
+
+## Performance Optimizations
+
+- **Virtual scrolling** — long lists (collections, search results, feeds) render only visible rows using a windowed approach, maintaining 60fps even with 1,000+ items
+- **React.lazy and Suspense** — screens are code-split and lazy-loaded, reducing initial bundle size significantly
+- **Lazy image loading** — images load on demand via IntersectionObserver with placeholder shimmer effects
+- **Debounced search inputs** — search queries are debounced (300ms) to reduce unnecessary API calls
+- **Memoized components** — heavy components use `React.memo`, `useMemo`, and `useCallback` to prevent unnecessary re-renders
+- **Gzip compression** — all API responses are compressed server-side
+- **Service worker caching** — static assets and API responses are cached for offline-capable PWA support
+- **Optimistic UI updates** — likes, saves, follows, and bookmarks update instantly on the client before server confirmation
+- **Batch API endpoint** — `POST /api/batch` allows combining multiple API calls into a single HTTP request
+- **Database connection pooling** — PostgreSQL connections are pooled and reused
+- **Indexed queries** — frequently queried columns (username, record_id, created_at) are indexed
+- **Response pagination** — all list endpoints support cursor-based or offset pagination with configurable page sizes
+
+---
+
+## Security Features
+
+- **JWT authentication** with bcrypt password hashing (12 salt rounds)
+- **Two-factor authentication (TOTP)** — setup and verification with authenticator app support
+- **CSRF token generation** — unique tokens per session for form protection
+- **Rate limiting** — 100 requests/minute general, 10 requests/minute for auth endpoints, sliding window algorithm
+- **Email verification** with token-based confirmation flow
+- **Password reset** with secure token generation and configurable expiry
+- **User blocking** at the application level with full bi-directional enforcement
+- **Content moderation queue** with reporting and admin review workflow
+- **Request ID tracing** — every request tagged with a unique `X-Request-Id` for debugging and audit trails
+- **Input validation** — all inputs validated and sanitized to prevent SQL injection and XSS
+- **CORS configuration** — strict allowed origin management with environment-based configuration
+- **Request body size limits** — 10 MB for JSON, 1 MB for URL-encoded to prevent payload attacks
+- **Secure headers** — appropriate security headers on all responses
+- **Session management** — view active sessions, revoke individual or all sessions
+- **Account deactivation and deletion** — reversible deactivation and irreversible deletion with full data purge
+- **Escrow protection** — funds held securely until buyer confirms receipt
+- **Stripe webhook verification** — all payment webhooks verified with Stripe signatures
+
+---
+
+## Accessibility Features
+
+- **Full keyboard navigation** with visible focus indicators across all interactive elements
+- **Keyboard shortcuts** — 1-9 for tab navigation, Cmd+K command palette, customizable shortcut bindings
+- **Command palette** — fuzzy search across records, users, actions, and navigation targets
+- **Dark and light themes** with automatic system preference detection
+- **Reduced motion support** — respects `prefers-reduced-motion` media query, disabling animations for users who prefer less motion
+- **High contrast mode** — enhanced visibility option for improved readability
+- **Screen reader support** — ARIA labels, roles, and live regions throughout the application
+- **Skip-to-content links** — bypass navigation for keyboard users
+- **Logical heading hierarchy** — proper `h1`-`h6` nesting for document structure
+- **Font size adjustment** — configurable font sizing in settings
+- **Focus trap in modals** — keyboard focus is trapped within open modals and drawer overlays
+- **Color-independent indicators** — status information conveyed through icons and text, not color alone
 
 ---
 
@@ -550,19 +680,24 @@ The Vinyl Buddy is an ESP32-based device that sits near your turntable and autom
 ### How It Works
 
 1. The INMP441 MEMS microphone captures a 2-second audio sample from the room
-2. The ESP32 sends raw PCM audio data to the GrooveStack server over Wi-Fi
-3. The server converts the PCM data to WAV format and queries the AudD API for fingerprint matching
-4. The identified track, artist, and album appear in your listening history on GrooveStack
-5. The SSD1306 OLED screen displays the device code, connection status, and currently identified track
+2. Active noise cancellation filters ambient noise for cleaner audio
+3. The ESP32 sends raw PCM audio data to the GrooveStack server over Wi-Fi
+4. The server converts the PCM data to WAV format and queries the AudD API for fingerprint matching
+5. The identified track, artist, and album appear in your listening history on GrooveStack
+6. The SSD1306 OLED screen displays the device code, connection status, and currently identified track
+7. If WiFi is unavailable, sessions are cached to the SD card for later upload
 
 ### Components
 
 | Part | Purpose |
 |---|---|
-| ESP32-DevKitC V4 | Main microcontroller with Wi-Fi |
+| ESP32-DevKitC V4 | Main microcontroller with Wi-Fi + BLE |
 | INMP441 MEMS Microphone | I2S digital audio capture |
-| SSD1306 OLED Display (128x64) | Device status and track info |
-| Micro-USB cable | Power and firmware flashing |
+| SSD1306 OLED Display (128x64) | Device status, track info, and animations |
+| MicroSD Card Module | Offline session caching |
+| APDS-9960 Gesture Sensor | Wave and swipe gesture control |
+| Micro-USB / USB-C cable | Power and firmware flashing |
+| Li-Po battery (optional) | Portable operation |
 
 ### Wiring
 
@@ -577,6 +712,10 @@ The INMP441 connects to the ESP32 via the I2S bus:
 
 The SSD1306 OLED connects via I2C on the default SDA/SCL pins (GPIO 21 / GPIO 22).
 
+The APDS-9960 gesture sensor connects via I2C (shared bus with OLED, address 0x39).
+
+The MicroSD card module connects via SPI (GPIO 5 CS, GPIO 18 SCK, GPIO 23 MOSI, GPIO 19 MISO).
+
 ### Setup
 
 1. Flash the firmware from the `firmware/` directory to the ESP32
@@ -585,13 +724,24 @@ The SSD1306 OLED connects via I2C on the default SDA/SCL pins (GPIO 21 / GPIO 22
 4. The device sends heartbeats every 30 seconds to confirm connectivity
 5. Place the device near your turntable speaker and start playing a record
 
-### Features
+### Firmware Features
 
 - **Auto-identification** — continuously listens and identifies tracks
+- **BLE pairing** — Bluetooth Low Energy for initial device configuration
+- **OLED display** — shows track info, connection status, device code, and listening animations
+- **SD card caching** — stores sessions offline when WiFi is unavailable, auto-uploads when reconnected
+- **Gesture control** — APDS-9960 sensor for wave-to-skip and swipe gestures
+- **Active noise cancellation** — filters ambient noise for improved audio fingerprinting accuracy
+- **Auto-gain control** — automatically adjusts microphone sensitivity for varying room volumes
+- **ESP-NOW mesh** — peer-to-peer communication with other Vinyl Buddy devices for multi-room listening sync
 - **Calibration mode** — adjust sensitivity for your room acoustics
-- **Firmware updates** — check for and apply OTA updates from the app
+- **OTA firmware updates** — check for and apply over-the-air updates from the app
 - **Multi-device** — pair up to 4 Vinyl Buddy units per account
 - **Health monitoring** — heartbeat status and signal quality indicators
+- **Deep sleep mode** — power conservation when idle, wake on sound detection
+- **LED indicators** — visual status for WiFi connection, BLE activity, and listening state
+- **FreeRTOS** — task-based architecture for concurrent audio capture, display, and networking
+- **Watchdog timer** — automatic crash recovery and device restart
 
 ---
 
@@ -661,6 +811,7 @@ npm run server
 - Check that the device is connected to the same Wi-Fi network that has internet access
 - Verify the backend URL in the firmware matches your GrooveStack server
 - Try power-cycling the device and waiting 30 seconds for the code to regenerate
+- If using BLE pairing, ensure Bluetooth is enabled on your phone/computer
 
 **Frontend shows blank screen**
 
@@ -713,6 +864,89 @@ Open a GitHub issue with a clear description, steps to reproduce, and expected v
 ---
 
 ## Changelog
+
+### Wave 20 (March 2026)
+
+- Final comprehensive documentation with 275+ API endpoints cataloged
+- Performance audit and optimization pass across all screens
+- Virtual scrolling refinements for smoother 60fps rendering
+- Card flip animation polish with improved touch responsiveness
+- Drawer modal snap point tuning for consistent mobile UX
+- Complete Vinyl Buddy firmware feature documentation
+- Pitch deck updated to 36 slides covering all 20 waves
+- Platform stats: 1,800+ improvements, 51 users, 100+ records
+
+### Wave 19 (February 2026)
+
+- Advanced analytics: taste evolution tracking over time
+- Mood detection improvements with expanded genre-mood mappings
+- Listening pattern heatmaps with hourly granularity
+- Weekly and monthly listening report generation
+- Taste comparison feature for comparing preferences with friends
+
+### Wave 18 (January 2026)
+
+- Featured listing system with promoted placements
+- Storefront customization for top-tier sellers
+- Seller tier benefits expansion (lower fees, priority support, badges)
+- Marketplace browse categories with curated collections
+
+### Wave 17 (December 2025)
+
+- Active noise cancellation for Vinyl Buddy audio capture
+- Auto-gain control for adapting to varying room volumes
+- Improved audio fingerprinting accuracy in noisy environments
+- LED status indicators for WiFi, BLE, and listening state
+
+### Wave 16 (November 2025)
+
+- ESP-NOW mesh networking for peer-to-peer device communication
+- Multi-room listening session synchronization
+- Automatic peer discovery and encrypted data transfer
+- Mesh topology with relay support through intermediate nodes
+
+### Wave 15 (October 2025)
+
+- SD card offline session caching for Vinyl Buddy
+- Auto-upload of cached sessions when WiFi reconnects
+- SD card health monitoring and storage management
+- APDS-9960 gesture sensor integration (wave, swipe controls)
+
+### Wave 14 (September 2025)
+
+- BLE (Bluetooth Low Energy) pairing mode for Vinyl Buddy
+- BLE-based device configuration without WiFi
+- OLED display improvements: track info animations, status icons
+- Deep sleep mode for power conservation
+
+### Wave 13 (August 2025)
+
+- Card flip animations with 3D CSS transforms for record cards
+- Drawer modals with bottom-sheet UX and swipe-to-dismiss
+- Drawer snap points: collapsed, half-screen, full-screen
+- Enhanced swipe gesture support for mobile navigation
+
+### Wave 12 (July 2025)
+
+- Virtual scrolling for collections and search results with 1,000+ items
+- Lazy image loading with IntersectionObserver and shimmer placeholders
+- Debounced search inputs reducing API call volume by 60%
+- Component memoization pass for reduced re-renders
+
+### Wave 11 (June 2025)
+
+- Auction system with timed listings, bids, reserves, and sniping protection
+- Loyalty points system: earn on purchases, redeem for credits
+- Seller tier expansion to 4 levels (Bronze, Silver, Gold, Platinum)
+- Tier-based fee discounts and priority support
+
+### Wave 10 (May 2025)
+
+- Stories feature: ephemeral 24-hour content with photo and text formats
+- Story highlights on profiles
+- RSS feed for new listings
+- Batch API endpoint for combining multiple requests
+- Profile enhancements: activity heatmap, collection value trend
 
 ### Wave 9 (March 2025)
 
