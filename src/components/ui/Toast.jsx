@@ -1,6 +1,7 @@
 // Notification toast — supports multiple types, auto-dismiss, close button, stacking,
-// keyboard dismiss (Escape), screen reader focus, and auto-dismiss countdown progress bar.
-import { useEffect, useRef } from 'react';
+// keyboard dismiss (Escape), screen reader focus, auto-dismiss countdown progress bar,
+// action buttons, toast grouping, persistence, queue management, and position configuration.
+import { useState, useEffect, useRef, useCallback, createContext, useContext } from 'react';
 
 const TYPE_CONFIG = {
   success: {
@@ -45,9 +46,94 @@ const TYPE_CONFIG = {
   },
 };
 
+// --- Position presets ---
+const POSITION_CLASSES = {
+  'bottom-center': 'fixed bottom-7 left-1/2 -translate-x-1/2',
+  'top-center': 'fixed top-7 left-1/2 -translate-x-1/2',
+  'top-right': 'fixed top-7 right-7',
+  'top-left': 'fixed top-7 left-7',
+  'bottom-right': 'fixed bottom-7 right-7',
+  'bottom-left': 'fixed bottom-7 left-7',
+};
+
+// --- Toast Queue Manager Context ---
+// Provides centralized toast management with queue, grouping, and persistence.
+const ToastQueueContext = createContext(null);
+
+export function ToastQueueProvider({ children, maxVisible = 5, position = 'bottom-center' }) {
+  const [toasts, setToasts] = useState([]);
+  const idCounter = useRef(0);
+
+  const addToast = useCallback(({
+    message,
+    type = 'info',
+    duration = 3000,
+    persistent = false,
+    groupKey = null,
+    actions = [], // Array of { label, onClick }
+  }) => {
+    const id = ++idCounter.current;
+
+    setToasts(prev => {
+      // Grouping: if groupKey matches an existing toast, collapse into it
+      if (groupKey) {
+        const existingIndex = prev.findIndex(t => t.groupKey === groupKey && !t.dismissing);
+        if (existingIndex !== -1) {
+          const updated = [...prev];
+          const existing = updated[existingIndex];
+          updated[existingIndex] = {
+            ...existing,
+            message,
+            groupCount: (existing.groupCount || 1) + 1,
+          };
+          return updated;
+        }
+      }
+      return [...prev, { id, message, type, duration, persistent, groupKey, groupCount: 1, actions, dismissing: false }];
+    });
+
+    return id;
+  }, []);
+
+  const dismissToast = useCallback((id) => {
+    setToasts(prev => prev.map(t => t.id === id ? { ...t, dismissing: true } : t));
+    // Remove after animation
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 300);
+  }, []);
+
+  const clearAll = useCallback(() => {
+    setToasts([]);
+  }, []);
+
+  // Queue management: only show maxVisible at a time
+  const visibleToasts = toasts.slice(-maxVisible);
+
+  return (
+    <ToastQueueContext.Provider value={{ addToast, dismissToast, clearAll, toasts }}>
+      {children}
+      <ToastContainer toasts={visibleToasts} onDismiss={dismissToast} position={position} />
+    </ToastQueueContext.Provider>
+  );
+}
+
+export function useToastQueue() {
+  return useContext(ToastQueueContext);
+}
+
 // Simple single toast — backwards compatible with existing usage
 // Focusable for screen reader accessibility, supports Escape to dismiss
-export default function Toast({ message, visible, type, onClose, duration = 2200 }) {
+export default function Toast({
+  message,
+  visible,
+  type,
+  onClose,
+  duration = 2200,
+  actions = [],
+  persistent = false,
+  position = 'bottom-center',
+}) {
   const config = TYPE_CONFIG[type] || {
     bg: 'bg-gs-accent',
     shadow: 'shadow-gs-accent/30',
@@ -55,6 +141,7 @@ export default function Toast({ message, visible, type, onClose, duration = 2200
     icon: null,
   };
   const toastRef = useRef(null);
+  const posClass = POSITION_CLASSES[position] || POSITION_CLASSES['bottom-center'];
 
   // Focus the toast when it becomes visible for screen reader access
   useEffect(() => {
@@ -70,24 +157,38 @@ export default function Toast({ message, visible, type, onClose, duration = 2200
       aria-live="polite"
       aria-atomic="true"
       tabIndex={visible ? 0 : -1}
-      className={`fixed bottom-7 left-1/2 -translate-x-1/2 ${config.bg} text-black px-5 py-2.5 rounded-[10px] text-[13px] font-bold z-[2000] transition-all duration-300 shadow-lg ${config.shadow} flex items-center gap-2 overflow-hidden ${
+      className={`${posClass} ${config.bg} text-black px-5 py-2.5 rounded-[10px] text-[13px] font-bold z-[2000] transition-all duration-300 shadow-lg ${config.shadow} flex items-center gap-2 overflow-hidden ${
         visible ? 'opacity-100 translate-y-0 animate-toast-in pointer-events-auto' : 'opacity-0 translate-y-4 pointer-events-none'
       }`}
       style={{ outline: 'none' }}
     >
       {config.icon}
       <span>{message}</span>
+      {/* Action buttons */}
+      {actions.length > 0 && (
+        <div className="flex items-center gap-1 ml-2">
+          {actions.map((action, i) => (
+            <button
+              key={i}
+              onClick={action.onClick}
+              className="px-2 py-0.5 rounded bg-black/15 border-none cursor-pointer text-black/80 text-[11px] font-bold hover:bg-black/25 transition-colors"
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
       {onClose && (
         <button
           onClick={onClose}
           className="ml-2 w-5 h-5 rounded-full bg-black/15 border-none cursor-pointer text-black/60 text-sm flex items-center justify-center hover:bg-black/25 hover:text-black transition-colors"
           aria-label="Dismiss"
         >
-          ×
+          x
         </button>
       )}
-      {/* Auto-dismiss countdown progress bar */}
-      {visible && (
+      {/* Auto-dismiss countdown progress bar (not shown for persistent toasts) */}
+      {visible && !persistent && (
         <div
           className={`gs-toast-progress ${config.barColor || 'bg-black/20'}`}
           style={{ animationDuration: `${duration}ms` }}
@@ -98,9 +199,12 @@ export default function Toast({ message, visible, type, onClose, duration = 2200
 }
 
 // Stacked toast container for multiple simultaneous toasts
-export function ToastContainer({ toasts = [], onDismiss }) {
+export function ToastContainer({ toasts = [], onDismiss, position = 'bottom-center' }) {
+  const posClass = POSITION_CLASSES[position] || POSITION_CLASSES['bottom-center'];
+  const isTop = position.startsWith('top');
+
   return (
-    <div className="fixed bottom-7 left-1/2 -translate-x-1/2 z-[2000] flex flex-col-reverse gap-2 items-center">
+    <div className={`${posClass} z-[2000] flex ${isTop ? 'flex-col' : 'flex-col-reverse'} gap-2 items-center`}>
       {toasts.map((toast, i) => (
         <ToastItem
           key={toast.id || i}
@@ -113,17 +217,25 @@ export function ToastContainer({ toasts = [], onDismiss }) {
 }
 
 function ToastItem({ toast, onDismiss }) {
-  const { message, type = 'info', duration = 3000, dismissing } = toast;
+  const {
+    message,
+    type = 'info',
+    duration = 3000,
+    dismissing,
+    persistent = false,
+    actions = [],
+    groupCount = 1,
+  } = toast;
   const config = TYPE_CONFIG[type] || TYPE_CONFIG.info;
   const itemRef = useRef(null);
 
-  // Auto-dismiss
+  // Auto-dismiss (skip for persistent toasts)
   useEffect(() => {
-    if (duration && onDismiss) {
+    if (duration && onDismiss && !persistent) {
       const timer = setTimeout(onDismiss, duration);
       return () => clearTimeout(timer);
     }
-  }, [duration, onDismiss]);
+  }, [duration, onDismiss, persistent]);
 
   // Keyboard dismiss on Escape
   useEffect(() => {
@@ -150,17 +262,37 @@ function ToastItem({ toast, onDismiss }) {
     >
       {config.icon}
       <span>{message}</span>
+      {/* Group count badge */}
+      {groupCount > 1 && (
+        <span className="ml-1 bg-black/20 text-black/80 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+          {groupCount}x
+        </span>
+      )}
+      {/* Action buttons inside toast */}
+      {actions.length > 0 && (
+        <div className="flex items-center gap-1 ml-1">
+          {actions.map((action, i) => (
+            <button
+              key={i}
+              onClick={action.onClick}
+              className="px-2 py-0.5 rounded bg-black/15 border-none cursor-pointer text-black/80 text-[11px] font-bold hover:bg-black/25 transition-colors"
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
       {onDismiss && (
         <button
           onClick={onDismiss}
           className="ml-2 w-5 h-5 rounded-full bg-black/15 border-none cursor-pointer text-black/60 text-sm flex items-center justify-center hover:bg-black/25 hover:text-black transition-colors"
           aria-label="Dismiss"
         >
-          ×
+          x
         </button>
       )}
-      {/* Auto-dismiss countdown progress bar */}
-      {!dismissing && duration && (
+      {/* Auto-dismiss countdown progress bar (hidden for persistent toasts) */}
+      {!dismissing && duration && !persistent && (
         <div
           className={`gs-toast-progress ${config.barColor || 'bg-black/20'}`}
           style={{ animationDuration: `${duration}ms` }}

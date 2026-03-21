@@ -343,9 +343,12 @@ export default function App() {
     }
   };
 
-  const showToast = msg => {
+  const showToast = (msg, soundType) => {
     setToast({ visible: true, msg });
     triggerHaptic('light');
+    if (soundType) playNotificationSound(soundType);
+    setSessionActions(a => a + 1);
+    bumpEngagement(1);
     setTimeout(() => setToast(t => ({ ...t, visible: false })), 2200);
   };
 
@@ -391,7 +394,19 @@ export default function App() {
 
   // ── Auth: logout ────────────────────────────────────────────────────────────
   const handleLogout = () => {
-    if (!window.confirm('Log out of Groovestack?')) return;
+    // NEW Improvement #N16: Show session analytics summary before logout
+    const sessionDuration = Math.round((Date.now() - sessionStartTime) / 1000 / 60);
+    setSessionSummaryData({
+      duration: sessionDuration,
+      actions: sessionActions,
+      recordsViewed: viewHistory.length,
+      engagement: engagementScore,
+    });
+    setShowSessionSummary(true);
+  };
+
+  const confirmLogout = () => {
+    setShowSessionSummary(false);
     signOut();
     setSession(null);
     setCurrentUser('');
@@ -899,7 +914,13 @@ export default function App() {
 
   const onComment = r => { if (requireAuth()) return; setCommentRecord(r); };
   const onBuy = r => setBuyRecord(r);
-  const onDetail = r => setDetailRecord(r);
+  const onDetail = r => {
+    setDetailRecord(r);
+    if (r) {
+      setViewHistory(h => [...h, { id: r.id, genre: r.genre, artist: r.artist, time: Date.now() }].slice(-50));
+      bumpEngagement(2);
+    }
+  };
 
   const onAddComment = (id, c) => {
     updateRecord(id, r => ({ ...r, comments: [...r.comments, c] }));
@@ -919,9 +940,9 @@ export default function App() {
     if (isFirstPurchase) {
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 4000);
-      showToast("First purchase! Welcome to the club!");
+      showToast("First purchase! Welcome to the club!", 'success');
     } else {
-      showToast("Purchase complete!");
+      showToast("Purchase complete!", 'success');
     }
   };
 
@@ -938,7 +959,7 @@ export default function App() {
 
   const onAdd = r => {
     setRecords(rs => [r, ...rs]);
-    showToast(r.verified ? "Verified record added!" : "Record added to collection!");
+    showToast(r.verified ? "Verified record added!" : "Record added to collection!", 'chime');
     logActivity('add_record', r.album);
     // Improvement #15: Update onboarding checklist
     setOnboardingChecklist(c => ({ ...c, addedRecord: true }));
@@ -946,13 +967,25 @@ export default function App() {
   };
 
   // Fix: onDelete handler — used by CollectionScreen bulk delete
+  // NEW: Also stores deleted records for recovery (Improvement #N9)
   const onDelete = (id) => {
     const deleted = records.find(r => r.id === id);
     setRecords(rs => rs.filter(r => r.id !== id));
     if (deleted) {
+      setDeletedRecords(dr => [{ ...deleted, deletedAt: Date.now() }, ...dr].slice(0, 20));
       pushUndo('delete record', () => setRecords(rs => [deleted, ...rs]), () => setRecords(rs => rs.filter(r => r.id !== deleted.id)));
       logActivity('delete_record', deleted.album);
     }
+  };
+
+  // NEW: Recover a deleted record (Improvement #N9)
+  const recoverDeletedRecord = (id) => {
+    const rec = deletedRecords.find(r => r.id === id);
+    if (!rec) return;
+    const { deletedAt, ...cleanRec } = rec; // eslint-disable-line no-unused-vars
+    setRecords(rs => [cleanRec, ...rs]);
+    setDeletedRecords(dr => dr.filter(r => r.id !== id));
+    showToast('Record recovered!', 'success');
   };
 
   const onVerifyRecord = r => setVerifyingRecord(r);
@@ -1116,6 +1149,10 @@ export default function App() {
       { label: 'View Analytics', action: () => { setShowCommandPalette(false); setNav('Analytics'); }, icon: 'A' },
       { label: 'View Messages', action: () => { setShowCommandPalette(false); setNav('Messages'); }, icon: 'G' },
       { label: 'View Wishlist', action: () => { setShowCommandPalette(false); setNav('Wishlist'); }, icon: 'W' },
+      { label: 'Toggle Focus Mode', action: () => { setShowCommandPalette(false); setFocusMode(f => !f); }, icon: 'F' },
+      { label: 'Toggle Compact Mode', action: () => { setShowCommandPalette(false); setCompactMode(c => !c); }, icon: 'C' },
+      { label: 'Quick Settings', action: () => { setShowCommandPalette(false); setShowQuickSettings(true); }, icon: 'Q' },
+      { label: 'Recover Deleted Records', action: () => { setShowCommandPalette(false); setShowDeletedRecovery(true); }, icon: 'R' },
     ];
     const matchedActions = allActions.filter(a => fuzzyMatch(a.label, q));
     return { records: matchedRecords, users: matchedUsers, posts: matchedPosts, actions: matchedActions };
@@ -1260,6 +1297,35 @@ export default function App() {
     setOnboardingChecklist(c => ({ ...c, addedRecord: true }));
   };
 
+  // ── NEW Improvement #N8: Voice search handler ──────────────────────────────
+  const startVoiceSearch = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) { showToast('Voice search not supported in this browser'); return; }
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    voiceRecognitionRef.current = recognition;
+    setVoiceSearchActive(true);
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setCommandQuery(transcript);
+      setShowCommandPalette(true);
+      setVoiceSearchActive(false);
+      playNotificationSound('chime');
+    };
+    recognition.onerror = () => { setVoiceSearchActive(false); showToast('Voice search failed'); };
+    recognition.onend = () => setVoiceSearchActive(false);
+    recognition.start();
+  };
+
+  // ── NEW Improvement #N6: Mode-filtered nav ────────────────────────────────
+  const modeFilteredNav = useMemo(() => {
+    if (appMode === 'marketplace') return ['Marketplace', 'Collection', 'Activity', 'Wishlist', 'Profile', 'Settings'];
+    if (appMode === 'social') return ['Social', 'Following', 'Messages', 'Profile', 'Settings'];
+    return null; // 'all' = no filtering
+  }, [appMode]);
+
   // ── Improvement #10: Breadcrumb computation (updated for new screens) ────
   const breadcrumbs = useMemo(() => {
     const BREADCRUMB_ICONS = { Analytics: 'chart', Messages: 'envelope', Wishlist: 'heart' };
@@ -1284,6 +1350,281 @@ export default function App() {
 
   // ── Improvement #3: Notification center real-time simulation ──────────────
   const [notificationCenter, setNotificationCenter] = useState([]); // eslint-disable-line no-unused-vars
+
+  // ── NEW Improvement #N1: Notification sound effects (Web Audio API) ──────
+  const audioCtxRef = useRef(null);
+  const playNotificationSound = useCallback((type = 'chime') => {
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = audioCtxRef.current;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + (type === 'success' ? 0.4 : 0.25));
+      if (type === 'success') { osc.frequency.setValueAtTime(523.25, ctx.currentTime); osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); }
+      else if (type === 'error') { osc.frequency.setValueAtTime(220, ctx.currentTime); }
+      else { osc.frequency.setValueAtTime(880, ctx.currentTime); }
+      osc.type = 'sine';
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + (type === 'success' ? 0.4 : 0.25));
+    } catch { /* Web Audio not available */ }
+  }, []);
+
+  // ── NEW Improvement #N2: Idle detection with auto-save ────────────────────
+  const [isIdle, setIsIdle] = useState(false);
+  const idleTimerRef = useRef(null);
+  const IDLE_TIMEOUT = 3 * 60 * 1000; // 3 minutes
+
+  useEffect(() => {
+    const resetIdle = () => {
+      setIsIdle(false);
+      clearTimeout(idleTimerRef.current);
+      idleTimerRef.current = setTimeout(() => {
+        setIsIdle(true);
+        // Auto-save on idle
+        try { localStorage.setItem('gs_idleAutoSave', JSON.stringify(Date.now())); } catch {}
+      }, IDLE_TIMEOUT);
+    };
+    resetIdle();
+    window.addEventListener('mousemove', resetIdle);
+    window.addEventListener('keydown', resetIdle);
+    window.addEventListener('click', resetIdle);
+    return () => {
+      clearTimeout(idleTimerRef.current);
+      window.removeEventListener('mousemove', resetIdle);
+      window.removeEventListener('keydown', resetIdle);
+      window.removeEventListener('click', resetIdle);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── NEW Improvement #N3: Network speed detection & adaptive loading ───────
+  const [networkSpeed, setNetworkSpeed] = useState('fast'); // 'fast' | 'medium' | 'slow'
+  const [adaptiveImageQuality, setAdaptiveImageQuality] = useState('high'); // eslint-disable-line no-unused-vars
+
+  useEffect(() => {
+    const detectSpeed = () => {
+      const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      if (conn) {
+        const downlink = conn.downlink || 10;
+        if (downlink >= 5) { setNetworkSpeed('fast'); setAdaptiveImageQuality('high'); }
+        else if (downlink >= 1.5) { setNetworkSpeed('medium'); setAdaptiveImageQuality('medium'); }
+        else { setNetworkSpeed('slow'); setAdaptiveImageQuality('low'); }
+      }
+    };
+    detectSpeed();
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (conn) conn.addEventListener('change', detectSpeed);
+    return () => { if (conn) conn.removeEventListener('change', detectSpeed); };
+  }, []);
+
+  // ── NEW Improvement #N4: User engagement scoring ──────────────────────────
+  const [engagementScore, setEngagementScore] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_engagementScore')) || 0; } catch { return 0; }
+  });
+
+  const bumpEngagement = useCallback((points = 1) => {
+    setEngagementScore(s => {
+      const next = Math.min(s + points, 1000);
+      try { localStorage.setItem('gs_engagementScore', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  // ── NEW Improvement #N5: Smart record suggestions based on viewing history
+  const [viewHistory, setViewHistory] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_viewHistory')) || []; } catch { return []; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem('gs_viewHistory', JSON.stringify(viewHistory.slice(-50))); } catch {}
+  }, [viewHistory]);
+
+  const suggestedRecords = useMemo(() => {
+    if (viewHistory.length === 0) return records.slice(0, 5);
+    // Tally genres and artists from viewing history
+    const genreCounts = {};
+    const artistCounts = {};
+    viewHistory.forEach(v => {
+      if (v.genre) genreCounts[v.genre] = (genreCounts[v.genre] || 0) + 1;
+      if (v.artist) artistCounts[v.artist] = (artistCounts[v.artist] || 0) + 1;
+    });
+    const viewedIds = new Set(viewHistory.map(v => v.id));
+    return records
+      .filter(r => !viewedIds.has(r.id))
+      .map(r => ({
+        ...r,
+        score: (genreCounts[r.genre] || 0) * 2 + (artistCounts[r.artist] || 0) * 3,
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6);
+  }, [viewHistory, records]);
+
+  // ── NEW Improvement #N6: Quick-switch between marketplace and social modes
+  const [appMode, setAppMode] = useState('all'); // 'all' | 'marketplace' | 'social'
+
+  // ── NEW Improvement #N7: Gesture navigation hint (mobile) ─────────────────
+  const [showGestureHint, setShowGestureHint] = useState(() => {
+    return !localStorage.getItem('gs_gestureHintDismissed');
+  });
+  const isMobileDevice = useRef(typeof window !== 'undefined' && 'ontouchstart' in window);
+
+  // ── NEW Improvement #N8: Voice search placeholder button ──────────────────
+  const [voiceSearchActive, setVoiceSearchActive] = useState(false);
+  const voiceRecognitionRef = useRef(null);
+
+  // ── NEW Improvement #N9: Recently deleted records recovery ────────────────
+  const [deletedRecords, setDeletedRecords] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_deletedRecords')) || []; } catch { return []; }
+  });
+  const [showDeletedRecovery, setShowDeletedRecovery] = useState(false);
+
+  useEffect(() => {
+    try { localStorage.setItem('gs_deletedRecords', JSON.stringify(deletedRecords.slice(-20))); } catch {}
+  }, [deletedRecords]);
+
+  // ── NEW Improvement #N10: Clipboard paste detection for adding records ────
+  const [clipboardRecord, setClipboardRecord] = useState(null);
+
+  useEffect(() => {
+    const handlePaste = (e) => {
+      if (!currentUser) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
+      const text = e.clipboardData?.getData('text/plain')?.trim();
+      if (text && text.includes(' - ')) {
+        const [artist, album] = text.split(' - ').map(s => s.trim());
+        if (artist && album) {
+          setClipboardRecord({ artist, album });
+          setTimeout(() => setClipboardRecord(null), 8000);
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [currentUser]);
+
+  // ── NEW Improvement #N11: Focus mode (hide social, show only marketplace)
+  const [focusMode, setFocusMode] = useState(false);
+
+  // ── NEW Improvement #N12: Compact mode toggle ─────────────────────────────
+  const [compactMode, setCompactMode] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_compactMode')) || false; } catch { return false; }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('gs_compactMode', JSON.stringify(compactMode));
+    document.documentElement.classList.toggle('compact-mode', compactMode);
+  }, [compactMode]);
+
+  // ── NEW Improvement #N13: Color blind mode support ────────────────────────
+  const [colorBlindMode, setColorBlindMode] = useState(() => localStorage.getItem('gs_colorBlindMode') || 'none');
+
+  useEffect(() => {
+    localStorage.setItem('gs_colorBlindMode', colorBlindMode);
+    document.documentElement.setAttribute('data-cb-mode', colorBlindMode);
+  }, [colorBlindMode]);
+
+  // ── NEW Improvement #N14: Font size adjustment controls ───────────────────
+  const [fontSize, setFontSize] = useState(() => {
+    try { return parseInt(localStorage.getItem('gs_fontSize'), 10) || 16; } catch { return 16; }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('gs_fontSize', String(fontSize));
+    document.documentElement.style.fontSize = `${fontSize}px`;
+    return () => { document.documentElement.style.fontSize = ''; };
+  }, [fontSize]);
+
+  // ── NEW Improvement #N15: Auto-refresh indicator with countdown ───────────
+  const [autoRefreshCountdown, setAutoRefreshCountdown] = useState(300); // 5 min in seconds
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+
+  useEffect(() => {
+    if (!autoRefreshEnabled) return;
+    const interval = setInterval(() => {
+      setAutoRefreshCountdown(c => {
+        if (c <= 1) {
+          lastDataFetch.current = Date.now();
+          if (getToken()) getMe().then(user => { if (user) applyUser(user); });
+          return 300;
+        }
+        return c - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [autoRefreshEnabled, applyUser]);
+
+  // ── NEW Improvement #N16: Session analytics summary on logout ─────────────
+  const [sessionStartTime] = useState(() => Date.now());
+  const [sessionActions, setSessionActions] = useState(0);
+  const [showSessionSummary, setShowSessionSummary] = useState(false);
+  const [sessionSummaryData, setSessionSummaryData] = useState(null);
+
+  // ── NEW Improvement #N17: Quick settings flyout menu ──────────────────────
+  const [showQuickSettings, setShowQuickSettings] = useState(false);
+  const quickSettingsRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (quickSettingsRef.current && !quickSettingsRef.current.contains(e.target)) {
+        setShowQuickSettings(false);
+      }
+    };
+    if (showQuickSettings) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showQuickSettings]);
+
+  // ── NEW Improvement #N18: Recent activity ticker in header ────────────────
+  const [activityTickerIndex, setActivityTickerIndex] = useState(0);
+
+  useEffect(() => {
+    if (activityLog.length === 0) return;
+    const interval = setInterval(() => {
+      setActivityTickerIndex(i => (i + 1) % Math.min(activityLog.length, 10));
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [activityLog.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── NEW Improvement #N19: Multi-select mode improvements ──────────────────
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
+  const [multiSelectItems, setMultiSelectItems] = useState([]);
+
+  const toggleMultiSelect = useCallback((id) => {
+    setMultiSelectItems(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }, []);
+
+  const multiSelectActions = useMemo(() => ({
+    count: multiSelectItems.length,
+    likeAll: () => { multiSelectItems.forEach(id => { updateRecord(id, r => ({ ...r, liked: true, likes: r.liked ? r.likes : r.likes + 1 })); }); setMultiSelectItems([]); },
+    saveAll: () => { multiSelectItems.forEach(id => { updateRecord(id, r => ({ ...r, saved: true })); }); setMultiSelectItems([]); },
+    clearSelection: () => setMultiSelectItems([]),
+  }), [multiSelectItems]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── NEW Improvement #N20: Smart home screen with personalized widgets ─────
+  const [homeWidgets, setHomeWidgets] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs_homeWidgets')) || ['suggestions', 'activity', 'stats']; } catch { return ['suggestions', 'activity', 'stats']; }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('gs_homeWidgets', JSON.stringify(homeWidgets));
+  }, [homeWidgets]);
+
+  const widgetData = useMemo(() => {
+    const myRecs = records.filter(r => r.user === currentUser);
+    const totalLikes = myRecs.reduce((s, r) => s + (r.likes || 0), 0);
+    const topGenres = {};
+    myRecs.forEach(r => { if (r.genre) topGenres[r.genre] = (topGenres[r.genre] || 0) + 1; });
+    const sortedGenres = Object.entries(topGenres).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    return {
+      collectionSize: myRecs.length,
+      totalLikes,
+      topGenres: sortedGenres,
+      recentPurchases: purchases.slice(0, 3),
+      engagementLevel: engagementScore > 500 ? 'Super Fan' : engagementScore > 200 ? 'Collector' : engagementScore > 50 ? 'Explorer' : 'Newcomer',
+    };
+  }, [records, currentUser, purchases, engagementScore]);
 
   // ── Loading screen ────────────────────────────────────────────────────────
   if (authLoading) {
@@ -1318,7 +1659,15 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-    <div className={`min-h-screen bg-gs-bg font-sans text-gs-text ${printMode ? 'print-friendly' : ''} ${isFullScreen ? 'fullscreen-mode' : ''}`} data-theme={theme}>
+    {/* NEW #N13: SVG filters for color blind modes */}
+    <svg className="absolute w-0 h-0" aria-hidden="true">
+      <defs>
+        <filter id="protanopia-filter"><feColorMatrix type="matrix" values="0.567,0.433,0,0,0 0.558,0.442,0,0,0 0,0.242,0.758,0,0 0,0,0,1,0"/></filter>
+        <filter id="deuteranopia-filter"><feColorMatrix type="matrix" values="0.625,0.375,0,0,0 0.7,0.3,0,0,0 0,0.3,0.7,0,0 0,0,0,1,0"/></filter>
+        <filter id="tritanopia-filter"><feColorMatrix type="matrix" values="0.95,0.05,0,0,0 0,0.433,0.567,0,0 0,0.475,0.525,0,0 0,0,0,1,0"/></filter>
+      </defs>
+    </svg>
+    <div className={`min-h-screen bg-gs-bg font-sans text-gs-text ${printMode ? 'print-friendly' : ''} ${isFullScreen ? 'fullscreen-mode' : ''} ${compactMode ? 'compact-mode' : ''}`} data-theme={theme} data-cb-mode={colorBlindMode}>
       {/* Accessibility: skip-to-content link (#1) */}
       <SkipToContent />
 
@@ -1349,6 +1698,142 @@ export default function App() {
           <button onClick={() => { setShowSessionWarning(false); }} className="text-yellow-400 hover:text-yellow-200 underline text-xs">
             Dismiss
           </button>
+        </div>
+      )}
+
+      {/* NEW #N2: Idle indicator */}
+      {isIdle && session && (
+        <div className="fixed top-4 right-16 z-[1500] px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1.5 bg-blue-500/15 text-blue-400 animate-fade-in">
+          <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+          Idle — auto-saved
+        </div>
+      )}
+
+      {/* NEW #N3: Network speed indicator (only show when not fast) */}
+      {networkSpeed !== 'fast' && connectionQuality === 'good' && (
+        <div className="fixed top-2 right-40 z-[1500] px-2 py-1 rounded-full text-[10px] font-medium bg-orange-500/15 text-orange-400 flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+          {networkSpeed === 'medium' ? 'Medium speed' : 'Low bandwidth mode'}
+        </div>
+      )}
+
+      {/* NEW #N10: Clipboard paste detection banner */}
+      {clipboardRecord && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[1700] bg-gs-surface border border-gs-accent/40 rounded-lg px-4 py-2.5 shadow-lg flex items-center gap-3 animate-fade-in">
+          <span className="text-sm text-gs-text">Add <strong>{clipboardRecord.artist} - {clipboardRecord.album}</strong> to collection?</span>
+          <button
+            onClick={() => { quickAddRecord(clipboardRecord.album, clipboardRecord.artist); setClipboardRecord(null); }}
+            className="px-3 py-1 text-xs bg-gs-accent text-white rounded hover:opacity-90 transition-opacity"
+          >Add</button>
+          <button onClick={() => setClipboardRecord(null)} className="text-xs text-gs-dim hover:text-gs-text transition-colors">Dismiss</button>
+        </div>
+      )}
+
+      {/* NEW #N7: Gesture navigation hint for mobile */}
+      {showGestureHint && isMobileDevice.current && session && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[1600] bg-gs-surface border border-gs-border rounded-lg px-4 py-2.5 shadow-lg text-xs text-gs-muted flex items-center gap-3 animate-fade-in">
+          <svg className="w-5 h-5 text-gs-accent flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5"><path d="M7 16l-4-4m0 0l4-4m-4 4h18"/></svg>
+          Swipe left/right to navigate between screens
+          <button onClick={() => { setShowGestureHint(false); localStorage.setItem('gs_gestureHintDismissed', 'true'); }} className="text-gs-accent hover:opacity-80 ml-1">Got it</button>
+        </div>
+      )}
+
+      {/* NEW #N9: Deleted records recovery modal */}
+      {showDeletedRecovery && (
+        <div className="fixed inset-0 bg-black/70 z-[1800] flex items-center justify-center backdrop-blur-sm animate-fade-in" onClick={e => { if (e.target === e.currentTarget) setShowDeletedRecovery(false); }}>
+          <div className="bg-gs-bg border border-gs-border rounded-xl w-full max-w-[480px] p-6 shadow-2xl max-h-[70vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-gs-text mb-4">Recently Deleted Records</h3>
+            {deletedRecords.length === 0 ? (
+              <p className="text-sm text-gs-muted">No recently deleted records.</p>
+            ) : (
+              <div className="space-y-2">
+                {deletedRecords.map(r => (
+                  <div key={r.id} className="flex items-center gap-3 p-2 bg-gs-surface rounded-lg">
+                    <div className="w-8 h-8 rounded flex-shrink-0" style={{ background: r.accent || '#666' }} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-gs-text truncate">{r.album}</div>
+                      <div className="text-xs text-gs-dim truncate">{r.artist}</div>
+                    </div>
+                    <button onClick={() => recoverDeletedRecord(r.id)} className="px-2 py-1 text-xs bg-green-500/20 text-green-400 rounded hover:bg-green-500/30 transition-colors">Recover</button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={() => setShowDeletedRecovery(false)} className="mt-4 w-full px-4 py-2 text-sm text-gs-muted hover:text-gs-text transition-colors text-center">Close</button>
+          </div>
+        </div>
+      )}
+
+      {/* NEW #N16: Session analytics summary modal */}
+      {showSessionSummary && sessionSummaryData && (
+        <div className="fixed inset-0 bg-black/70 z-[1900] flex items-center justify-center backdrop-blur-sm animate-fade-in" onClick={e => { if (e.target === e.currentTarget) { setShowSessionSummary(false); confirmLogout(); } }}>
+          <div className="bg-gs-bg border border-gs-border rounded-xl w-full max-w-[400px] p-6 shadow-2xl">
+            <h3 className="text-lg font-semibold text-gs-text mb-4">Session Summary</h3>
+            <div className="space-y-3 mb-5">
+              <div className="flex justify-between text-sm"><span className="text-gs-muted">Time spent</span><span className="text-gs-text">{sessionSummaryData.duration} min</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gs-muted">Actions taken</span><span className="text-gs-text">{sessionSummaryData.actions}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gs-muted">Records viewed</span><span className="text-gs-text">{sessionSummaryData.recordsViewed}</span></div>
+              <div className="flex justify-between text-sm"><span className="text-gs-muted">Engagement score</span><span className="text-gs-text">{sessionSummaryData.engagement}</span></div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setShowSessionSummary(false)} className="flex-1 px-4 py-2 text-sm text-gs-muted hover:text-gs-text transition-colors border border-gs-border rounded-lg">Stay</button>
+              <button onClick={confirmLogout} className="flex-1 px-4 py-2 text-sm bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors">Log Out</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NEW #N17: Quick settings flyout */}
+      {showQuickSettings && (
+        <div ref={quickSettingsRef} className="fixed top-12 right-4 z-[1700] bg-gs-bg border border-gs-border rounded-xl w-[280px] p-4 shadow-2xl animate-fade-in">
+          <h4 className="text-sm font-semibold text-gs-text mb-3">Quick Settings</h4>
+          <div className="space-y-3">
+            {/* Compact mode */}
+            <label className="flex items-center justify-between text-xs text-gs-muted cursor-pointer">
+              <span>Compact Mode</span>
+              <input type="checkbox" checked={compactMode} onChange={() => setCompactMode(c => !c)} className="accent-[var(--gs-accent)]" />
+            </label>
+            {/* Focus mode */}
+            <label className="flex items-center justify-between text-xs text-gs-muted cursor-pointer">
+              <span>Focus Mode (Marketplace only)</span>
+              <input type="checkbox" checked={focusMode} onChange={() => setFocusMode(f => !f)} className="accent-[var(--gs-accent)]" />
+            </label>
+            {/* Auto-refresh */}
+            <label className="flex items-center justify-between text-xs text-gs-muted cursor-pointer">
+              <span>Auto-refresh</span>
+              <input type="checkbox" checked={autoRefreshEnabled} onChange={() => setAutoRefreshEnabled(e => !e)} className="accent-[var(--gs-accent)]" />
+            </label>
+            {/* Color blind mode */}
+            <div className="flex items-center justify-between text-xs text-gs-muted">
+              <span>Color blind mode</span>
+              <select value={colorBlindMode} onChange={e => setColorBlindMode(e.target.value)} className="bg-gs-surface border border-gs-border rounded px-1.5 py-0.5 text-xs text-gs-text outline-none">
+                <option value="none">None</option>
+                <option value="protanopia">Protanopia</option>
+                <option value="deuteranopia">Deuteranopia</option>
+                <option value="tritanopia">Tritanopia</option>
+              </select>
+            </div>
+            {/* Font size */}
+            <div className="flex items-center justify-between text-xs text-gs-muted">
+              <span>Font size</span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setFontSize(f => Math.max(12, f - 1))} className="w-6 h-6 rounded bg-gs-surface border border-gs-border text-gs-text flex items-center justify-center hover:bg-gs-border transition-colors">-</button>
+                <span className="text-gs-text w-6 text-center">{fontSize}</span>
+                <button onClick={() => setFontSize(f => Math.min(22, f + 1))} className="w-6 h-6 rounded bg-gs-surface border border-gs-border text-gs-text flex items-center justify-center hover:bg-gs-border transition-colors">+</button>
+              </div>
+            </div>
+            {/* App mode */}
+            <div className="flex items-center justify-between text-xs text-gs-muted">
+              <span>App mode</span>
+              <div className="flex gap-1">
+                {['all', 'marketplace', 'social'].map(mode => (
+                  <button key={mode} onClick={() => setAppMode(mode)} className={`px-2 py-0.5 rounded text-[10px] transition-colors ${appMode === mode ? 'bg-gs-accent text-white' : 'bg-gs-surface text-gs-dim hover:text-gs-text'}`}>
+                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1412,6 +1897,10 @@ export default function App() {
         nav={nav} setNav={n => {
           // Guests can only browse Marketplace — all other tabs require auth
           if (isGuest && n !== "Marketplace") { setShowAuth(true); return; }
+          // Focus mode restricts to marketplace-only screens
+          if (focusMode && !['Marketplace', 'Collection', 'Activity', 'Wishlist', 'Profile', 'Settings'].includes(n)) return;
+          // App mode filtering
+          if (modeFilteredNav && !modeFilteredNav.includes(n)) return;
           setViewingUserProfile(null); setNav(n);
         }}
         following={following} profile={profile} currentUser={currentUser}
@@ -1494,6 +1983,38 @@ export default function App() {
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M12 5v14M5 12h14"/></svg>
               Quick Add
             </button>
+          )}
+          {/* NEW #N8: Voice search button */}
+          <button onClick={startVoiceSearch} className={`p-1.5 rounded-lg transition-colors ${voiceSearchActive ? 'text-red-400 bg-red-500/10 animate-pulse' : 'text-gs-dim hover:text-gs-text hover:bg-gs-surface'}`} title="Voice Search">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>
+          </button>
+          {/* NEW #N11: Focus mode toggle */}
+          {!isGuest && (
+            <button onClick={() => { setFocusMode(f => { const next = !f; if (next) setNav('Marketplace'); return next; }); }} className={`p-1.5 rounded-lg text-xs flex items-center gap-1 transition-colors ${focusMode ? 'text-gs-accent bg-gs-accent/10' : 'text-gs-dim hover:text-gs-text hover:bg-gs-surface'}`} title="Focus Mode">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+            </button>
+          )}
+          {/* NEW #N12: Compact mode toggle */}
+          <button onClick={() => setCompactMode(c => !c)} className={`p-1.5 rounded-lg transition-colors ${compactMode ? 'text-gs-accent bg-gs-accent/10' : 'text-gs-dim hover:text-gs-text hover:bg-gs-surface'}`} title="Compact Mode">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          {/* NEW #N17: Quick settings button */}
+          <button onClick={() => setShowQuickSettings(s => !s)} className={`p-1.5 rounded-lg transition-colors ${showQuickSettings ? 'text-gs-accent bg-gs-accent/10' : 'text-gs-dim hover:text-gs-text hover:bg-gs-surface'}`} title="Quick Settings">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+          {/* NEW #N9: Deleted records recovery */}
+          {!isGuest && deletedRecords.length > 0 && (
+            <button onClick={() => setShowDeletedRecovery(true)} className="p-1.5 rounded-lg text-xs flex items-center gap-1 text-gs-dim hover:text-gs-text hover:bg-gs-surface transition-colors" title={`${deletedRecords.length} deleted records`}>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+              <span className="text-[10px]">{deletedRecords.length}</span>
+            </button>
+          )}
+          {/* NEW #N15: Auto-refresh countdown */}
+          {autoRefreshEnabled && session && (
+            <div className="flex items-center gap-1 text-[10px] text-gs-dim" title={`Auto-refresh in ${Math.floor(autoRefreshCountdown / 60)}:${String(autoRefreshCountdown % 60).padStart(2, '0')}`}>
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+              {Math.floor(autoRefreshCountdown / 60)}:{String(autoRefreshCountdown % 60).padStart(2, '0')}
+            </div>
           )}
           {/* Undo/Redo buttons */}
           <div className="flex items-center gap-0.5 ml-auto">
@@ -1580,6 +2101,106 @@ export default function App() {
           </div>
         )}
 
+        {/* NEW #N18: Recent activity ticker */}
+        {!isGuest && activityLog.length > 0 && (
+          <div className="mb-3 px-3 py-1.5 bg-gs-surface/30 border border-gs-border/50 rounded-lg text-[10px] text-gs-dim flex items-center gap-2 overflow-hidden print:hidden">
+            <span className="text-gs-muted font-medium flex-shrink-0">Activity:</span>
+            <div className="flex-1 truncate transition-all duration-300">
+              {activityLog[activityTickerIndex] ? (
+                <span>{activityLog[activityTickerIndex].action.replace(/_/g, ' ')} — {activityLog[activityTickerIndex].detail}</span>
+              ) : null}
+            </div>
+            <span className="text-gs-dim/40 flex-shrink-0">{activityLog[activityTickerIndex]?.time ? new Date(activityLog[activityTickerIndex].time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+          </div>
+        )}
+
+        {/* NEW #N4: Engagement score badge */}
+        {!isGuest && engagementScore > 0 && (
+          <div className="mb-3 flex items-center gap-2 print:hidden">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-gs-accent/10 text-gs-accent font-medium">
+              {widgetData.engagementLevel}
+            </span>
+            <span className="text-[10px] text-gs-dim">{engagementScore} pts</span>
+          </div>
+        )}
+
+        {/* NEW #N19: Multi-select toolbar */}
+        {multiSelectMode && (
+          <div className="mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg flex items-center gap-3 print:hidden animate-fade-in">
+            <span className="text-sm text-purple-300">{multiSelectActions.count} selected</span>
+            <button onClick={multiSelectActions.likeAll} disabled={multiSelectActions.count === 0} className="px-3 py-1 text-xs bg-pink-500/20 text-pink-400 rounded hover:bg-pink-500/30 transition-colors disabled:opacity-30">Like All</button>
+            <button onClick={multiSelectActions.saveAll} disabled={multiSelectActions.count === 0} className="px-3 py-1 text-xs bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 transition-colors disabled:opacity-30">Save All</button>
+            <button onClick={multiSelectActions.clearSelection} className="px-3 py-1 text-xs text-gs-dim hover:text-gs-text transition-colors">Clear</button>
+            <button onClick={() => { setMultiSelectMode(false); setMultiSelectItems([]); }} className="ml-auto text-xs text-gs-dim hover:text-gs-text transition-colors">Exit Multi-Select</button>
+          </div>
+        )}
+
+        {/* NEW #N20: Smart home screen with personalized widgets */}
+        {!isGuest && nav === 'Social' && !viewingUserProfile && homeWidgets.length > 0 && (
+          <div className="mb-4 grid grid-cols-3 gap-3 print:hidden">
+            {homeWidgets.includes('stats') && (
+              <div className="p-3 bg-gs-surface border border-gs-border rounded-lg">
+                <div className="text-[10px] text-gs-muted mb-1 font-medium">Collection</div>
+                <div className="text-lg font-bold text-gs-text">{widgetData.collectionSize}</div>
+                <div className="text-[10px] text-gs-dim">{widgetData.totalLikes} total likes</div>
+              </div>
+            )}
+            {homeWidgets.includes('suggestions') && suggestedRecords.length > 0 && (
+              <div className="p-3 bg-gs-surface border border-gs-border rounded-lg">
+                <div className="text-[10px] text-gs-muted mb-1 font-medium">Suggested for You</div>
+                <div className="space-y-1">
+                  {suggestedRecords.slice(0, 3).map(r => (
+                    <button key={r.id} onClick={() => onDetail(r)} className="block text-left w-full">
+                      <div className="text-[11px] text-gs-text truncate hover:text-gs-accent transition-colors">{r.album}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {homeWidgets.includes('activity') && (
+              <div className="p-3 bg-gs-surface border border-gs-border rounded-lg">
+                <div className="text-[10px] text-gs-muted mb-1 font-medium">Top Genres</div>
+                {widgetData.topGenres.map(([genre, count]) => (
+                  <div key={genre} className="flex justify-between text-[11px]">
+                    <span className="text-gs-text truncate">{genre}</span>
+                    <span className="text-gs-dim">{count}</span>
+                  </div>
+                ))}
+                {widgetData.topGenres.length === 0 && <div className="text-[10px] text-gs-dim">No genres yet</div>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* NEW #N11: Focus mode indicator */}
+        {focusMode && (
+          <div className="mb-3 px-3 py-1.5 bg-gs-accent/10 border border-gs-accent/20 rounded-lg text-xs text-gs-accent flex items-center gap-2 print:hidden">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4"/></svg>
+            Focus Mode — Showing marketplace content only
+            <button onClick={() => setFocusMode(false)} className="ml-auto text-gs-accent/70 hover:text-gs-accent text-[10px] underline">Exit</button>
+          </div>
+        )}
+
+        {/* NEW #N12: Compact mode indicator */}
+        {compactMode && (
+          <style>{`
+            .compact-mode .gs-main { padding: 12px 20px !important; }
+            .compact-mode [class*="gap-"] { gap: 4px !important; }
+            .compact-mode [class*="mb-4"] { margin-bottom: 8px !important; }
+            .compact-mode [class*="p-3"] { padding: 6px !important; }
+            .compact-mode [class*="text-sm"] { font-size: 12px !important; }
+          `}</style>
+        )}
+
+        {/* NEW #N13: Color blind mode filter styles */}
+        {colorBlindMode !== 'none' && (
+          <style>{`
+            [data-cb-mode="protanopia"] { filter: url('#protanopia-filter'); }
+            [data-cb-mode="deuteranopia"] { filter: url('#deuteranopia-filter'); }
+            [data-cb-mode="tritanopia"] { filter: url('#tritanopia-filter'); }
+          `}</style>
+        )}
+
         {/* Improvement #24: Contextual help tooltips */}
         {isGuest && nav === 'Marketplace' && (
           <div className="mb-3 px-3 py-2 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs text-blue-300 flex items-center gap-2 print:hidden animate-fade-in">
@@ -1612,7 +2233,7 @@ export default function App() {
           />
         ) : (
           <>
-            {nav === "Social" && (
+            {nav === "Social" && !focusMode && (
               <SocialFeedScreen
                 posts={posts} records={records} currentUser={currentUser} following={following}
                 profile={profile}

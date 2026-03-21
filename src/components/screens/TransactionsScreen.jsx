@@ -6,6 +6,10 @@
 // receipt PDF export, refund request flow, transaction rating/review,
 // repeat purchase, spending analytics, payment method icons, bulk checkout,
 // price alerts, order confirmation email preview.
+// Round 2: invoice generation, multi-currency support, transaction timeline,
+// auto price adjustment suggestions, shipping tracking map, transaction notes/tags,
+// recurring purchase setup, gift card/credit system, accounting format export,
+// split payment, escrow status indicator, satisfaction survey.
 import { useState, useMemo, useCallback } from 'react';
 import AlbumArt from '../ui/AlbumArt';
 import Badge from '../ui/Badge';
@@ -37,6 +41,68 @@ const DATE_RANGES = [
   { key: "30d", label: "Last 30 Days" },
   { key: "90d", label: "Last 90 Days" },
 ];
+
+// ── New Improvement 15: Multi-currency exchange rates (simulated) ────────
+const CURRENCIES = [
+  { code: "USD", symbol: "$", rate: 1.0, flag: "US" },
+  { code: "EUR", symbol: "\u20AC", rate: 0.92, flag: "EU" },
+  { code: "GBP", symbol: "\u00A3", rate: 0.79, flag: "GB" },
+  { code: "JPY", symbol: "\u00A5", rate: 149.5, flag: "JP" },
+  { code: "CAD", symbol: "C$", rate: 1.36, flag: "CA" },
+];
+
+// ── New Improvement 24: Escrow stages ───────────────────────────────────
+const ESCROW_STAGES = [
+  { key: "funds_held", label: "Funds Held", color: "#f59e0b" },
+  { key: "item_shipped", label: "Item Shipped", color: "#0ea5e9" },
+  { key: "item_received", label: "Item Received", color: "#8b5cf6" },
+  { key: "released", label: "Funds Released", color: "#22c55e" },
+];
+
+const getEscrowStage = (purchaseId) => {
+  let hash = 0;
+  const idStr = String(purchaseId);
+  for (let i = 0; i < idStr.length; i++) hash = ((hash << 5) - hash + idStr.charCodeAt(i)) | 0;
+  return Math.abs(hash) % ESCROW_STAGES.length;
+};
+
+// ── New Improvement 16: Transaction timeline component ──────────────────
+function TransactionTimeline({ purchases, offers, currentUser }) {
+  const events = useMemo(() => {
+    const items = [];
+    (purchases || []).forEach(p => {
+      items.push({ type: "purchase", label: `Purchased ${p.album}`, detail: `$${p.price} from @${p.seller}`, time: p.time || "Recently", color: "#22c55e", icon: "P" });
+    });
+    (offers || []).filter(o => o.from === currentUser || o.to === currentUser).forEach(o => {
+      const dir = o.from === currentUser ? "Sent" : "Received";
+      items.push({ type: "offer", label: `${dir} offer for ${o.album}`, detail: `${o.type} — ${o.status || "pending"}`, time: o.time || "Recently", color: dir === "Sent" ? "#0ea5e9" : "#8b5cf6", icon: dir === "Sent" ? "S" : "R" });
+    });
+    return items.slice(0, 10);
+  }, [purchases, offers, currentUser]);
+
+  if (events.length === 0) return null;
+
+  return (
+    <div className="mb-5">
+      <div className="text-xs font-bold text-gs-muted uppercase tracking-wider mb-3">Transaction Timeline</div>
+      <div className="bg-gs-card border border-gs-border rounded-xl overflow-hidden">
+        {events.map((ev, i) => (
+          <div key={i} className={`flex items-center gap-3 px-3.5 py-2.5 ${i > 0 ? "border-t border-[#1a1a1a]" : ""}`}>
+            <div className="flex flex-col items-center shrink-0">
+              <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold" style={{ background: ev.color + "20", color: ev.color }}>{ev.icon}</div>
+              {i < events.length - 1 && <div className="w-0.5 h-3 bg-[#1a1a1a] mt-0.5" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] font-semibold text-gs-text truncate">{ev.label}</div>
+              <div className="text-[10px] text-gs-dim truncate">{ev.detail}</div>
+            </div>
+            <div className="text-[9px] text-gs-faint font-mono shrink-0">{ev.time}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // ── Improvement 9: Payment method icons ─────────────────────────────────
 function PaymentMethodIcon({ method }) {
@@ -171,6 +237,15 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
   const [dragOverIdx, setDragOverIdx] = useState(null);
   const [selectedCartIds, setSelectedCartIds] = useState([]); // Improvement 10: Bulk checkout
   const [showAnalytics, setShowAnalytics] = useState(false); // Improvement 8: Analytics toggle
+  const [selectedCurrency, setSelectedCurrency] = useState("USD"); // New Improvement 15: Multi-currency
+  const [showTimeline, setShowTimeline] = useState(false); // New Improvement 16: Timeline
+  const [showGiftCard, setShowGiftCard] = useState(false); // New Improvement 21: Gift card system
+  const [giftCardBalance, setGiftCardBalance] = useState(25.00); // New Improvement 21
+  const [giftCardCode, setGiftCardCode] = useState(""); // New Improvement 21
+  const [showRecurring, setShowRecurring] = useState(false); // New Improvement 20: Recurring
+  const [showAccountingExport, setShowAccountingExport] = useState(false); // New Improvement 22
+  const [transactionNotes, setTransactionNotes] = useState({}); // New Improvement 19: Notes/tags
+  const [transactionTags, setTransactionTags] = useState({}); // New Improvement 19
 
   const sentOffers = (offers || []).filter(o => o.from === currentUser);
   const receivedOffers = (offers || []).filter(o => o.to === currentUser);
@@ -301,6 +376,124 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
     );
   }, [cart, records]);
 
+  // ── New Improvement 15: Currency conversion helper ───────────────────
+  const currencyInfo = CURRENCIES.find(c => c.code === selectedCurrency) || CURRENCIES[0];
+  const convertPrice = useCallback((usdPrice) => {
+    const val = parseFloat(usdPrice) * currencyInfo.rate;
+    if (currencyInfo.code === "JPY") return `${currencyInfo.symbol}${Math.round(val)}`;
+    return `${currencyInfo.symbol}${val.toFixed(2)}`;
+  }, [currencyInfo]);
+
+  // ── New Improvement 17: Price adjustment suggestions ─────────────────
+  const priceAdjustments = useMemo(() => {
+    return (cart || []).slice(0, 3).map(item => {
+      let h = 0;
+      const s = String(item.id);
+      for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+      const pct = (Math.abs(h) % 15) + 3;
+      const dir = Math.abs(h) % 3 === 0 ? "up" : "down";
+      return { id: item.id, album: item.album, direction: dir, percent: pct, suggested: dir === "down" ? (parseFloat(item.price) * (1 - pct / 100)).toFixed(2) : (parseFloat(item.price) * (1 + pct / 100)).toFixed(2) };
+    });
+  }, [cart]);
+
+  // ── New Improvement 14: Invoice generation ───────────────────────────
+  const generateInvoice = useCallback((purchase) => {
+    const invNum = `INV-${String(purchase.id).slice(0, 8).toUpperCase()}`;
+    const subtotal = parseFloat(purchase.price);
+    const fee = subtotal * 0.05;
+    const shipping = 6.00;
+    const total = subtotal + fee + shipping;
+    const invoice = [
+      "╔══════════════════════════════════════════╗",
+      "║          GROOVESTACK INVOICE              ║",
+      "╚══════════════════════════════════════════╝",
+      "",
+      `Invoice #:   ${invNum}`,
+      `Date:        ${new Date().toLocaleDateString()}`,
+      `Due Date:    ${new Date().toLocaleDateString()}`,
+      "",
+      "BILL TO:",
+      `  @${currentUser}`,
+      "",
+      "FROM:",
+      `  @${purchase.seller}`,
+      "",
+      "─────────────────────────────────────────────",
+      "ITEM DETAILS:",
+      `  Album:       ${purchase.album}`,
+      `  Artist:      ${purchase.artist}`,
+      `  Format:      ${purchase.format || "N/A"}`,
+      `  Year:        ${purchase.year || "N/A"}`,
+      `  Condition:   ${purchase.condition || "N/A"}`,
+      "",
+      "─────────────────────────────────────────────",
+      "CHARGES:",
+      `  Subtotal:           $${subtotal.toFixed(2)}`,
+      `  Platform Fee (5%):  $${fee.toFixed(2)}`,
+      `  Shipping:           $${shipping.toFixed(2)}`,
+      `  ─────────────────────────────`,
+      `  TOTAL:              $${total.toFixed(2)}`,
+      "",
+      `  Currency:           ${selectedCurrency} (${convertPrice(total)})`,
+      "",
+      "─────────────────────────────────────────────",
+      "PAYMENT STATUS: PAID",
+      "─────────────────────────────────────────────",
+      "",
+      "Terms: All sales are final unless item is not as described.",
+      "       Disputes must be filed within 14 days of delivery.",
+      "",
+      "Thank you for using Groovestack!",
+    ].join("\n");
+
+    const blob = new Blob([invoice], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${invNum}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [currentUser, selectedCurrency, convertPrice]);
+
+  // ── New Improvement 22: Accounting format export ─────────────────────
+  const exportAccounting = useCallback(() => {
+    const headers = ["Date","Type","Description","Debit","Credit","Category","Reference","Currency","Converted"];
+    const rows = [];
+    (purchases || []).forEach(p => {
+      const price = parseFloat(p.price) || 0;
+      rows.push([
+        p.time || new Date().toLocaleDateString(),
+        "Purchase",
+        `${p.album} by ${p.artist}`,
+        price.toFixed(2),
+        "0.00",
+        p.format || "Records",
+        `PUR-${String(p.id).slice(0, 8)}`,
+        selectedCurrency,
+        convertPrice(price),
+      ]);
+      rows.push([
+        p.time || new Date().toLocaleDateString(),
+        "Fee",
+        `Platform fee for ${p.album}`,
+        (price * 0.05).toFixed(2),
+        "0.00",
+        "Fees",
+        `FEE-${String(p.id).slice(0, 8)}`,
+        selectedCurrency,
+        convertPrice(price * 0.05),
+      ]);
+    });
+    const csv = [headers.join(","), ...rows.map(r => r.map(c => `"${c}"`).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `groovestack-accounting-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [purchases, selectedCurrency, convertPrice]);
+
   return (
     <div>
       <div className="mb-4">
@@ -346,6 +539,132 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
             {showAnalytics ? "Hide" : "Show"} Spending Analytics
           </button>
           {showAnalytics && <SpendingAnalytics purchases={purchases} />}
+        </div>
+      )}
+
+      {/* ── New Improvement 15: Multi-currency selector ─────────────────── */}
+      <div className="flex gap-2 items-center mb-4">
+        <span className="text-[10px] text-gs-dim font-mono">Currency:</span>
+        <div className="flex gap-1">
+          {CURRENCIES.map(c => (
+            <button
+              key={c.code}
+              onClick={() => setSelectedCurrency(c.code)}
+              className={`px-2 py-1 rounded text-[10px] font-mono border transition-colors ${
+                selectedCurrency === c.code
+                  ? "border-gs-accent bg-gs-accent/10 text-gs-accent"
+                  : "border-gs-border bg-transparent text-gs-dim hover:border-gs-muted cursor-pointer"
+              }`}
+            >
+              {c.symbol} {c.code}
+            </button>
+          ))}
+        </div>
+        {selectedCurrency !== "USD" && (
+          <span className="text-[9px] text-gs-faint font-mono ml-auto">
+            Totals: {convertPrice(totals.spent)} spent / {convertPrice(totals.earned)} earned
+          </span>
+        )}
+      </div>
+
+      {/* ── New Improvement 16: Transaction Timeline toggle ───────────────── */}
+      <div className="mb-4">
+        <button
+          onClick={() => setShowTimeline(!showTimeline)}
+          className="gs-btn-secondary px-3.5 py-2 text-[11px] flex items-center gap-1.5 mb-3"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          {showTimeline ? "Hide" : "Show"} Transaction Timeline
+        </button>
+        {showTimeline && <TransactionTimeline purchases={purchases} offers={offers} currentUser={currentUser} />}
+      </div>
+
+      {/* ── New Improvement 21: Gift Card / Credit System ─────────────────── */}
+      <div className="mb-4">
+        <button
+          onClick={() => setShowGiftCard(!showGiftCard)}
+          className="gs-btn-secondary px-3.5 py-2 text-[11px] flex items-center gap-1.5"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V2"/><path d="M19 8c-2 0-4-2-7-2S7 8 5 8"/></svg>
+          Gift Cards & Credits ({currencyInfo.symbol}{(giftCardBalance * currencyInfo.rate).toFixed(2)} balance)
+        </button>
+        {showGiftCard && (
+          <div className="bg-gs-card border border-gs-border rounded-xl p-4 mt-3">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-[10px] text-gs-dim font-mono">Current Balance</div>
+                <div className="text-xl font-extrabold text-green-500">${giftCardBalance.toFixed(2)}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-[10px] text-gs-dim font-mono">In {selectedCurrency}</div>
+                <div className="text-lg font-bold text-gs-muted">{convertPrice(giftCardBalance)}</div>
+              </div>
+            </div>
+            <div className="flex gap-2 items-center mb-3">
+              <input
+                type="text"
+                value={giftCardCode}
+                onChange={e => setGiftCardCode(e.target.value.toUpperCase())}
+                placeholder="Enter gift card code..."
+                className="flex-1 bg-[#111] border border-gs-border rounded-lg px-3 py-1.5 text-[11px] text-gs-text font-mono placeholder:text-gs-faint focus:outline-none focus:border-gs-accent/50"
+              />
+              <button
+                onClick={() => {
+                  if (giftCardCode.trim().length >= 6) {
+                    setGiftCardBalance(prev => prev + 25);
+                    setGiftCardCode("");
+                  }
+                }}
+                disabled={giftCardCode.trim().length < 6}
+                className={`gs-btn-gradient px-3 py-1.5 text-[10px] ${giftCardCode.trim().length < 6 ? "opacity-40" : ""}`}
+              >
+                Redeem
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <button className="gs-btn-secondary flex-1 py-2 text-[10px]">Buy Gift Card</button>
+              <button className="gs-btn-secondary flex-1 py-2 text-[10px]">Send as Gift</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── New Improvement 22: Accounting Export button ───────────────────── */}
+      {(purchases || []).length > 0 && (
+        <div className="mb-4 flex gap-2">
+          <button
+            onClick={() => setShowAccountingExport(!showAccountingExport)}
+            className="gs-btn-secondary px-3.5 py-2 text-[11px] flex items-center gap-1.5"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            Accounting Export
+          </button>
+          {showAccountingExport && (
+            <div className="flex gap-2 items-center">
+              <button onClick={exportAccounting} className="gs-btn-gradient px-3 py-2 text-[10px]">Download CSV (QuickBooks)</button>
+              <span className="text-[9px] text-gs-faint font-mono">{(purchases || []).length} transactions in {selectedCurrency}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── New Improvement 17: Price Adjustment Suggestions ──────────────── */}
+      {tab === "cart" && priceAdjustments.length > 0 && (
+        <div className="bg-gs-accent/5 border border-gs-accent/15 rounded-xl px-4 py-3 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></svg>
+            <span className="text-[11px] font-bold text-gs-accent">Price Suggestions</span>
+          </div>
+          {priceAdjustments.map(adj => (
+            <div key={adj.id} className="text-[10px] text-gs-dim flex items-center gap-1.5 mb-0.5">
+              <span className="font-semibold text-gs-muted truncate max-w-[150px]">{adj.album}</span>
+              <span>—</span>
+              <span>Market suggests</span>
+              <span className={adj.direction === "down" ? "text-green-500 font-semibold" : "text-amber-400 font-semibold"}>
+                {adj.direction === "down" ? "↓" : "↑"} {adj.percent}% (${adj.suggested})
+              </span>
+            </div>
+          ))}
         </div>
       )}
 
@@ -431,6 +750,14 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
                   onViewUser={onViewUser}
                   onBuy={onBuy}
                   onExportReceipt={exportReceipt}
+                  onGenerateInvoice={generateInvoice}
+                  convertPrice={convertPrice}
+                  selectedCurrency={selectedCurrency}
+                  currencySymbol={currencyInfo.symbol}
+                  onAddNote={(id, note) => setTransactionNotes(prev => ({ ...prev, [id]: note }))}
+                  onAddTag={(id, tag) => setTransactionTags(prev => ({ ...prev, [id]: [...(prev[id] || []), tag] }))}
+                  notes={transactionNotes[p.id] || ""}
+                  tags={transactionTags[p.id] || []}
                 />
               ))}
             </div>
@@ -626,7 +953,7 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
 }
 
 // ── Purchase row with improvements ──────────────────────────────────────
-function PurchaseRow({ purchase, records, currentUser, onViewUser, onBuy, onExportReceipt }) {
+function PurchaseRow({ purchase, records, currentUser, onViewUser, onBuy, onExportReceipt, onGenerateInvoice, convertPrice, selectedCurrency, currencySymbol, onAddNote, onAddTag, notes, tags }) {
   const p = purchase;
   const stage = getOrderStage(p.id);
   const [showDispute, setShowDispute] = useState(false); // Improvement 1: Dispute
@@ -642,6 +969,19 @@ function PurchaseRow({ purchase, records, currentUser, onViewUser, onBuy, onExpo
   const [refundReason, setRefundReason] = useState(""); // Improvement 5
   const [refundSubmitted, setRefundSubmitted] = useState(false); // Improvement 5
   const [showEmailPreview, setShowEmailPreview] = useState(false); // Improvement 12: Email preview
+  const [showShippingMap, setShowShippingMap] = useState(false); // New Improvement 18: Shipping map
+  const [noteText, setNoteText] = useState(""); // New Improvement 19: Notes
+  const [showNoteInput, setShowNoteInput] = useState(false); // New Improvement 19
+  const [showRecurring, setShowRecurring] = useState(false); // New Improvement 20: Recurring
+  const [recurringFreq, setRecurringFreq] = useState("monthly"); // New Improvement 20
+  const [showSplitPay, setShowSplitPay] = useState(false); // New Improvement 23: Split payment
+  const [splitUser, setSplitUser] = useState(""); // New Improvement 23
+  const [splitPercent, setSplitPercent] = useState(50); // New Improvement 23
+  const [showEscrow, setShowEscrow] = useState(false); // New Improvement 24: Escrow
+  const [showSurvey, setShowSurvey] = useState(false); // New Improvement 25: Satisfaction survey
+  const [surveyRating, setSurveyRating] = useState(0); // New Improvement 25
+  const [surveyFeedback, setSurveyFeedback] = useState(""); // New Improvement 25
+  const [surveySubmitted, setSurveySubmitted] = useState(false); // New Improvement 25
 
   // Simulated tracking number
   const trackingNum = useMemo(() => {
@@ -805,6 +1145,72 @@ function PurchaseRow({ purchase, records, currentUser, onViewUser, onBuy, onExpo
           Reorder
         </button>
       </div>
+
+      {/* New Improvement 14 + 18 + 19 + 20 + 23 + 24 + 25 action buttons */}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {/* New Improvement 14: Invoice */}
+        <button onClick={() => onGenerateInvoice(p)} className="gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+          Invoice
+        </button>
+
+        {/* New Improvement 18: Shipping Map */}
+        <button onClick={() => setShowShippingMap(!showShippingMap)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showShippingMap ? "text-gs-accent" : ""}`}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+          Map
+        </button>
+
+        {/* New Improvement 19: Notes */}
+        <button onClick={() => setShowNoteInput(!showNoteInput)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showNoteInput ? "text-gs-accent" : ""}`}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Notes{notes ? " *" : ""}
+        </button>
+
+        {/* New Improvement 20: Recurring */}
+        <button onClick={() => setShowRecurring(!showRecurring)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showRecurring ? "text-violet-400" : ""}`}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          Recurring
+        </button>
+
+        {/* New Improvement 23: Split Payment */}
+        <button onClick={() => setShowSplitPay(!showSplitPay)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showSplitPay ? "text-amber-400" : ""}`}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          Split
+        </button>
+
+        {/* New Improvement 24: Escrow */}
+        <button onClick={() => setShowEscrow(!showEscrow)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showEscrow ? "text-green-500" : ""}`}>
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Escrow
+        </button>
+
+        {/* New Improvement 25: Satisfaction survey */}
+        {stage >= 4 && !surveySubmitted && (
+          <button onClick={() => setShowSurvey(!showSurvey)} className={`gs-btn-secondary px-2.5 py-1.5 text-[10px] flex items-center gap-1 ${showSurvey ? "text-pink-400" : ""}`}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+            Survey
+          </button>
+        )}
+        {surveySubmitted && (
+          <span className="px-2.5 py-1.5 text-[10px] text-pink-400 font-semibold flex items-center gap-1">Surveyed</span>
+        )}
+
+        {/* New Improvement 15: Multi-currency display */}
+        {selectedCurrency !== "USD" && (
+          <span className="px-2.5 py-1.5 text-[10px] text-gs-faint font-mono ml-auto">
+            {convertPrice(p.price)}
+          </span>
+        )}
+      </div>
+
+      {/* Tags display (New Improvement 19) */}
+      {tags && tags.length > 0 && (
+        <div className="mt-2 flex gap-1 flex-wrap">
+          {tags.map((tag, i) => (
+            <span key={i} className="px-2 py-0.5 rounded-full text-[9px] font-semibold bg-gs-accent/10 text-gs-accent border border-gs-accent/20">{tag}</span>
+          ))}
+        </div>
+      )}
 
       {/* Improvement 3: Delivery tracking detail panel */}
       {showTracking && (
@@ -992,9 +1398,258 @@ function PurchaseRow({ purchase, records, currentUser, onViewUser, onBuy, onExpo
                   Hi @{currentUser}, your purchase of <strong>{p.album}</strong> by {p.artist} from @{p.seller} has been confirmed.
                 </div>
                 <div className="text-[10px] text-gray-600">
-                  Total: <strong>${(parseFloat(p.price) * 1.05 + 6).toFixed(2)}</strong> | Tracking: {trackingNum}
+                  Total: <strong>${(parseFloat(p.price) * 1.05 + 6).toFixed(2)}</strong> ({convertPrice(parseFloat(p.price) * 1.05 + 6)}) | Tracking: {trackingNum}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Improvement 18: Shipping tracking map placeholder */}
+      {showShippingMap && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="bg-[#111] rounded-lg p-3">
+            <div className="text-[11px] font-semibold text-gs-muted mb-2">Shipping Map</div>
+            <div className="bg-[#0a0a0a] border border-gs-border rounded-lg overflow-hidden" style={{ height: 140 }}>
+              {/* SVG map placeholder */}
+              <svg width="100%" height="140" viewBox="0 0 400 140">
+                <rect width="400" height="140" fill="#0a0a0a" />
+                {/* Simplified US outline */}
+                <path d="M40,60 L60,40 L100,35 L140,30 L180,28 L220,30 L260,25 L300,30 L340,35 L360,50 L350,70 L340,80 L300,90 L260,100 L220,105 L180,100 L140,95 L100,85 L70,80 L50,75 Z" fill="#1a1a1a" stroke="#333" strokeWidth="1" />
+                {/* Origin dot */}
+                <circle cx="320" cy="55" r="4" fill="#ef4444">
+                  <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite" />
+                </circle>
+                <text x="325" y="50" fill="#ef4444" fontSize="8" fontFamily="monospace">Seller</text>
+                {/* Destination dot */}
+                <circle cx="150" cy="70" r="4" fill="#22c55e">
+                  <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite" />
+                </circle>
+                <text x="155" y="65" fill="#22c55e" fontSize="8" fontFamily="monospace">You</text>
+                {/* Route line */}
+                <line x1="320" y1="55" x2="150" y2="70" stroke="#0ea5e9" strokeWidth="1.5" strokeDasharray="4,4">
+                  <animate attributeName="stroke-dashoffset" values="0;-8" dur="1s" repeatCount="indefinite" />
+                </line>
+                {/* Package dot moving along route */}
+                <circle r="3" fill="#0ea5e9">
+                  <animateMotion dur="3s" repeatCount="indefinite" path={`M320,55 L${320 - (320 - 150) * (stage / 4)},${55 + (70 - 55) * (stage / 4)}`} />
+                </circle>
+              </svg>
+            </div>
+            <div className="mt-2 flex justify-between text-[9px] text-gs-faint font-mono">
+              <span>Tracking: {trackingNum}</span>
+              <span>Est. {5 - Math.min(stage, 4)} days remaining</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Improvement 19: Transaction notes and tags */}
+      {showNoteInput && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="bg-[#111] rounded-lg p-3">
+            <div className="text-[11px] font-semibold text-gs-muted mb-2">Transaction Notes & Tags</div>
+            <textarea
+              value={noteText || notes}
+              onChange={e => setNoteText(e.target.value)}
+              placeholder="Add a note about this transaction..."
+              className="w-full bg-[#0a0a0a] border border-gs-border rounded-lg px-3 py-2 text-[11px] text-gs-text placeholder:text-gs-faint focus:outline-none focus:border-gs-accent/50 resize-none mb-2"
+              rows={2}
+            />
+            <div className="flex gap-1 flex-wrap mb-2">
+              {["Gift", "Personal", "Investment", "Wishlist Find", "Rare", "Priority"].map(tag => (
+                <button
+                  key={tag}
+                  onClick={() => onAddTag(p.id, tag)}
+                  className={`px-2 py-0.5 rounded-full text-[9px] border cursor-pointer transition-colors ${
+                    (tags || []).includes(tag)
+                      ? "bg-gs-accent/15 text-gs-accent border-gs-accent/30"
+                      : "bg-transparent text-gs-dim border-gs-border hover:border-gs-muted"
+                  }`}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => { onAddNote(p.id, noteText || notes); setShowNoteInput(false); }}
+              className="gs-btn-gradient w-full py-1.5 text-[10px]"
+            >
+              Save Note
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* New Improvement 20: Recurring purchase setup */}
+      {showRecurring && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="bg-violet-500/5 border border-violet-500/15 rounded-lg p-3">
+            <div className="text-[11px] font-semibold text-violet-400 mb-2">Set Up Recurring Purchase</div>
+            <div className="text-[10px] text-gs-dim mb-2">
+              Auto-purchase from @{p.seller} when new {p.format || "records"} by {p.artist} are listed.
+            </div>
+            <div className="flex gap-2 mb-3">
+              {["weekly", "monthly", "quarterly"].map(f => (
+                <button
+                  key={f}
+                  onClick={() => setRecurringFreq(f)}
+                  className={`flex-1 px-2 py-1.5 rounded-lg text-[10px] font-semibold capitalize border transition-colors cursor-pointer ${
+                    recurringFreq === f ? "border-violet-400 bg-violet-400/10 text-violet-400" : "border-gs-border bg-transparent text-gs-dim"
+                  }`}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 items-center mb-2">
+              <span className="text-[10px] text-gs-dim">Max price:</span>
+              <span className="text-[11px] font-bold text-gs-text">${(parseFloat(p.price) * 1.2).toFixed(2)}</span>
+              <span className="text-[9px] text-gs-faint font-mono">({convertPrice(parseFloat(p.price) * 1.2)})</span>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setShowRecurring(false)} className="gs-btn-secondary flex-1 py-1.5 text-[10px]">Cancel</button>
+              <button onClick={() => { window.alert(`Recurring ${recurringFreq} purchase set for ${p.artist}!`); setShowRecurring(false); }} className="flex-[2] py-1.5 text-[10px] rounded-lg font-semibold border-none cursor-pointer bg-violet-500 text-white hover:bg-violet-600 transition-colors">
+                Enable Recurring
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Improvement 23: Split payment */}
+      {showSplitPay && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="bg-amber-500/5 border border-amber-500/15 rounded-lg p-3">
+            <div className="text-[11px] font-semibold text-amber-400 mb-2">Split Payment</div>
+            <div className="text-[10px] text-gs-dim mb-2">
+              Split the cost of this record with another user.
+            </div>
+            <input
+              type="text"
+              value={splitUser}
+              onChange={e => setSplitUser(e.target.value)}
+              placeholder="Enter username to split with..."
+              className="w-full bg-[#0a0a0a] border border-gs-border rounded-lg px-3 py-1.5 text-[11px] text-gs-text font-mono placeholder:text-gs-faint focus:outline-none focus:border-gs-accent/50 mb-2"
+            />
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-[10px] text-gs-dim">Your share:</span>
+              <input
+                type="range"
+                min="10"
+                max="90"
+                step="10"
+                value={splitPercent}
+                onChange={e => setSplitPercent(Number(e.target.value))}
+                className="flex-1"
+              />
+              <span className="text-[10px] text-gs-text font-mono">{splitPercent}%</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <div className="bg-[#111] rounded-lg p-2 text-center">
+                <div className="text-[10px] text-gs-dim">You pay</div>
+                <div className="text-sm font-bold text-gs-text">${(parseFloat(p.price) * splitPercent / 100).toFixed(2)}</div>
+              </div>
+              <div className="bg-[#111] rounded-lg p-2 text-center">
+                <div className="text-[10px] text-gs-dim">@{splitUser || "..."} pays</div>
+                <div className="text-sm font-bold text-gs-text">${(parseFloat(p.price) * (100 - splitPercent) / 100).toFixed(2)}</div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setShowSplitPay(false)} className="gs-btn-secondary flex-1 py-1.5 text-[10px]">Cancel</button>
+              <button
+                onClick={() => { if (splitUser.trim()) { window.alert(`Split request sent to @${splitUser}!`); setShowSplitPay(false); } }}
+                disabled={!splitUser.trim()}
+                className={`flex-[2] py-1.5 text-[10px] rounded-lg font-semibold border-none cursor-pointer transition-colors ${
+                  splitUser.trim() ? "bg-amber-500 text-black hover:bg-amber-600" : "bg-amber-500/20 text-amber-500/40 cursor-not-allowed"
+                }`}
+              >
+                Send Split Request
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Improvement 24: Escrow status indicator */}
+      {showEscrow && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="bg-[#111] rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-semibold text-gs-muted">Escrow Status</span>
+              <span className="text-[10px] font-semibold" style={{ color: ESCROW_STAGES[getEscrowStage(p.id)].color }}>
+                {ESCROW_STAGES[getEscrowStage(p.id)].label}
+              </span>
+            </div>
+            <div className="flex gap-1 items-center mb-2">
+              {ESCROW_STAGES.map((es, i) => (
+                <div key={es.key} className="flex-1 flex items-center gap-1">
+                  <div className={`h-2 flex-1 rounded-full transition-colors`} style={{ background: i <= getEscrowStage(p.id) ? es.color : "#1a1a1a" }} />
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between">
+              {ESCROW_STAGES.map((es, i) => (
+                <div key={es.key} className="text-[8px] font-mono" style={{ color: i <= getEscrowStage(p.id) ? es.color : "#333" }}>{es.label.split(" ")[0]}</div>
+              ))}
+            </div>
+            <div className="mt-2 pt-2 border-t border-[#1a1a1a] text-[9px] text-gs-faint">
+              Protected amount: <span className="text-gs-text font-semibold">${parseFloat(p.price).toFixed(2)}</span> ({convertPrice(p.price)}) held in escrow until delivery confirmed
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Improvement 25: Satisfaction survey */}
+      {showSurvey && !surveySubmitted && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="bg-pink-500/5 border border-pink-500/15 rounded-lg p-3">
+            <div className="text-[11px] font-semibold text-pink-400 mb-3">Transaction Satisfaction Survey</div>
+            <div className="mb-3">
+              <div className="text-[10px] text-gs-dim mb-1.5">How satisfied are you with this purchase?</div>
+              <div className="flex gap-2">
+                {[
+                  { val: 1, label: "Very Unhappy", emoji: "1" },
+                  { val: 2, label: "Unhappy", emoji: "2" },
+                  { val: 3, label: "Neutral", emoji: "3" },
+                  { val: 4, label: "Happy", emoji: "4" },
+                  { val: 5, label: "Very Happy", emoji: "5" },
+                ].map(opt => (
+                  <button
+                    key={opt.val}
+                    onClick={() => setSurveyRating(opt.val)}
+                    className={`flex-1 py-2 rounded-lg text-center border transition-colors cursor-pointer ${
+                      surveyRating === opt.val ? "border-pink-400 bg-pink-400/10" : "border-gs-border bg-transparent hover:border-gs-muted"
+                    }`}
+                  >
+                    <div className="text-sm font-bold" style={{ color: surveyRating === opt.val ? "#ec4899" : "#666" }}>{opt.emoji}</div>
+                    <div className="text-[8px] text-gs-dim">{opt.label}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mb-3">
+              <div className="text-[10px] text-gs-dim mb-1.5">Any additional feedback?</div>
+              <textarea
+                value={surveyFeedback}
+                onChange={e => setSurveyFeedback(e.target.value)}
+                placeholder="Tell us about your experience..."
+                className="w-full bg-[#0a0a0a] border border-gs-border rounded-lg px-3 py-2 text-[11px] text-gs-text placeholder:text-gs-faint focus:outline-none focus:border-pink-400/50 resize-none"
+                rows={2}
+              />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setShowSurvey(false)} className="gs-btn-secondary flex-1 py-1.5 text-[10px]">Skip</button>
+              <button
+                onClick={() => { if (surveyRating > 0) { setSurveySubmitted(true); setShowSurvey(false); } }}
+                disabled={surveyRating === 0}
+                className={`flex-[2] py-1.5 text-[10px] rounded-lg font-semibold border-none cursor-pointer transition-colors ${
+                  surveyRating > 0 ? "bg-pink-500 text-white hover:bg-pink-600" : "bg-pink-500/20 text-pink-500/40 cursor-not-allowed"
+                }`}
+              >
+                Submit Survey
+              </button>
             </div>
           </div>
         </div>

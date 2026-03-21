@@ -8,8 +8,92 @@
 import { useState, useMemo, useCallback } from 'react';
 import Avatar from '../ui/Avatar';
 import AlbumArt from '../ui/AlbumArt';
-import { USER_PROFILES } from '../../constants';
+import { USER_PROFILES, USER_WISHLISTS } from '../../constants';
 import { getProfile } from '../../utils/helpers';
+
+// Improvement B16: Simulated follower growth data per user (deterministic)
+const getFollowerGrowthData = (username) => {
+  let hash = 0;
+  for (let i = 0; i < username.length; i++) hash = ((hash << 5) - hash + username.charCodeAt(i)) | 0;
+  const base = Math.abs(hash) % 20 + 5;
+  return Array.from({ length: 6 }, (_, i) => ({
+    month: ['Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'][i],
+    count: base + Math.floor(Math.abs((hash * (i + 1) * 7) % 15)),
+  }));
+};
+
+// Improvement B17: Engagement score calculation per followed user
+const getEngagementScore = (username, records) => {
+  const userRecs = records.filter(r => r.user === username);
+  const totalLikes = userRecs.reduce((sum, r) => sum + (r.likes || 0), 0);
+  const forSaleCount = userRecs.filter(r => r.forSale).length;
+  // Score based on activity: records + likes + listings
+  return Math.min(100, Math.round((userRecs.length * 3) + (totalLikes * 2) + (forSaleCount * 5)));
+};
+
+// Improvement B18: Identify inactive users — users with few records and no recent activity
+const isInactiveUser = (username, records) => {
+  const userRecs = records.filter(r => r.user === username);
+  return userRecs.length <= 1;
+};
+
+// Improvement B19: Follow anniversary — deterministic follow date based on hash
+const getFollowAnniversary = (username) => {
+  let hash = 0;
+  for (let i = 0; i < username.length; i++) hash = ((hash << 5) - hash + username.charCodeAt(i)) | 0;
+  const daysAgo = Math.abs(hash) % 365;
+  const date = new Date();
+  date.setDate(date.getDate() - daysAgo);
+  const isAnniversary = daysAgo % 365 < 3; // Within 3 days of anniversary
+  return { date, daysAgo, isAnniversary };
+};
+
+// Improvement B21: Shared wishlist items
+const getSharedWishlistItems = (currentUser, otherUser) => {
+  const myWishlist = USER_WISHLISTS[currentUser] || [];
+  const theirWishlist = USER_WISHLISTS[otherUser] || [];
+  return myWishlist.filter(myItem =>
+    theirWishlist.some(theirItem =>
+      myItem.album.toLowerCase() === theirItem.album.toLowerCase() &&
+      myItem.artist.toLowerCase() === theirItem.artist.toLowerCase()
+    )
+  );
+};
+
+// Improvement B24: User compatibility percentage
+const getUserCompatibility = (currentUser, otherUser, records) => {
+  const myRecs = records.filter(r => r.user === currentUser);
+  const theirRecs = records.filter(r => r.user === otherUser);
+  if (myRecs.length === 0 || theirRecs.length === 0) return 0;
+  const myGenres = new Set();
+  const theirGenres = new Set();
+  myRecs.forEach(r => (r.tags || []).forEach(t => myGenres.add(t)));
+  theirRecs.forEach(r => (r.tags || []).forEach(t => theirGenres.add(t)));
+  const allGenres = new Set([...myGenres, ...theirGenres]);
+  if (allGenres.size === 0) return 0;
+  let shared = 0;
+  allGenres.forEach(g => { if (myGenres.has(g) && theirGenres.has(g)) shared++; });
+  // Also factor in direct album overlap
+  const myAlbums = new Set(myRecs.map(r => `${r.artist}::${r.album}`));
+  const albumOverlap = theirRecs.filter(r => myAlbums.has(`${r.artist}::${r.album}`)).length;
+  return Math.min(99, Math.round((shared / allGenres.size) * 60 + Math.min(albumOverlap * 8, 39)));
+};
+
+// Improvement B22: Feed customization prefs localStorage
+const FEED_CUSTOM_KEY = 'gs-feed-customization';
+const loadFeedCustomization = () => {
+  try {
+    const raw = localStorage.getItem(FEED_CUSTOM_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+};
+const persistFeedCustomization = (prefs) => {
+  try { localStorage.setItem(FEED_CUSTOM_KEY, JSON.stringify(prefs)); }
+  catch { /* localStorage full or unavailable */ }
+};
+
+// Improvement B25: Profile peek state for long press
+const LONG_PRESS_DURATION = 500;
 
 // Simulated online status — deterministic per username so it stays consistent
 const isOnline = (username) => {
@@ -116,6 +200,35 @@ export default function FollowingScreen({ following, records, currentUser, onFol
   // Improvement 23: Discovery mode
   const [discoveryUser, setDiscoveryUser] = useState(null);
 
+  // Improvement B16: Follower growth chart toggle
+  const [showGrowthChartFor, setShowGrowthChartFor] = useState(null);
+
+  // Improvement B20: Collaborative playlist state
+  const [showPlaylistFor, setShowPlaylistFor] = useState(null);
+
+  // Improvement B22: Feed customization per user
+  const [feedCustomization, setFeedCustomization] = useState(loadFeedCustomization);
+  const [showFeedCustomFor, setShowFeedCustomFor] = useState(null);
+
+  // Improvement B23: Milestone celebrations state
+  const [dismissedMilestones, setDismissedMilestones] = useState(new Set());
+
+  // Improvement B25: Quick profile peek on long press
+  const [profilePeekUser, setProfilePeekUser] = useState(null);
+  const longPressTimerRef = useCallback(() => {
+    // Returns handlers for long press
+    let timer = null;
+    return {
+      onTouchStart: (username) => {
+        timer = setTimeout(() => setProfilePeekUser(username), LONG_PRESS_DURATION);
+      },
+      onTouchEnd: () => {
+        if (timer) clearTimeout(timer);
+      },
+    };
+  }, []);
+  const longPressHandlers = useMemo(() => longPressTimerRef(), [longPressTimerRef]);
+
   // Exclude the current user from the full user list
   const allUsers = Object.keys(USER_PROFILES).filter(u => u !== currentUser);
   // Suggestions are all users not already being followed
@@ -209,6 +322,65 @@ export default function FollowingScreen({ following, records, currentUser, onFol
     const mySet = new Set(myAlbums);
     const theirRecords = records.filter(r => r.user === username);
     return theirRecords.filter(r => mySet.has(`${r.artist}::${r.album}`));
+  }, [records, currentUser]);
+
+  // Improvement B18: Suggested unfollows — inactive users
+  const suggestedUnfollows = useMemo(() => {
+    return following.filter(u => isInactiveUser(u, records));
+  }, [following, records]);
+
+  // Improvement B19: Follow anniversary notifications
+  const anniversaryUsers = useMemo(() => {
+    return following
+      .map(u => ({ username: u, ...getFollowAnniversary(u) }))
+      .filter(u => u.isAnniversary && !dismissedMilestones.has(`anniv-${u.username}`));
+  }, [following, dismissedMilestones]);
+
+  // Improvement B22: Feed customization toggle
+  const toggleFeedPref = useCallback((username, pref) => {
+    const current = feedCustomization[username] || { records: true, listings: true, likes: true };
+    const updated = { ...feedCustomization, [username]: { ...current, [pref]: !current[pref] } };
+    setFeedCustomization(updated);
+    persistFeedCustomization(updated);
+  }, [feedCustomization]);
+
+  const getFeedPrefs = useCallback((username) => feedCustomization[username] || { records: true, listings: true, likes: true }, [feedCustomization]);
+
+  // Improvement B23: Milestone celebrations
+  const milestoneCelebrations = useMemo(() => {
+    const milestones = [];
+    following.forEach(u => {
+      const userRecs = records.filter(r => r.user === u);
+      const count = userRecs.length;
+      const p = getProfile(u);
+      if (count >= 10 && !dismissedMilestones.has(`ms-${u}-10`)) {
+        milestones.push({ username: u, displayName: p.displayName, milestone: 10, count, key: `ms-${u}-10` });
+      }
+      if (count >= 25 && !dismissedMilestones.has(`ms-${u}-25`)) {
+        milestones.push({ username: u, displayName: p.displayName, milestone: 25, count, key: `ms-${u}-25` });
+      }
+    });
+    return milestones.slice(0, 3);
+  }, [following, records, dismissedMilestones]);
+
+  // Improvement B20: Generate collaborative playlist from shared genres
+  const getCollaborativePlaylist = useCallback((username) => {
+    const myRecs = records.filter(r => r.user === currentUser);
+    const theirRecs = records.filter(r => r.user === username);
+    const myGenres = new Set();
+    myRecs.forEach(r => (r.tags || []).forEach(t => myGenres.add(t)));
+    // Pick their records that match my genres
+    const playlist = theirRecs.filter(r => (r.tags || []).some(t => myGenres.has(t))).slice(0, 5);
+    // Interleave with my records that match their genres
+    const theirGenres = new Set();
+    theirRecs.forEach(r => (r.tags || []).forEach(t => theirGenres.add(t)));
+    const myPicks = myRecs.filter(r => (r.tags || []).some(t => theirGenres.has(t))).slice(0, 5);
+    const combined = [];
+    for (let i = 0; i < Math.max(playlist.length, myPicks.length); i++) {
+      if (i < myPicks.length) combined.push(myPicks[i]);
+      if (i < playlist.length) combined.push(playlist[i]);
+    }
+    return combined.slice(0, 8);
   }, [records, currentUser]);
 
   // Get recently added records for a user (up to 3)
@@ -400,7 +572,14 @@ export default function FollowingScreen({ following, records, currentUser, onFol
               className="accent-gs-accent w-3.5 h-3.5 shrink-0 cursor-pointer"
             />
           )}
-          <div className="relative shrink-0">
+          <div
+            className="relative shrink-0"
+            onTouchStart={() => longPressHandlers.onTouchStart(u)}
+            onTouchEnd={() => longPressHandlers.onTouchEnd()}
+            onMouseDown={() => longPressHandlers.onTouchStart(u)}
+            onMouseUp={() => longPressHandlers.onTouchEnd()}
+            onMouseLeave={() => longPressHandlers.onTouchEnd()}
+          >
             <Avatar username={u} size={44} onClick={() => onViewUser(u)} />
             {online && <div className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-green-500 border-2 border-gs-card" />}
           </div>
@@ -562,6 +741,145 @@ export default function FollowingScreen({ following, records, currentUser, onFol
             </div>
           </div>
         )}
+
+        {/* Improvement B17: Engagement score */}
+        {isFollowed && (
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-[9px] text-gs-faint">Engagement:</span>
+            <div className="h-1 w-16 rounded-full bg-[#1a1a1a] overflow-hidden">
+              <div className="h-full rounded-full transition-all duration-300" style={{
+                width: `${getEngagementScore(u, records)}%`,
+                backgroundColor: getEngagementScore(u, records) >= 70 ? '#22c55e' : getEngagementScore(u, records) >= 40 ? '#eab308' : '#ef4444'
+              }} />
+            </div>
+            <span className="text-[9px] font-mono text-gs-faint">{getEngagementScore(u, records)}</span>
+          </div>
+        )}
+
+        {/* Improvement B24: User compatibility percentage */}
+        {isFollowed && (
+          <div className="mt-1 flex items-center gap-1.5">
+            <span className="text-[9px] text-gs-faint">Compatibility:</span>
+            <span className={`text-[9px] font-bold ${
+              getUserCompatibility(currentUser, u, records) >= 60 ? 'text-green-400' :
+              getUserCompatibility(currentUser, u, records) >= 30 ? 'text-amber-400' : 'text-gs-faint'
+            }`}>
+              {getUserCompatibility(currentUser, u, records)}%
+            </span>
+          </div>
+        )}
+
+        {/* Improvement B16: Follower growth chart toggle */}
+        {isFollowed && showGrowthChartFor === u && (
+          <div className="mt-2.5 pt-2.5 border-t border-[#1a1a1a]">
+            <div className="text-[10px] text-gs-faint font-mono mb-2">FOLLOWER GROWTH</div>
+            <div className="flex items-end gap-1 h-10">
+              {getFollowerGrowthData(u).map(d => {
+                const maxCount = Math.max(...getFollowerGrowthData(u).map(x => x.count), 1);
+                return (
+                  <div key={d.month} className="flex-1 flex flex-col items-center gap-0.5">
+                    <div
+                      className="w-full bg-gs-accent/30 rounded-t-sm transition-all duration-300"
+                      style={{ height: `${(d.count / maxCount) * 100}%` }}
+                      title={`${d.month}: ${d.count} followers`}
+                    />
+                    <span className="text-[7px] text-gs-faint font-mono">{d.month}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Improvement B21: Shared wishlist items */}
+        {isFollowed && (() => {
+          const shared = getSharedWishlistItems(currentUser, u);
+          if (shared.length === 0) return null;
+          return (
+            <div className="mt-2 pt-2 border-t border-[#1a1a1a]">
+              <div className="text-[10px] text-gs-faint font-mono mb-1.5">SHARED WISHLIST ({shared.length})</div>
+              <div className="flex gap-1.5 flex-wrap">
+                {shared.slice(0, 3).map((item, idx) => (
+                  <span key={idx} className="text-[9px] px-1.5 py-0.5 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20">
+                    {item.album}
+                  </span>
+                ))}
+                {shared.length > 3 && <span className="text-[9px] text-gs-faint">+{shared.length - 3} more</span>}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Improvement B22: Feed customization */}
+        {isFollowed && showFeedCustomFor === u && (
+          <div className="mt-2.5 pt-2.5 border-t border-[#1a1a1a]">
+            <div className="text-[10px] text-gs-faint font-mono mb-2">FEED PREFERENCES</div>
+            <div className="flex gap-3">
+              {[
+                { key: 'records', label: 'New Records' },
+                { key: 'listings', label: 'Listings' },
+                { key: 'likes', label: 'Likes' },
+              ].map(({ key, label }) => {
+                const prefs = getFeedPrefs(u);
+                return (
+                  <label key={key} className="flex items-center gap-1.5 text-[10px] text-gs-dim cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={prefs[key]}
+                      onChange={() => toggleFeedPref(u, key)}
+                      className="accent-gs-accent w-3 h-3"
+                    />
+                    {label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Improvement B20: Collaborative playlist */}
+        {isFollowed && showPlaylistFor === u && (
+          <div className="mt-2.5 pt-2.5 border-t border-[#1a1a1a]">
+            <div className="text-[10px] text-gs-faint font-mono mb-2">COLLABORATIVE PLAYLIST</div>
+            {(() => {
+              const playlist = getCollaborativePlaylist(u);
+              if (playlist.length === 0) return <div className="text-[9px] text-gs-faint">No shared genre overlap for a playlist.</div>;
+              return (
+                <div className="flex gap-1.5 overflow-x-auto">
+                  {playlist.map(r => (
+                    <div key={r.id} className="shrink-0" title={`${r.album} by ${r.artist}`}>
+                      <AlbumArt album={r.album} artist={r.artist} accent={r.accent || "#555"} size={28} />
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Followed user action buttons row */}
+        {isFollowed && (
+          <div className="mt-2 pt-2 border-t border-[#1a1a1a] flex gap-2 flex-wrap">
+            <button
+              onClick={() => setShowGrowthChartFor(showGrowthChartFor === u ? null : u)}
+              className={`text-[9px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${showGrowthChartFor === u ? 'border-gs-accent/30 text-gs-accent bg-gs-accent/5' : 'border-gs-border text-gs-faint bg-transparent hover:text-gs-accent'}`}
+            >
+              Growth
+            </button>
+            <button
+              onClick={() => setShowPlaylistFor(showPlaylistFor === u ? null : u)}
+              className={`text-[9px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${showPlaylistFor === u ? 'border-gs-accent/30 text-gs-accent bg-gs-accent/5' : 'border-gs-border text-gs-faint bg-transparent hover:text-gs-accent'}`}
+            >
+              Playlist
+            </button>
+            <button
+              onClick={() => setShowFeedCustomFor(showFeedCustomFor === u ? null : u)}
+              className={`text-[9px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${showFeedCustomFor === u ? 'border-gs-accent/30 text-gs-accent bg-gs-accent/5' : 'border-gs-border text-gs-faint bg-transparent hover:text-gs-accent'}`}
+            >
+              Feed
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -621,6 +939,103 @@ export default function FollowingScreen({ following, records, currentUser, onFol
           </button>
         ))}
       </div>
+
+      {/* Improvement B25: Quick profile peek on long press */}
+      {profilePeekUser && (
+        <div className="mb-4 p-3.5 rounded-xl border border-gs-accent/30 bg-gs-card shadow-lg relative">
+          <button
+            onClick={() => setProfilePeekUser(null)}
+            className="absolute top-2 right-2 bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-sm"
+          >×</button>
+          {(() => {
+            const p = getProfile(profilePeekUser);
+            const userRecs = records.filter(r => r.user === profilePeekUser);
+            const compat = getUserCompatibility(currentUser, profilePeekUser, records);
+            return (
+              <div className="flex gap-3 items-start">
+                <Avatar username={profilePeekUser} size={48} onClick={() => { setProfilePeekUser(null); onViewUser(profilePeekUser); }} />
+                <div className="flex-1">
+                  <div className="text-sm font-bold text-gs-text">{p.displayName}</div>
+                  <div className="text-[10px] text-gs-dim font-mono">@{profilePeekUser}</div>
+                  {p.bio && <div className="text-[10px] text-gs-faint mt-1 line-clamp-2">{p.bio}</div>}
+                  <div className="flex gap-3 mt-1.5 text-[9px] text-gs-faint font-mono">
+                    <span>{userRecs.length} records</span>
+                    <span>{p.favGenre}</span>
+                    <span className={compat >= 50 ? 'text-green-400' : 'text-gs-faint'}>{compat}% match</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Improvement B19: Follow anniversary notifications */}
+      {anniversaryUsers.length > 0 && (
+        <div className="mb-4">
+          {anniversaryUsers.map(a => (
+            <div key={a.username} className="mb-2 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5 flex items-center gap-3">
+              <Avatar username={a.username} size={32} onClick={() => onViewUser(a.username)} />
+              <div className="flex-1">
+                <div className="text-[11px] text-gs-text">
+                  <span className="font-bold">{getProfile(a.username).displayName}</span> — follow anniversary!
+                </div>
+                <div className="text-[9px] text-gs-faint">You&apos;ve been following for {a.daysAgo} days</div>
+              </div>
+              <button
+                onClick={() => setDismissedMilestones(prev => new Set([...prev, `anniv-${a.username}`]))}
+                className="bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-xs"
+              >×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Improvement B23: Follower milestone celebrations */}
+      {milestoneCelebrations.length > 0 && (
+        <div className="mb-4">
+          {milestoneCelebrations.map(m => (
+            <div key={m.key} className="mb-2 p-3 rounded-xl border border-purple-500/20 bg-purple-500/5 flex items-center gap-3">
+              <Avatar username={m.username} size={32} onClick={() => onViewUser(m.username)} />
+              <div className="flex-1">
+                <div className="text-[11px] text-gs-text">
+                  <span className="font-bold">{m.displayName}</span> reached {m.milestone}+ records!
+                </div>
+                <div className="text-[9px] text-gs-faint">They now have {m.count} in their collection</div>
+              </div>
+              <button
+                onClick={() => setDismissedMilestones(prev => new Set([...prev, m.key]))}
+                className="bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-xs"
+              >×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Improvement B18: Suggested unfollows (inactive users) */}
+      {activeTab === "following" && suggestedUnfollows.length > 0 && (
+        <div className="mb-4 p-3 rounded-xl border border-gs-border bg-gs-card">
+          <div className="text-[10px] font-bold text-gs-dim tracking-widest font-mono mb-2">INACTIVE FOLLOWS</div>
+          <div className="text-[9px] text-gs-faint mb-2">These users haven&apos;t been very active. Consider unfollowing?</div>
+          <div className="flex gap-2 flex-wrap">
+            {suggestedUnfollows.slice(0, 4).map(u => {
+              const p = getProfile(u);
+              return (
+                <div key={u} className="flex items-center gap-2 bg-[#111] rounded-lg px-2.5 py-1.5">
+                  <Avatar username={u} size={24} onClick={() => onViewUser(u)} />
+                  <span className="text-[10px] text-gs-muted">{p.displayName}</span>
+                  <button
+                    onClick={() => handleUnfollow(u)}
+                    className="text-[9px] px-1.5 py-0.5 rounded border border-gs-border text-gs-faint bg-transparent cursor-pointer hover:text-red-400 hover:border-red-500/30 transition-colors"
+                  >
+                    Unfollow
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Improvement 16: Activity feed tab */}
       {activeTab === "activity" && (

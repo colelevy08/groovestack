@@ -1,10 +1,54 @@
 // Confetti animation — plays on first purchase or special achievements.
-// Improvements: celebration types (confetti, fireworks, sparkles, vinyl rain), configurable colors.
-import { useEffect, useState } from 'react';
+// Improvements: celebration types (confetti, fireworks, sparkles, vinyl rain), configurable colors,
+// sound effects on celebration, and custom emoji confetti.
+import { useEffect, useState, useRef } from 'react';
 
 const DEFAULT_COLORS = ['#0ea5e9', '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6'];
 const FIREWORK_COLORS = ['#ef4444', '#f59e0b', '#ec4899', '#8b5cf6', '#ffffff'];
 const SPARKLE_COLORS = ['#fbbf24', '#fde68a', '#ffffff', '#fcd34d', '#f59e0b'];
+
+// --- Sound effects ---
+const SOUND_EFFECTS = {
+  confetti: { frequency: 800, duration: 0.15, type: 'sine', ramp: true },
+  fireworks: { frequency: 200, duration: 0.4, type: 'sawtooth', ramp: true },
+  sparkles: { frequency: 1200, duration: 0.1, type: 'sine', ramp: false },
+  vinyl: { frequency: 400, duration: 0.3, type: 'triangle', ramp: true },
+  emoji: { frequency: 600, duration: 0.2, type: 'sine', ramp: true },
+};
+
+function playCelebrationSound(effectType = 'confetti') {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const effect = SOUND_EFFECTS[effectType] || SOUND_EFFECTS.confetti;
+
+    // Play a short burst of notes for a celebration feel
+    const notes = effectType === 'fireworks'
+      ? [200, 400, 600]
+      : effectType === 'sparkles'
+        ? [1200, 1400, 1600, 1800]
+        : [523, 659, 784]; // C5, E5, G5 — major chord
+
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = effect.type;
+      osc.frequency.setValueAtTime(freq, ctx.currentTime);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime + i * 0.08);
+      if (effect.ramp) {
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.08 + effect.duration);
+      }
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + i * 0.08);
+      osc.stop(ctx.currentTime + i * 0.08 + effect.duration + 0.05);
+    });
+
+    // Close context after all sounds finish
+    setTimeout(() => ctx.close(), 2000);
+  } catch {
+    // Audio not available — silently ignore
+  }
+}
 
 function randomBetween(min, max) {
   return Math.random() * (max - min) + min;
@@ -75,16 +119,43 @@ function generateVinylRain(colors, count = 20) {
   }));
 }
 
+// --- Custom emoji confetti generator ---
+function generateEmojiConfetti(emojis, count = 40) {
+  const emojiList = emojis && emojis.length > 0 ? emojis : ['🎉', '🎊', '🥳', '✨', '🎸', '🎵'];
+  return Array.from({ length: count }, (_, i) => ({
+    id: i,
+    type: 'emoji',
+    x: randomBetween(5, 95),
+    emoji: emojiList[Math.floor(Math.random() * emojiList.length)],
+    delay: randomBetween(0, 0.8),
+    size: randomBetween(16, 32),
+    rotation: randomBetween(0, 360),
+    duration: randomBetween(2, 4),
+  }));
+}
+
 export default function Confetti({
   active,
   duration = 3000,
   type = 'confetti',
   colors,
+  sound = false,
+  emojis = null, // Array of emoji strings for 'emoji' type, e.g. ['🎉', '🔥']
 }) {
   const [particles, setParticles] = useState([]);
+  const soundPlayed = useRef(false);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active) {
+      soundPlayed.current = false;
+      return;
+    }
+
+    // Play sound effect
+    if (sound && !soundPlayed.current) {
+      soundPlayed.current = true;
+      playCelebrationSound(type);
+    }
 
     let generated;
     switch (type) {
@@ -97,6 +168,9 @@ export default function Confetti({
       case 'vinyl':
         generated = generateVinylRain(colors || DEFAULT_COLORS);
         break;
+      case 'emoji':
+        generated = generateEmojiConfetti(emojis);
+        break;
       default:
         generated = generateConfetti(colors || DEFAULT_COLORS);
     }
@@ -104,7 +178,7 @@ export default function Confetti({
 
     const timer = setTimeout(() => setParticles([]), duration);
     return () => clearTimeout(timer);
-  }, [active, duration, type, colors]);
+  }, [active, duration, type, colors, sound, emojis]);
 
   if (particles.length === 0) return null;
 
@@ -195,6 +269,24 @@ export default function Confetti({
             </div>
           );
         }
+        if (p.type === 'emoji') {
+          return (
+            <div
+              key={p.id}
+              className="absolute gs-emoji-fall"
+              style={{
+                left: `${p.x}%`,
+                top: '-40px',
+                fontSize: `${p.size}px`,
+                transform: `rotate(${p.rotation}deg)`,
+                animationDuration: `${p.duration}s`,
+                animationDelay: `${p.delay}s`,
+              }}
+            >
+              {p.emoji}
+            </div>
+          );
+        }
         return null;
       })}
       <style>{`
@@ -231,6 +323,15 @@ export default function Confetti({
         @keyframes gsVinylRain {
           0% { opacity: 1; transform: translateY(0) rotate(0deg); }
           100% { opacity: 0; transform: translateY(100vh) rotate(var(--vinyl-spin)); }
+        }
+        .gs-emoji-fall {
+          animation: gsEmojiFall 3s ease-out forwards;
+          opacity: 0;
+        }
+        @keyframes gsEmojiFall {
+          0% { opacity: 1; transform: translateY(0) rotate(0deg) scale(1); }
+          50% { opacity: 1; transform: translateY(50vh) rotate(180deg) scale(1.2); }
+          100% { opacity: 0; transform: translateY(100vh) rotate(360deg) scale(0.8); }
         }
       `}</style>
     </div>

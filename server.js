@@ -7293,6 +7293,1501 @@ app.get('/api/marketplace/health', async (req, res) => {
   }
 });
 
+// ── Feature F1: User Engagement Scoring ──────────────────────────────────────
+
+// GET /api/users/:id/engagement-score — compute a user's engagement score
+app.get('/api/users/:id/engagement-score', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const userId = parseInt(req.params.id);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [likes, saves, purchases, listings, sessions] = await Promise.all([
+      pool.query('SELECT COUNT(*) as cnt FROM likes WHERE user_id = $1 AND created_at >= $2', [userId, thirtyDaysAgo]),
+      pool.query('SELECT COUNT(*) as cnt FROM saves WHERE user_id = $1 AND created_at >= $2', [userId, thirtyDaysAgo]),
+      pool.query('SELECT COUNT(*) as cnt FROM purchases WHERE buyer_id = $1 AND created_at >= $2', [userId, thirtyDaysAgo]),
+      pool.query('SELECT COUNT(*) as cnt FROM records WHERE user_id = $1 AND created_at >= $2', [userId, thirtyDaysAgo]),
+      pool.query('SELECT COUNT(*) as cnt FROM user_sessions WHERE user_id = $1 AND created_at >= $2', [userId, thirtyDaysAgo]),
+    ]);
+
+    const weights = { likes: 1, saves: 2, purchases: 10, listings: 5, sessions: 3 };
+    const rawScore =
+      parseInt(likes.rows[0].cnt) * weights.likes +
+      parseInt(saves.rows[0].cnt) * weights.saves +
+      parseInt(purchases.rows[0].cnt) * weights.purchases +
+      parseInt(listings.rows[0].cnt) * weights.listings +
+      parseInt(sessions.rows[0].cnt) * weights.sessions;
+
+    // Normalize to 0–100 scale (100 = highly engaged)
+    const normalizedScore = Math.min(100, Math.round(rawScore / 2));
+    const tier = normalizedScore >= 80 ? 'power_user' : normalizedScore >= 50 ? 'active' : normalizedScore >= 20 ? 'casual' : 'dormant';
+
+    res.json({
+      success: true,
+      userId,
+      period: '30d',
+      score: normalizedScore,
+      tier,
+      breakdown: {
+        likes: parseInt(likes.rows[0].cnt),
+        saves: parseInt(saves.rows[0].cnt),
+        purchases: parseInt(purchases.rows[0].cnt),
+        listings: parseInt(listings.rows[0].cnt),
+        sessions: parseInt(sessions.rows[0].cnt),
+      },
+      weights,
+    });
+  } catch (err) {
+    console.error('Engagement score error:', err.message);
+    res.status(500).json({ error: 'Failed to compute engagement score' });
+  }
+});
+
+// ── Feature F2: Recommendation Engine ────────────────────────────────────────
+
+// GET /api/users/:id/recommendations — personalized record recommendations
+app.get('/api/users/:id/recommendations', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const userId = parseInt(req.params.id);
+    const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+
+    // Gather user taste signals: liked/saved/purchased genres and artists
+    const tasteSignals = await pool.query(
+      `SELECT r.genre, r.artist, COUNT(*) as signal_strength FROM (
+         SELECT record_id FROM likes WHERE user_id = $1
+         UNION ALL SELECT record_id FROM saves WHERE user_id = $1
+         UNION ALL SELECT record_id FROM purchases WHERE buyer_id = $1
+       ) actions
+       JOIN records r ON r.id = actions.record_id
+       WHERE r.genre IS NOT NULL
+       GROUP BY r.genre, r.artist ORDER BY signal_strength DESC LIMIT 10`,
+      [userId]
+    );
+
+    if (tasteSignals.rows.length === 0) {
+      // Cold start: return popular records
+      const popular = await pool.query(
+        `SELECT r.*, COALESCE(lc.cnt, 0) as like_count FROM records r
+         LEFT JOIN (SELECT record_id, COUNT(*) as cnt FROM likes GROUP BY record_id) lc ON lc.record_id = r.id
+         WHERE r.for_sale = true ORDER BY like_count DESC LIMIT $1`,
+        [limit]
+      );
+      return res.json({ success: true, strategy: 'popular', recommendations: popular.rows });
+    }
+
+    const topGenres = tasteSignals.rows.map(r => r.genre).filter(Boolean);
+    const topArtists = tasteSignals.rows.map(r => r.artist).filter(Boolean);
+
+    // Exclude already-owned / liked / saved records
+    const recs = await pool.query(
+      `SELECT r.*, COALESCE(lc.cnt, 0) as like_count FROM records r
+       LEFT JOIN (SELECT record_id, COUNT(*) as cnt FROM likes GROUP BY record_id) lc ON lc.record_id = r.id
+       WHERE r.for_sale = true
+         AND r.user_id != $1
+         AND r.id NOT IN (SELECT record_id FROM likes WHERE user_id = $1)
+         AND r.id NOT IN (SELECT record_id FROM saves WHERE user_id = $1)
+         AND r.id NOT IN (SELECT record_id FROM purchases WHERE buyer_id = $1)
+         AND (r.genre = ANY($2) OR r.artist = ANY($3))
+       ORDER BY like_count DESC, r.created_at DESC LIMIT $4`,
+      [userId, topGenres, topArtists, limit]
+    );
+
+    res.json({ success: true, strategy: 'taste_based', recommendations: recs.rows, signals: { topGenres, topArtists } });
+  } catch (err) {
+    console.error('Recommendation error:', err.message);
+    res.status(500).json({ error: 'Failed to generate recommendations' });
+  }
+});
+
+// ── Feature F3: Automated Email Digest Generation ────────────────────────────
+
+// POST /api/digests/generate — generate a personalized email digest for a user
+app.post('/api/digests/generate', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { userId, digestType } = req.body;
+    const validTypes = ['daily', 'weekly', 'monthly'];
+    if (!userId || !digestType || !validTypes.includes(digestType)) {
+      return res.status(400).json({ error: `userId and digestType (${validTypes.join('/')}) required` });
+    }
+
+    const periodDays = digestType === 'daily' ? 1 : digestType === 'weekly' ? 7 : 30;
+    const since = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString();
+
+    const [newListings, priceDrops, wishlistMatches] = await Promise.all([
+      pool.query(
+        `SELECT r.* FROM records r
+         JOIN (SELECT DISTINCT genre FROM likes l JOIN records r2 ON r2.id = l.record_id WHERE l.user_id = $1) ug ON ug.genre = r.genre
+         WHERE r.created_at >= $2 AND r.for_sale = true ORDER BY r.created_at DESC LIMIT 10`,
+        [userId, since]
+      ),
+      pool.query(
+        `SELECT r.* FROM records r
+         JOIN saves s ON s.record_id = r.id AND s.user_id = $1
+         WHERE r.updated_at >= $2 ORDER BY r.updated_at DESC LIMIT 10`,
+        [userId, since]
+      ),
+      pool.query(
+        `SELECT r.* FROM records r
+         JOIN wishlist w ON (LOWER(r.artist) = LOWER(w.artist) OR LOWER(r.title) = LOWER(w.title)) AND w.user_id = $1
+         WHERE r.created_at >= $2 AND r.for_sale = true LIMIT 10`,
+        [userId, since]
+      ),
+    ]);
+
+    const digest = {
+      userId,
+      digestType,
+      generatedAt: new Date().toISOString(),
+      period: { from: since, to: new Date().toISOString() },
+      sections: {
+        newListings: newListings.rows,
+        priceDrops: priceDrops.rows,
+        wishlistMatches: wishlistMatches.rows,
+      },
+      totalItems: newListings.rows.length + priceDrops.rows.length + wishlistMatches.rows.length,
+    };
+
+    await pool.query(
+      'INSERT INTO email_digests (user_id, digest_type, content, created_at) VALUES ($1, $2, $3, now())',
+      [userId, digestType, JSON.stringify(digest)]
+    );
+
+    res.json({ success: true, digest });
+  } catch (err) {
+    console.error('Digest generation error:', err.message);
+    res.status(500).json({ error: 'Failed to generate digest' });
+  }
+});
+
+// ── Feature F4: Platform Metrics Dashboard ───────────────────────────────────
+
+// GET /api/platform/metrics — comprehensive platform metrics
+app.get('/api/platform/metrics', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const [users, records, sales, activity] = await Promise.all([
+      pool.query(`SELECT COUNT(*) as total_users,
+        COUNT(*) FILTER (WHERE created_at >= now() - interval '7 days') as new_users_7d,
+        COUNT(*) FILTER (WHERE created_at >= now() - interval '30 days') as new_users_30d
+        FROM users`),
+      pool.query(`SELECT COUNT(*) as total_records,
+        COUNT(*) FILTER (WHERE for_sale = true) as for_sale,
+        COALESCE(AVG(price) FILTER (WHERE for_sale = true), 0) as avg_price,
+        COUNT(DISTINCT genre) as genre_count
+        FROM records`),
+      pool.query(`SELECT COUNT(*) as total_sales,
+        COALESCE(SUM(amount), 0) as total_gmv,
+        COALESCE(SUM(platform_fee), 0) as total_fees
+        FROM purchases WHERE status IN ('completed', 'paid')`),
+      pool.query(`SELECT
+        (SELECT COUNT(*) FROM likes WHERE created_at >= now() - interval '24 hours') as likes_24h,
+        (SELECT COUNT(*) FROM saves WHERE created_at >= now() - interval '24 hours') as saves_24h,
+        (SELECT COUNT(*) FROM records WHERE created_at >= now() - interval '24 hours') as listings_24h`),
+    ]);
+
+    res.json({
+      success: true,
+      metrics: {
+        users: users.rows[0],
+        records: records.rows[0],
+        sales: sales.rows[0],
+        activity: activity.rows[0],
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Platform metrics error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch platform metrics' });
+  }
+});
+
+// ── Feature F5: A/B Test Configuration ───────────────────────────────────────
+
+const abTests = new Map(); // testId -> { name, variants, allocation, status, createdAt, results }
+
+// POST /api/ab-tests — create a new A/B test
+app.post('/api/ab-tests', authMiddleware, (req, res) => {
+  try {
+    const { name, description, variants, allocationPercent } = req.body;
+    if (!name || !variants || !Array.isArray(variants) || variants.length < 2) {
+      return res.status(400).json({ error: 'name and variants (array with 2+ items) required' });
+    }
+
+    const testId = crypto.randomUUID();
+    const test = {
+      id: testId,
+      name,
+      description: description || '',
+      variants: variants.map((v, i) => ({
+        id: `variant_${i}`,
+        name: v.name || `Variant ${String.fromCharCode(65 + i)}`,
+        weight: v.weight || Math.floor(100 / variants.length),
+        impressions: 0,
+        conversions: 0,
+      })),
+      allocationPercent: allocationPercent || 100,
+      status: 'draft',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    abTests.set(testId, test);
+    res.status(201).json({ success: true, test });
+  } catch (err) {
+    console.error('Create A/B test error:', err.message);
+    res.status(500).json({ error: 'Failed to create A/B test' });
+  }
+});
+
+// GET /api/ab-tests — list all A/B tests
+app.get('/api/ab-tests', authMiddleware, (req, res) => {
+  const status = req.query.status;
+  let tests = Array.from(abTests.values());
+  if (status) tests = tests.filter(t => t.status === status);
+  res.json({ success: true, tests, total: tests.length });
+});
+
+// POST /api/ab-tests/:id/activate — activate an A/B test
+app.post('/api/ab-tests/:id/activate', authMiddleware, (req, res) => {
+  const test = abTests.get(req.params.id);
+  if (!test) return res.status(404).json({ error: 'A/B test not found' });
+  test.status = 'active';
+  test.activatedAt = new Date().toISOString();
+  test.updatedAt = new Date().toISOString();
+  res.json({ success: true, test });
+});
+
+// POST /api/ab-tests/:id/record — record an impression or conversion
+app.post('/api/ab-tests/:id/record', (req, res) => {
+  const test = abTests.get(req.params.id);
+  if (!test || test.status !== 'active') return res.status(404).json({ error: 'Active A/B test not found' });
+  const { variantId, eventType } = req.body;
+  if (!variantId || !['impression', 'conversion'].includes(eventType)) {
+    return res.status(400).json({ error: 'variantId and eventType (impression/conversion) required' });
+  }
+  const variant = test.variants.find(v => v.id === variantId);
+  if (!variant) return res.status(404).json({ error: 'Variant not found' });
+  if (eventType === 'impression') variant.impressions++;
+  else variant.conversions++;
+  test.updatedAt = new Date().toISOString();
+  res.json({ success: true, variant });
+});
+
+// ── Feature F6: Feature Flags Management ─────────────────────────────────────
+
+const featureFlags = new Map(); // flagKey -> { key, enabled, rolloutPercent, rules, updatedAt }
+
+// GET /api/feature-flags — list all feature flags
+app.get('/api/feature-flags', authMiddleware, (req, res) => {
+  const flags = Array.from(featureFlags.values());
+  res.json({ success: true, flags, total: flags.length });
+});
+
+// POST /api/feature-flags — create or update a feature flag
+app.post('/api/feature-flags', authMiddleware, (req, res) => {
+  try {
+    const { key, enabled, rolloutPercent, description, rules } = req.body;
+    if (!key || typeof key !== 'string') return res.status(400).json({ error: 'key (string) required' });
+
+    const existing = featureFlags.get(key);
+    const flag = {
+      key,
+      enabled: typeof enabled === 'boolean' ? enabled : existing?.enabled ?? false,
+      rolloutPercent: typeof rolloutPercent === 'number' ? Math.min(100, Math.max(0, rolloutPercent)) : existing?.rolloutPercent ?? 100,
+      description: description || existing?.description || '',
+      rules: rules || existing?.rules || [],
+      createdAt: existing?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    featureFlags.set(key, flag);
+    res.json({ success: true, flag, action: existing ? 'updated' : 'created' });
+  } catch (err) {
+    console.error('Feature flag error:', err.message);
+    res.status(500).json({ error: 'Failed to set feature flag' });
+  }
+});
+
+// GET /api/feature-flags/evaluate — evaluate flags for a user
+app.get('/api/feature-flags/evaluate', (req, res) => {
+  const userId = req.query.userId;
+  if (!userId) return res.status(400).json({ error: 'userId query param required' });
+
+  const evaluated = {};
+  for (const [key, flag] of featureFlags) {
+    if (!flag.enabled) {
+      evaluated[key] = false;
+      continue;
+    }
+    // Simple hash-based rollout
+    const hash = parseInt(crypto.createHash('md5').update(`${key}:${userId}`).digest('hex').slice(0, 8), 16);
+    evaluated[key] = (hash % 100) < flag.rolloutPercent;
+  }
+  res.json({ success: true, userId, flags: evaluated });
+});
+
+// ── Feature F7: User Segmentation ────────────────────────────────────────────
+
+// POST /api/segments — create a user segment based on criteria
+app.post('/api/segments', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { name, criteria } = req.body;
+    if (!name || !criteria) return res.status(400).json({ error: 'name and criteria required' });
+
+    const validCriteria = ['min_purchases', 'min_listings', 'genre_preference', 'signup_after', 'min_engagement_score', 'has_verified_records'];
+    const conditions = [];
+    const params = [];
+    let paramIdx = 1;
+
+    if (criteria.min_purchases) {
+      conditions.push(`(SELECT COUNT(*) FROM purchases WHERE buyer_id = u.id) >= $${paramIdx}`);
+      params.push(criteria.min_purchases);
+      paramIdx++;
+    }
+    if (criteria.min_listings) {
+      conditions.push(`(SELECT COUNT(*) FROM records WHERE user_id = u.id AND for_sale = true) >= $${paramIdx}`);
+      params.push(criteria.min_listings);
+      paramIdx++;
+    }
+    if (criteria.signup_after) {
+      conditions.push(`u.created_at >= $${paramIdx}`);
+      params.push(criteria.signup_after);
+      paramIdx++;
+    }
+    if (criteria.genre_preference) {
+      conditions.push(`EXISTS (SELECT 1 FROM records r JOIN likes l ON l.record_id = r.id WHERE l.user_id = u.id AND r.genre = $${paramIdx})`);
+      params.push(criteria.genre_preference);
+      paramIdx++;
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const result = await pool.query(`SELECT u.id, u.username, u.email, u.created_at FROM users u ${whereClause} ORDER BY u.created_at DESC`, params);
+
+    res.json({
+      success: true,
+      segment: { name, criteria, userCount: result.rows.length, users: result.rows },
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('User segmentation error:', err.message);
+    res.status(500).json({ error: 'Failed to create segment' });
+  }
+});
+
+// ── Feature F8: Automated Fraud Detection Scoring ────────────────────────────
+
+// GET /api/users/:id/fraud-score — compute a fraud risk score for a user
+app.get('/api/users/:id/fraud-score', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const userId = parseInt(req.params.id);
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [disputes, rapidListings, duplicateListings, accountAge] = await Promise.all([
+      pool.query('SELECT COUNT(*) as cnt FROM transaction_disputes WHERE (buyer_id = $1 OR seller_id = $1)', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM records WHERE user_id = $1 AND created_at >= $2', [userId, sevenDaysAgo]),
+      pool.query(
+        `SELECT COUNT(*) as cnt FROM (
+           SELECT title, artist, COUNT(*) as dupes FROM records WHERE user_id = $1 AND for_sale = true
+           GROUP BY title, artist HAVING COUNT(*) > 1
+         ) d`,
+        [userId]
+      ),
+      pool.query('SELECT created_at FROM users WHERE id = $1', [userId]),
+    ]);
+
+    if (accountAge.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+
+    const accountAgeDays = Math.floor((Date.now() - new Date(accountAge.rows[0].created_at).getTime()) / (24 * 60 * 60 * 1000));
+    const signals = [];
+    let riskScore = 0;
+
+    const disputeCount = parseInt(disputes.rows[0].cnt);
+    if (disputeCount >= 5) { riskScore += 30; signals.push('high_dispute_count'); }
+    else if (disputeCount >= 2) { riskScore += 15; signals.push('moderate_dispute_count'); }
+
+    const rapidCount = parseInt(rapidListings.rows[0].cnt);
+    if (rapidCount >= 50) { riskScore += 25; signals.push('rapid_listing_activity'); }
+    else if (rapidCount >= 20) { riskScore += 10; signals.push('elevated_listing_activity'); }
+
+    const dupeCount = parseInt(duplicateListings.rows[0].cnt);
+    if (dupeCount >= 5) { riskScore += 20; signals.push('duplicate_listings'); }
+
+    if (accountAgeDays < 7) { riskScore += 15; signals.push('new_account'); }
+    else if (accountAgeDays < 30) { riskScore += 5; signals.push('recent_account'); }
+
+    riskScore = Math.min(100, riskScore);
+    const riskLevel = riskScore >= 70 ? 'high' : riskScore >= 40 ? 'medium' : 'low';
+
+    res.json({
+      success: true,
+      userId,
+      riskScore,
+      riskLevel,
+      signals,
+      details: { disputeCount, rapidListings: rapidCount, duplicateListings: dupeCount, accountAgeDays },
+    });
+  } catch (err) {
+    console.error('Fraud score error:', err.message);
+    res.status(500).json({ error: 'Failed to compute fraud score' });
+  }
+});
+
+// ── Feature F9: Content Quality Scoring ──────────────────────────────────────
+
+// GET /api/records/:id/quality-score — compute listing quality score
+app.get('/api/records/:id/quality-score', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const recordId = parseInt(req.params.id);
+    const record = await pool.query('SELECT * FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+
+    const r = record.rows[0];
+    let score = 0;
+    const breakdown = {};
+
+    // Title completeness
+    breakdown.title = r.title && r.title.length > 2 ? 15 : 0;
+    score += breakdown.title;
+
+    // Artist info
+    breakdown.artist = r.artist && r.artist.length > 1 ? 15 : 0;
+    score += breakdown.artist;
+
+    // Genre specified
+    breakdown.genre = r.genre ? 10 : 0;
+    score += breakdown.genre;
+
+    // Year specified
+    breakdown.year = r.year && r.year > 1900 ? 10 : 0;
+    score += breakdown.year;
+
+    // Condition specified
+    breakdown.condition = r.condition ? 10 : 0;
+    score += breakdown.condition;
+
+    // Has description
+    breakdown.description = r.description && r.description.length >= 20 ? 15 : r.description ? 5 : 0;
+    score += breakdown.description;
+
+    // Has image
+    breakdown.image = r.image_url ? 15 : 0;
+    score += breakdown.image;
+
+    // Price set for sale items
+    breakdown.price = r.for_sale && r.price > 0 ? 10 : !r.for_sale ? 10 : 0;
+    score += breakdown.price;
+
+    const rating = score >= 80 ? 'excellent' : score >= 60 ? 'good' : score >= 40 ? 'fair' : 'poor';
+    const suggestions = [];
+    if (!breakdown.description || breakdown.description < 15) suggestions.push('Add a detailed description (20+ characters)');
+    if (!breakdown.image) suggestions.push('Upload a photo of the record');
+    if (!breakdown.genre) suggestions.push('Specify the genre');
+    if (!breakdown.year) suggestions.push('Add the release year');
+    if (!breakdown.condition) suggestions.push('Set the condition grade');
+
+    res.json({ success: true, recordId, score, rating, breakdown, suggestions });
+  } catch (err) {
+    console.error('Quality score error:', err.message);
+    res.status(500).json({ error: 'Failed to compute quality score' });
+  }
+});
+
+// ── Feature F10: Search Ranking Optimization ─────────────────────────────────
+
+// POST /api/search/ranked — search records with relevance ranking
+app.post('/api/search/ranked', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { query, genre, minPrice, maxPrice, condition, sortBy, limit: rawLimit } = req.body;
+    if (!query) return res.status(400).json({ error: 'query required' });
+
+    const searchLimit = Math.min(parseInt(rawLimit) || 30, 100);
+    const params = [`%${query.toLowerCase()}%`];
+    let paramIdx = 2;
+    const conditions = [`(LOWER(r.title) LIKE $1 OR LOWER(r.artist) LIKE $1 OR LOWER(r.album) LIKE $1)`];
+
+    if (genre) { conditions.push(`r.genre = $${paramIdx}`); params.push(genre); paramIdx++; }
+    if (minPrice) { conditions.push(`r.price >= $${paramIdx}`); params.push(minPrice); paramIdx++; }
+    if (maxPrice) { conditions.push(`r.price <= $${paramIdx}`); params.push(maxPrice); paramIdx++; }
+    if (condition) { conditions.push(`r.condition = $${paramIdx}`); params.push(condition); paramIdx++; }
+
+    const validSorts = {
+      relevance: `CASE WHEN LOWER(r.title) = $1 THEN 0 WHEN LOWER(r.title) LIKE $1 THEN 1 ELSE 2 END, like_count DESC`,
+      price_asc: 'r.price ASC NULLS LAST',
+      price_desc: 'r.price DESC NULLS LAST',
+      newest: 'r.created_at DESC',
+      popular: 'like_count DESC',
+    };
+    const orderBy = validSorts[sortBy] || validSorts.relevance;
+
+    const result = await pool.query(
+      `SELECT r.*, COALESCE(lc.cnt, 0) as like_count, COALESCE(sc.cnt, 0) as save_count
+       FROM records r
+       LEFT JOIN (SELECT record_id, COUNT(*) as cnt FROM likes GROUP BY record_id) lc ON lc.record_id = r.id
+       LEFT JOIN (SELECT record_id, COUNT(*) as cnt FROM saves GROUP BY record_id) sc ON sc.record_id = r.id
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY ${orderBy}
+       LIMIT $${paramIdx}`,
+      [...params, searchLimit]
+    );
+
+    res.json({ success: true, query, results: result.rows, total: result.rows.length });
+  } catch (err) {
+    console.error('Ranked search error:', err.message);
+    res.status(500).json({ error: 'Failed to perform ranked search' });
+  }
+});
+
+// ── Feature F11: User Onboarding Progress Tracking ───────────────────────────
+
+const onboardingSteps = [
+  { key: 'profile_complete', label: 'Complete your profile', weight: 15 },
+  { key: 'first_record_added', label: 'Add your first record', weight: 20 },
+  { key: 'first_like', label: 'Like a record', weight: 10 },
+  { key: 'first_save', label: 'Save a record', weight: 10 },
+  { key: 'first_purchase', label: 'Make your first purchase', weight: 20 },
+  { key: 'vinyl_buddy_paired', label: 'Pair a Vinyl Buddy device', weight: 15 },
+  { key: 'first_verification', label: 'Verify a record', weight: 10 },
+];
+
+// GET /api/users/:id/onboarding — get onboarding progress
+app.get('/api/users/:id/onboarding', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const userId = parseInt(req.params.id);
+
+    const [user, records, likes, saves, purchases, verifications] = await Promise.all([
+      pool.query('SELECT id, username, email, bio, avatar_url FROM users WHERE id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM records WHERE user_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM likes WHERE user_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM saves WHERE user_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM purchases WHERE buyer_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM records WHERE user_id = $1 AND verified = true', [userId]),
+    ]);
+
+    if (user.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const u = user.rows[0];
+
+    const completed = {
+      profile_complete: !!(u.bio && u.avatar_url),
+      first_record_added: parseInt(records.rows[0].cnt) > 0,
+      first_like: parseInt(likes.rows[0].cnt) > 0,
+      first_save: parseInt(saves.rows[0].cnt) > 0,
+      first_purchase: parseInt(purchases.rows[0].cnt) > 0,
+      vinyl_buddy_paired: [...pairedDevices.values()].some(d => d.username === u.username),
+      first_verification: parseInt(verifications.rows[0].cnt) > 0,
+    };
+
+    const steps = onboardingSteps.map(step => ({ ...step, completed: !!completed[step.key] }));
+    const totalWeight = steps.reduce((acc, s) => acc + s.weight, 0);
+    const completedWeight = steps.filter(s => s.completed).reduce((acc, s) => acc + s.weight, 0);
+    const progressPercent = Math.round((completedWeight / totalWeight) * 100);
+
+    res.json({ success: true, userId, progressPercent, steps, nextStep: steps.find(s => !s.completed) || null });
+  } catch (err) {
+    console.error('Onboarding progress error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch onboarding progress' });
+  }
+});
+
+// ── Feature F12: Gamification — Badges and Achievements ──────────────────────
+
+const badgeDefinitions = [
+  { id: 'first_record', name: 'First Spin', description: 'Added your first record', icon: 'vinyl', criteria: { records_min: 1 } },
+  { id: 'collector_10', name: 'Crate Digger', description: 'Collected 10 records', icon: 'crate', criteria: { records_min: 10 } },
+  { id: 'collector_50', name: 'Vinyl Vault', description: 'Collected 50 records', icon: 'vault', criteria: { records_min: 50 } },
+  { id: 'collector_100', name: 'Vinyl Hoarder', description: 'Collected 100 records', icon: 'hoard', criteria: { records_min: 100 } },
+  { id: 'seller_first', name: 'Open for Business', description: 'Made your first sale', icon: 'shop', criteria: { sales_min: 1 } },
+  { id: 'seller_10', name: 'Record Dealer', description: '10 sales completed', icon: 'deal', criteria: { sales_min: 10 } },
+  { id: 'social_butterfly', name: 'Social Butterfly', description: 'Liked 25 records', icon: 'heart', criteria: { likes_min: 25 } },
+  { id: 'verified_collector', name: 'Verified Collector', description: 'Verified 5 records', icon: 'check', criteria: { verifications_min: 5 } },
+  { id: 'genre_explorer', name: 'Genre Explorer', description: 'Collected records in 5+ genres', icon: 'compass', criteria: { genres_min: 5 } },
+  { id: 'early_adopter', name: 'Early Adopter', description: 'Joined within the first month', icon: 'star', criteria: { early_adopter: true } },
+];
+
+// GET /api/users/:id/badges — get earned badges
+app.get('/api/users/:id/badges', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const userId = parseInt(req.params.id);
+
+    const [records, sales, likes, verifications, genres, user] = await Promise.all([
+      pool.query('SELECT COUNT(*) as cnt FROM records WHERE user_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM purchases WHERE seller_id = $1 AND status = \'completed\'', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM likes WHERE user_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM records WHERE user_id = $1 AND verified = true', [userId]),
+      pool.query('SELECT COUNT(DISTINCT genre) as cnt FROM records WHERE user_id = $1 AND genre IS NOT NULL', [userId]),
+      pool.query('SELECT created_at FROM users WHERE id = $1', [userId]),
+    ]);
+
+    if (user.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+
+    const stats = {
+      records: parseInt(records.rows[0].cnt),
+      sales: parseInt(sales.rows[0].cnt),
+      likes: parseInt(likes.rows[0].cnt),
+      verifications: parseInt(verifications.rows[0].cnt),
+      genres: parseInt(genres.rows[0].cnt),
+      accountAgeDays: Math.floor((Date.now() - new Date(user.rows[0].created_at).getTime()) / (24 * 60 * 60 * 1000)),
+    };
+
+    const earned = badgeDefinitions.filter(badge => {
+      const c = badge.criteria;
+      if (c.records_min && stats.records < c.records_min) return false;
+      if (c.sales_min && stats.sales < c.sales_min) return false;
+      if (c.likes_min && stats.likes < c.likes_min) return false;
+      if (c.verifications_min && stats.verifications < c.verifications_min) return false;
+      if (c.genres_min && stats.genres < c.genres_min) return false;
+      if (c.early_adopter && stats.accountAgeDays > 30) return false;
+      return true;
+    });
+
+    res.json({ success: true, userId, badges: earned, totalAvailable: badgeDefinitions.length, stats });
+  } catch (err) {
+    console.error('Badges error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch badges' });
+  }
+});
+
+// ── Feature F13: Leaderboard Endpoints ───────────────────────────────────────
+
+// GET /api/leaderboards/:type — get leaderboard by type
+app.get('/api/leaderboards/:type', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const type = req.params.type;
+    const limit = Math.min(parseInt(req.query.limit) || 25, 100);
+    const period = req.query.period || '30d';
+    const periodDays = period === '7d' ? 7 : period === '30d' ? 30 : period === 'all' ? 99999 : 30;
+    const since = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString();
+
+    let query;
+    switch (type) {
+      case 'top-sellers':
+        query = await pool.query(
+          `SELECT u.id, u.username, COUNT(p.id) as sales_count, COALESCE(SUM(p.amount), 0) as total_volume
+           FROM users u JOIN purchases p ON p.seller_id = u.id
+           WHERE p.status IN ('completed', 'paid') AND p.created_at >= $1
+           GROUP BY u.id, u.username ORDER BY total_volume DESC LIMIT $2`,
+          [since, limit]
+        );
+        break;
+      case 'top-collectors':
+        query = await pool.query(
+          `SELECT u.id, u.username, COUNT(r.id) as collection_size, COUNT(DISTINCT r.genre) as genre_diversity
+           FROM users u JOIN records r ON r.user_id = u.id
+           GROUP BY u.id, u.username ORDER BY collection_size DESC LIMIT $1`,
+          [limit]
+        );
+        break;
+      case 'top-liked':
+        query = await pool.query(
+          `SELECT r.id, r.title, r.artist, u.username as owner, COUNT(l.id) as like_count
+           FROM records r JOIN likes l ON l.record_id = r.id JOIN users u ON u.id = r.user_id
+           WHERE l.created_at >= $1
+           GROUP BY r.id, r.title, r.artist, u.username ORDER BY like_count DESC LIMIT $2`,
+          [since, limit]
+        );
+        break;
+      case 'most-active':
+        query = await pool.query(
+          `SELECT u.id, u.username,
+             (SELECT COUNT(*) FROM likes WHERE user_id = u.id AND created_at >= $1) as likes,
+             (SELECT COUNT(*) FROM saves WHERE user_id = u.id AND created_at >= $1) as saves,
+             (SELECT COUNT(*) FROM records WHERE user_id = u.id AND created_at >= $1) as listings
+           FROM users u ORDER BY (
+             (SELECT COUNT(*) FROM likes WHERE user_id = u.id AND created_at >= $1) +
+             (SELECT COUNT(*) FROM saves WHERE user_id = u.id AND created_at >= $1) +
+             (SELECT COUNT(*) FROM records WHERE user_id = u.id AND created_at >= $1)
+           ) DESC LIMIT $2`,
+          [since, limit]
+        );
+        break;
+      default:
+        return res.status(400).json({ error: 'Invalid type. Use: top-sellers, top-collectors, top-liked, most-active' });
+    }
+
+    res.json({ success: true, type, period, entries: query.rows, total: query.rows.length });
+  } catch (err) {
+    console.error('Leaderboard error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch leaderboard' });
+  }
+});
+
+// ── Feature F14: Seasonal/Holiday Sale Scheduling ────────────────────────────
+
+const scheduledSales = new Map(); // saleId -> sale config
+
+// POST /api/sales/schedule — schedule a seasonal sale
+app.post('/api/sales/schedule', authMiddleware, (req, res) => {
+  try {
+    const { name, discountPercent, startDate, endDate, genres, minPrice, maxDiscount, bannerText } = req.body;
+    if (!name || !discountPercent || !startDate || !endDate) {
+      return res.status(400).json({ error: 'name, discountPercent, startDate, and endDate required' });
+    }
+    if (new Date(startDate) >= new Date(endDate)) {
+      return res.status(400).json({ error: 'startDate must be before endDate' });
+    }
+
+    const saleId = crypto.randomUUID();
+    const sale = {
+      id: saleId,
+      name,
+      discountPercent: Math.min(90, Math.max(1, discountPercent)),
+      startDate,
+      endDate,
+      genres: genres || [],
+      minPrice: minPrice || 0,
+      maxDiscount: maxDiscount || null,
+      bannerText: bannerText || `${name} — ${discountPercent}% OFF!`,
+      status: new Date() >= new Date(startDate) && new Date() <= new Date(endDate) ? 'active' : 'scheduled',
+      createdBy: req.user.id,
+      createdAt: new Date().toISOString(),
+    };
+
+    scheduledSales.set(saleId, sale);
+    res.status(201).json({ success: true, sale });
+  } catch (err) {
+    console.error('Schedule sale error:', err.message);
+    res.status(500).json({ error: 'Failed to schedule sale' });
+  }
+});
+
+// GET /api/sales/active — get currently active sales
+app.get('/api/sales/active', (req, res) => {
+  const now = new Date();
+  const active = Array.from(scheduledSales.values()).filter(
+    s => new Date(s.startDate) <= now && new Date(s.endDate) >= now
+  );
+  res.json({ success: true, activeSales: active, total: active.length });
+});
+
+// GET /api/sales — list all scheduled sales
+app.get('/api/sales', authMiddleware, (req, res) => {
+  const sales = Array.from(scheduledSales.values()).sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+  res.json({ success: true, sales, total: sales.length });
+});
+
+// ── Feature F15: Gift Card Creation and Redemption ───────────────────────────
+
+const giftCards = new Map(); // code -> { code, originalAmount, balance, purchasedBy, redeemedBy, status, ... }
+
+// POST /api/gift-cards — create a gift card
+app.post('/api/gift-cards', authMiddleware, (req, res) => {
+  try {
+    const { amount, recipientEmail, message } = req.body;
+    if (!amount || amount < 5 || amount > 500) {
+      return res.status(400).json({ error: 'amount required ($5–$500)' });
+    }
+
+    const code = `GS-${crypto.randomBytes(4).toString('hex').toUpperCase()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    const card = {
+      code,
+      originalAmount: Math.round(amount * 100) / 100,
+      balance: Math.round(amount * 100) / 100,
+      purchasedBy: req.user.id,
+      recipientEmail: recipientEmail || null,
+      message: message || '',
+      status: 'active',
+      createdAt: new Date().toISOString(),
+      transactions: [],
+    };
+
+    giftCards.set(code, card);
+    res.status(201).json({ success: true, giftCard: card });
+  } catch (err) {
+    console.error('Gift card creation error:', err.message);
+    res.status(500).json({ error: 'Failed to create gift card' });
+  }
+});
+
+// POST /api/gift-cards/redeem — redeem a gift card
+app.post('/api/gift-cards/redeem', authMiddleware, (req, res) => {
+  try {
+    const { code, amount } = req.body;
+    if (!code) return res.status(400).json({ error: 'Gift card code required' });
+
+    const card = giftCards.get(code.toUpperCase());
+    if (!card) return res.status(404).json({ error: 'Gift card not found' });
+    if (card.status !== 'active') return res.status(400).json({ error: `Gift card is ${card.status}` });
+
+    const redeemAmount = amount ? Math.min(amount, card.balance) : card.balance;
+    if (redeemAmount <= 0) return res.status(400).json({ error: 'Gift card has no remaining balance' });
+
+    card.balance = Math.round((card.balance - redeemAmount) * 100) / 100;
+    card.transactions.push({ type: 'redeem', amount: redeemAmount, userId: req.user.id, at: new Date().toISOString() });
+    if (card.balance <= 0) card.status = 'depleted';
+    card.redeemedBy = req.user.id;
+
+    res.json({ success: true, amountRedeemed: redeemAmount, remainingBalance: card.balance, status: card.status });
+  } catch (err) {
+    console.error('Gift card redeem error:', err.message);
+    res.status(500).json({ error: 'Failed to redeem gift card' });
+  }
+});
+
+// GET /api/gift-cards/:code — check gift card balance
+app.get('/api/gift-cards/:code', (req, res) => {
+  const card = giftCards.get(req.params.code.toUpperCase());
+  if (!card) return res.status(404).json({ error: 'Gift card not found' });
+  res.json({ success: true, code: card.code, balance: card.balance, status: card.status, originalAmount: card.originalAmount });
+});
+
+// ── Feature F16: Affiliate Program Tracking ──────────────────────────────────
+
+const affiliates = new Map(); // affiliateId -> { userId, code, commissionRate, earnings, referrals }
+
+// POST /api/affiliates/register — register as an affiliate
+app.post('/api/affiliates/register', authMiddleware, (req, res) => {
+  try {
+    const existing = Array.from(affiliates.values()).find(a => a.userId === req.user.id);
+    if (existing) return res.status(409).json({ error: 'Already registered as affiliate', affiliate: existing });
+
+    const affiliateId = crypto.randomUUID();
+    const code = `GS-${req.user.username?.slice(0, 6).toUpperCase() || 'REF'}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+    const affiliate = {
+      id: affiliateId,
+      userId: req.user.id,
+      code,
+      commissionRate: 0.05, // 5% default
+      totalEarnings: 0,
+      pendingEarnings: 0,
+      referrals: [],
+      clicks: 0,
+      conversions: 0,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+    };
+
+    affiliates.set(affiliateId, affiliate);
+    res.status(201).json({ success: true, affiliate });
+  } catch (err) {
+    console.error('Affiliate register error:', err.message);
+    res.status(500).json({ error: 'Failed to register affiliate' });
+  }
+});
+
+// POST /api/affiliates/track — track a referral click or conversion
+app.post('/api/affiliates/track', (req, res) => {
+  try {
+    const { code, eventType, orderId, orderAmount } = req.body;
+    if (!code || !eventType) return res.status(400).json({ error: 'code and eventType required' });
+
+    const affiliate = Array.from(affiliates.values()).find(a => a.code === code.toUpperCase());
+    if (!affiliate) return res.status(404).json({ error: 'Affiliate code not found' });
+
+    if (eventType === 'click') {
+      affiliate.clicks++;
+    } else if (eventType === 'conversion' && orderId && orderAmount) {
+      const commission = Math.round(orderAmount * affiliate.commissionRate * 100) / 100;
+      affiliate.conversions++;
+      affiliate.pendingEarnings = Math.round((affiliate.pendingEarnings + commission) * 100) / 100;
+      affiliate.totalEarnings = Math.round((affiliate.totalEarnings + commission) * 100) / 100;
+      affiliate.referrals.push({ orderId, orderAmount, commission, at: new Date().toISOString() });
+    } else {
+      return res.status(400).json({ error: 'Invalid eventType or missing orderId/orderAmount for conversion' });
+    }
+
+    res.json({ success: true, tracked: eventType, affiliateCode: affiliate.code });
+  } catch (err) {
+    console.error('Affiliate track error:', err.message);
+    res.status(500).json({ error: 'Failed to track affiliate event' });
+  }
+});
+
+// GET /api/affiliates/dashboard — get affiliate dashboard
+app.get('/api/affiliates/dashboard', authMiddleware, (req, res) => {
+  const affiliate = Array.from(affiliates.values()).find(a => a.userId === req.user.id);
+  if (!affiliate) return res.status(404).json({ error: 'Not registered as affiliate' });
+
+  const conversionRate = affiliate.clicks > 0 ? Math.round((affiliate.conversions / affiliate.clicks) * 100 * 100) / 100 : 0;
+  res.json({
+    success: true,
+    affiliate: { ...affiliate, conversionRate },
+  });
+});
+
+// ── Feature F17: Social Graph Analysis ───────────────────────────────────────
+
+// GET /api/users/:id/social-graph — analyze user connections and influence
+app.get('/api/users/:id/social-graph', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const userId = parseInt(req.params.id);
+
+    const [followers, following, mutuals, influence] = await Promise.all([
+      pool.query('SELECT COUNT(*) as cnt FROM follows WHERE followed_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM follows WHERE follower_id = $1', [userId]),
+      pool.query(
+        `SELECT COUNT(*) as cnt FROM follows f1
+         JOIN follows f2 ON f1.follower_id = f2.followed_id AND f1.followed_id = f2.follower_id
+         WHERE f1.follower_id = $1`,
+        [userId]
+      ),
+      pool.query(
+        `SELECT COALESCE(SUM(lc.cnt), 0) as total_likes_received FROM records r
+         JOIN (SELECT record_id, COUNT(*) as cnt FROM likes GROUP BY record_id) lc ON lc.record_id = r.id
+         WHERE r.user_id = $1`,
+        [userId]
+      ),
+    ]);
+
+    const followerCount = parseInt(followers.rows[0].cnt);
+    const followingCount = parseInt(following.rows[0].cnt);
+    const mutualCount = parseInt(mutuals.rows[0].cnt);
+    const totalLikesReceived = parseInt(influence.rows[0].total_likes_received);
+
+    // Influence score: combination of followers, engagement, and mutual connections
+    const influenceScore = Math.min(100, Math.round(
+      (followerCount * 2 + mutualCount * 3 + totalLikesReceived * 0.5) / 10
+    ));
+    const tier = influenceScore >= 80 ? 'influencer' : influenceScore >= 50 ? 'connector' : influenceScore >= 20 ? 'active' : 'newcomer';
+
+    res.json({
+      success: true,
+      userId,
+      graph: { followers: followerCount, following: followingCount, mutuals: mutualCount },
+      influence: { score: influenceScore, tier, totalLikesReceived },
+    });
+  } catch (err) {
+    console.error('Social graph error:', err.message);
+    res.status(500).json({ error: 'Failed to analyze social graph' });
+  }
+});
+
+// ── Feature F18: Content Recommendation Feed ─────────────────────────────────
+
+// GET /api/feed/personalized — get a personalized content feed
+app.get('/api/feed/personalized', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const userId = req.user.id;
+    const limit = Math.min(parseInt(req.query.limit) || 30, 50);
+    const offset = parseInt(req.query.offset) || 0;
+
+    // Blend: records from followed users + taste-matched + trending
+    const feed = await pool.query(
+      `(
+        SELECT r.*, 'following' as feed_source, u.username as owner_name, COALESCE(lc.cnt, 0) as like_count
+        FROM records r
+        JOIN follows f ON f.followed_id = r.user_id AND f.follower_id = $1
+        JOIN users u ON u.id = r.user_id
+        LEFT JOIN (SELECT record_id, COUNT(*) as cnt FROM likes GROUP BY record_id) lc ON lc.record_id = r.id
+        WHERE r.created_at >= now() - interval '14 days'
+        ORDER BY r.created_at DESC LIMIT $2
+      )
+      UNION ALL
+      (
+        SELECT r.*, 'trending' as feed_source, u.username as owner_name, COALESCE(lc.cnt, 0) as like_count
+        FROM records r
+        JOIN users u ON u.id = r.user_id
+        LEFT JOIN (SELECT record_id, COUNT(*) as cnt FROM likes WHERE created_at >= now() - interval '7 days' GROUP BY record_id) lc ON lc.record_id = r.id
+        WHERE r.user_id != $1 AND lc.cnt > 0
+        ORDER BY lc.cnt DESC LIMIT $2
+      )
+      ORDER BY feed_source, like_count DESC
+      LIMIT $2 OFFSET $3`,
+      [userId, limit, offset]
+    );
+
+    res.json({ success: true, feed: feed.rows, count: feed.rows.length, offset, limit });
+  } catch (err) {
+    console.error('Personalized feed error:', err.message);
+    res.status(500).json({ error: 'Failed to generate feed' });
+  }
+});
+
+// ── Feature F19: User Feedback/Survey Endpoints ──────────────────────────────
+
+const surveys = new Map(); // surveyId -> { title, questions, responses }
+
+// POST /api/surveys — create a survey
+app.post('/api/surveys', authMiddleware, (req, res) => {
+  try {
+    const { title, description, questions } = req.body;
+    if (!title || !questions || !Array.isArray(questions) || questions.length === 0) {
+      return res.status(400).json({ error: 'title and questions (non-empty array) required' });
+    }
+
+    const surveyId = crypto.randomUUID();
+    const survey = {
+      id: surveyId,
+      title,
+      description: description || '',
+      questions: questions.map((q, i) => ({
+        id: `q_${i}`,
+        text: q.text,
+        type: q.type || 'text', // text, rating, multiple_choice
+        options: q.options || [],
+        required: q.required !== false,
+      })),
+      status: 'active',
+      responseCount: 0,
+      createdAt: new Date().toISOString(),
+      createdBy: req.user.id,
+    };
+
+    surveys.set(surveyId, survey);
+    res.status(201).json({ success: true, survey });
+  } catch (err) {
+    console.error('Create survey error:', err.message);
+    res.status(500).json({ error: 'Failed to create survey' });
+  }
+});
+
+// POST /api/surveys/:id/respond — submit a survey response
+app.post('/api/surveys/:id/respond', authMiddleware, (req, res) => {
+  try {
+    const survey = surveys.get(req.params.id);
+    if (!survey) return res.status(404).json({ error: 'Survey not found' });
+    if (survey.status !== 'active') return res.status(400).json({ error: 'Survey is not active' });
+
+    const { answers } = req.body;
+    if (!answers || typeof answers !== 'object') return res.status(400).json({ error: 'answers object required' });
+
+    // Validate required questions
+    const missing = survey.questions.filter(q => q.required && !answers[q.id]);
+    if (missing.length > 0) {
+      return res.status(400).json({ error: `Missing required answers: ${missing.map(q => q.id).join(', ')}` });
+    }
+
+    if (!survey.responses) survey.responses = [];
+    survey.responses.push({ userId: req.user.id, answers, submittedAt: new Date().toISOString() });
+    survey.responseCount++;
+
+    res.json({ success: true, message: 'Response recorded', responseCount: survey.responseCount });
+  } catch (err) {
+    console.error('Survey response error:', err.message);
+    res.status(500).json({ error: 'Failed to submit response' });
+  }
+});
+
+// GET /api/surveys/:id/results — get survey results summary
+app.get('/api/surveys/:id/results', authMiddleware, (req, res) => {
+  const survey = surveys.get(req.params.id);
+  if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+  const summary = survey.questions.map(q => {
+    const allAnswers = (survey.responses || []).map(r => r.answers[q.id]).filter(Boolean);
+    if (q.type === 'rating') {
+      const nums = allAnswers.map(Number).filter(n => !isNaN(n));
+      return { questionId: q.id, text: q.text, type: q.type, avgRating: nums.length ? Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * 100) / 100 : null, count: nums.length };
+    }
+    if (q.type === 'multiple_choice') {
+      const freq = {};
+      allAnswers.forEach(a => { freq[a] = (freq[a] || 0) + 1; });
+      return { questionId: q.id, text: q.text, type: q.type, distribution: freq, count: allAnswers.length };
+    }
+    return { questionId: q.id, text: q.text, type: q.type, responses: allAnswers.length, sample: allAnswers.slice(0, 5) };
+  });
+
+  res.json({ success: true, surveyId: survey.id, title: survey.title, responseCount: survey.responseCount, summary });
+});
+
+// ── Feature F20: Platform Usage Analytics ────────────────────────────────────
+
+const analyticsEvents = []; // { event, userId, metadata, timestamp }
+const MAX_ANALYTICS_EVENTS = 10000;
+
+// POST /api/analytics/track — track a usage event
+app.post('/api/analytics/track', (req, res) => {
+  try {
+    const { event, userId, metadata } = req.body;
+    if (!event) return res.status(400).json({ error: 'event name required' });
+
+    analyticsEvents.unshift({
+      event,
+      userId: userId || null,
+      metadata: metadata || {},
+      timestamp: new Date().toISOString(),
+      ip: req.ip || 'unknown',
+      userAgent: req.headers['user-agent'] || '',
+    });
+    if (analyticsEvents.length > MAX_ANALYTICS_EVENTS) analyticsEvents.length = MAX_ANALYTICS_EVENTS;
+
+    res.json({ success: true, tracked: event });
+  } catch (err) {
+    console.error('Analytics track error:', err.message);
+    res.status(500).json({ error: 'Failed to track event' });
+  }
+});
+
+// GET /api/analytics/summary — get analytics summary
+app.get('/api/analytics/summary', authMiddleware, (req, res) => {
+  const hours = parseInt(req.query.hours) || 24;
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const recent = analyticsEvents.filter(e => e.timestamp >= since);
+
+  const eventCounts = {};
+  const uniqueUsers = new Set();
+  recent.forEach(e => {
+    eventCounts[e.event] = (eventCounts[e.event] || 0) + 1;
+    if (e.userId) uniqueUsers.add(e.userId);
+  });
+
+  const topEvents = Object.entries(eventCounts).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([event, count]) => ({ event, count }));
+
+  res.json({
+    success: true,
+    period: `${hours}h`,
+    totalEvents: recent.length,
+    uniqueUsers: uniqueUsers.size,
+    topEvents,
+    allEvents: eventCounts,
+  });
+});
+
+// ── Feature F21: Record Value Appraisal ──────────────────────────────────────
+
+// GET /api/records/:id/appraisal — estimate record market value
+app.get('/api/records/:id/appraisal', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const recordId = parseInt(req.params.id);
+    const record = await pool.query('SELECT * FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+
+    const r = record.rows[0];
+
+    // Find comparable sales
+    const comparables = await pool.query(
+      `SELECT r2.price, r2.condition, p.amount as sale_price, p.created_at as sold_at
+       FROM records r2
+       JOIN purchases p ON p.record_id = r2.id
+       WHERE (LOWER(r2.artist) = LOWER($1) OR LOWER(r2.title) = LOWER($2))
+         AND p.status IN ('completed', 'paid')
+       ORDER BY p.created_at DESC LIMIT 20`,
+      [r.artist, r.title]
+    );
+
+    // Condition multipliers
+    const conditionMultipliers = { 'Mint': 1.5, 'Near Mint': 1.3, 'Very Good Plus': 1.1, 'Very Good': 1.0, 'Good Plus': 0.8, 'Good': 0.6, 'Fair': 0.4, 'Poor': 0.2 };
+    const condMultiplier = conditionMultipliers[r.condition] || 1.0;
+
+    let estimatedValue;
+    let confidence;
+    let method;
+
+    if (comparables.rows.length >= 3) {
+      const avgSalePrice = comparables.rows.reduce((acc, c) => acc + parseFloat(c.sale_price), 0) / comparables.rows.length;
+      estimatedValue = Math.round(avgSalePrice * condMultiplier * 100) / 100;
+      confidence = Math.min(95, 50 + comparables.rows.length * 5);
+      method = 'comparable_sales';
+    } else if (r.price) {
+      estimatedValue = Math.round(parseFloat(r.price) * condMultiplier * 100) / 100;
+      confidence = 30;
+      method = 'listed_price_adjusted';
+    } else {
+      // Genre average fallback
+      const genreAvg = await pool.query(
+        'SELECT COALESCE(AVG(price), 15) as avg_price FROM records WHERE genre = $1 AND for_sale = true AND price > 0',
+        [r.genre || 'Unknown']
+      );
+      estimatedValue = Math.round(parseFloat(genreAvg.rows[0].avg_price) * condMultiplier * 100) / 100;
+      confidence = 15;
+      method = 'genre_average';
+    }
+
+    res.json({
+      success: true,
+      recordId,
+      appraisal: {
+        estimatedValue,
+        confidence,
+        method,
+        condition: r.condition,
+        conditionMultiplier: condMultiplier,
+        comparableSales: comparables.rows.length,
+        appraisedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Appraisal error:', err.message);
+    res.status(500).json({ error: 'Failed to appraise record' });
+  }
+});
+
+// ── Feature F22: Collection Insurance Quote ──────────────────────────────────
+
+// POST /api/collections/insurance-quote — generate insurance quote for a collection
+app.post('/api/collections/insurance-quote', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const userId = req.user.id;
+    const { coverageType } = req.body;
+    const validCoverage = ['basic', 'standard', 'premium'];
+    const coverage = validCoverage.includes(coverageType) ? coverageType : 'standard';
+
+    const collection = await pool.query(
+      `SELECT COUNT(*) as total_records,
+              COALESCE(SUM(price), 0) as total_value,
+              COALESCE(AVG(price), 0) as avg_value,
+              COALESCE(MAX(price), 0) as max_value
+       FROM records WHERE user_id = $1 AND price > 0`,
+      [userId]
+    );
+
+    const c = collection.rows[0];
+    const totalValue = parseFloat(c.total_value);
+    const totalRecords = parseInt(c.total_records);
+
+    if (totalRecords === 0) return res.status(400).json({ error: 'No priced records in collection' });
+
+    // Premium rates by coverage tier
+    const rates = { basic: 0.005, standard: 0.01, premium: 0.02 };
+    const deductibles = { basic: 500, standard: 250, premium: 0 };
+    const coverageLimits = { basic: 0.8, standard: 0.95, premium: 1.0 };
+
+    const annualPremium = Math.round(totalValue * rates[coverage] * 100) / 100;
+    const monthlyPremium = Math.round(annualPremium / 12 * 100) / 100;
+    const maxCoverage = Math.round(totalValue * coverageLimits[coverage] * 100) / 100;
+
+    res.json({
+      success: true,
+      quote: {
+        userId,
+        coverageType: coverage,
+        collectionSummary: { totalRecords, totalValue: Math.round(totalValue * 100) / 100, avgValue: Math.round(parseFloat(c.avg_value) * 100) / 100, maxValue: parseFloat(c.max_value) },
+        premium: { annual: annualPremium, monthly: monthlyPremium },
+        deductible: deductibles[coverage],
+        maxCoverage,
+        coveredPerils: coverage === 'basic' ? ['fire', 'theft'] : coverage === 'standard' ? ['fire', 'theft', 'water', 'accidental'] : ['fire', 'theft', 'water', 'accidental', 'transit', 'mysterious_disappearance'],
+        quoteValidUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Insurance quote error:', err.message);
+    res.status(500).json({ error: 'Failed to generate insurance quote' });
+  }
+});
+
+// ── Feature F23: Marketplace Trend Detection ─────────────────────────────────
+
+// GET /api/marketplace/trends — detect marketplace trends
+app.get('/api/marketplace/trends', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const [trendingGenres, risingArtists, priceMovers, hotSearches] = await Promise.all([
+      pool.query(
+        `SELECT r.genre, COUNT(l.id) as engagement,
+                COUNT(DISTINCT p.id) as sales,
+                COALESCE(AVG(r.price), 0) as avg_price
+         FROM records r
+         LEFT JOIN likes l ON l.record_id = r.id AND l.created_at >= now() - interval '7 days'
+         LEFT JOIN purchases p ON p.record_id = r.id AND p.created_at >= now() - interval '7 days'
+         WHERE r.genre IS NOT NULL
+         GROUP BY r.genre ORDER BY engagement DESC LIMIT 10`
+      ),
+      pool.query(
+        `SELECT r.artist, COUNT(l.id) as like_count, COUNT(DISTINCT r.id) as listings
+         FROM records r
+         JOIN likes l ON l.record_id = r.id AND l.created_at >= now() - interval '7 days'
+         GROUP BY r.artist ORDER BY like_count DESC LIMIT 10`
+      ),
+      pool.query(
+        `SELECT r.artist, r.title,
+                COALESCE(recent_avg.avg_price, 0) as recent_avg_price,
+                COALESCE(older_avg.avg_price, 0) as older_avg_price
+         FROM records r
+         LEFT JOIN LATERAL (
+           SELECT AVG(p.amount) as avg_price FROM purchases p WHERE p.record_id = r.id AND p.created_at >= now() - interval '30 days'
+         ) recent_avg ON true
+         LEFT JOIN LATERAL (
+           SELECT AVG(p.amount) as avg_price FROM purchases p WHERE p.record_id = r.id AND p.created_at < now() - interval '30 days'
+         ) older_avg ON true
+         WHERE recent_avg.avg_price > 0 AND older_avg.avg_price > 0
+         ORDER BY (recent_avg.avg_price - older_avg.avg_price) / NULLIF(older_avg.avg_price, 0) DESC
+         LIMIT 10`
+      ),
+      pool.query(
+        `SELECT genre as term, COUNT(*) as frequency FROM records
+         WHERE created_at >= now() - interval '7 days' AND genre IS NOT NULL
+         GROUP BY genre ORDER BY frequency DESC LIMIT 10`
+      ),
+    ]);
+
+    res.json({
+      success: true,
+      trends: {
+        trendingGenres: trendingGenres.rows,
+        risingArtists: risingArtists.rows,
+        priceMovers: priceMovers.rows,
+        hotSearchTerms: hotSearches.rows,
+        analyzedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Trend detection error:', err.message);
+    res.status(500).json({ error: 'Failed to detect trends' });
+  }
+});
+
+// ── Feature F24: User Preference Learning ────────────────────────────────────
+
+const userPreferences = new Map(); // userId -> { genres, artists, priceRange, conditions, ... }
+
+// POST /api/users/:id/preferences/learn — analyze behavior to learn preferences
+app.post('/api/users/:id/preferences/learn', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const userId = parseInt(req.params.id);
+
+    const [likedGenres, likedArtists, purchasePrices, savedConditions, eras] = await Promise.all([
+      pool.query(
+        `SELECT r.genre, COUNT(*) as cnt FROM likes l JOIN records r ON r.id = l.record_id
+         WHERE l.user_id = $1 AND r.genre IS NOT NULL GROUP BY r.genre ORDER BY cnt DESC LIMIT 5`,
+        [userId]
+      ),
+      pool.query(
+        `SELECT r.artist, COUNT(*) as cnt FROM likes l JOIN records r ON r.id = l.record_id
+         WHERE l.user_id = $1 GROUP BY r.artist ORDER BY cnt DESC LIMIT 10`,
+        [userId]
+      ),
+      pool.query(
+        `SELECT MIN(amount) as min_price, MAX(amount) as max_price, AVG(amount) as avg_price
+         FROM purchases WHERE buyer_id = $1`,
+        [userId]
+      ),
+      pool.query(
+        `SELECT r.condition, COUNT(*) as cnt FROM saves s JOIN records r ON r.id = s.record_id
+         WHERE s.user_id = $1 AND r.condition IS NOT NULL GROUP BY r.condition ORDER BY cnt DESC LIMIT 3`,
+        [userId]
+      ),
+      pool.query(
+        `SELECT CASE
+           WHEN r.year BETWEEN 1950 AND 1969 THEN '1950s-60s'
+           WHEN r.year BETWEEN 1970 AND 1989 THEN '1970s-80s'
+           WHEN r.year BETWEEN 1990 AND 2009 THEN '1990s-2000s'
+           WHEN r.year >= 2010 THEN '2010s+'
+           ELSE 'unknown'
+         END as era, COUNT(*) as cnt
+         FROM likes l JOIN records r ON r.id = l.record_id WHERE l.user_id = $1 AND r.year > 0
+         GROUP BY era ORDER BY cnt DESC`,
+        [userId]
+      ),
+    ]);
+
+    const prefs = {
+      userId,
+      topGenres: likedGenres.rows.map(r => ({ genre: r.genre, strength: parseInt(r.cnt) })),
+      topArtists: likedArtists.rows.map(r => ({ artist: r.artist, strength: parseInt(r.cnt) })),
+      priceRange: purchasePrices.rows[0]?.min_price ? {
+        min: parseFloat(purchasePrices.rows[0].min_price),
+        max: parseFloat(purchasePrices.rows[0].max_price),
+        avg: Math.round(parseFloat(purchasePrices.rows[0].avg_price) * 100) / 100,
+      } : null,
+      preferredConditions: savedConditions.rows.map(r => r.condition),
+      eraPreferences: eras.rows,
+      learnedAt: new Date().toISOString(),
+    };
+
+    userPreferences.set(userId, prefs);
+    res.json({ success: true, preferences: prefs });
+  } catch (err) {
+    console.error('Preference learning error:', err.message);
+    res.status(500).json({ error: 'Failed to learn preferences' });
+  }
+});
+
+// GET /api/users/:id/preferences — get learned preferences
+app.get('/api/users/:id/preferences', authMiddleware, (req, res) => {
+  const userId = parseInt(req.params.id);
+  const prefs = userPreferences.get(userId);
+  if (!prefs) return res.status(404).json({ error: 'No preferences learned yet. POST to /api/users/:id/preferences/learn first.' });
+  res.json({ success: true, preferences: prefs });
+});
+
+// ── Feature F25: Automated Pricing Engine ────────────────────────────────────
+
+// POST /api/records/:id/auto-price — generate an automated price suggestion
+app.post('/api/records/:id/auto-price', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const recordId = parseInt(req.params.id);
+    const { strategy } = req.body;
+    const validStrategies = ['competitive', 'market_value', 'quick_sale', 'premium'];
+    const pricingStrategy = validStrategies.includes(strategy) ? strategy : 'market_value';
+
+    const record = await pool.query('SELECT * FROM records WHERE id = $1', [recordId]);
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+    const r = record.rows[0];
+
+    // Gather market data
+    const [comparables, genreAvg, demand] = await Promise.all([
+      pool.query(
+        `SELECT COALESCE(AVG(p.amount), 0) as avg_sale, COUNT(*) as sale_count
+         FROM purchases p JOIN records r2 ON r2.id = p.record_id
+         WHERE (LOWER(r2.artist) = LOWER($1) OR (LOWER(r2.title) = LOWER($2) AND LOWER(r2.artist) = LOWER($1)))
+           AND p.status IN ('completed', 'paid')`,
+        [r.artist, r.title]
+      ),
+      pool.query(
+        'SELECT COALESCE(AVG(price), 0) as avg_price FROM records WHERE genre = $1 AND for_sale = true AND price > 0',
+        [r.genre || 'Unknown']
+      ),
+      pool.query(
+        `SELECT COUNT(*) as like_count FROM likes WHERE record_id = $1`,
+        [recordId]
+      ),
+    ]);
+
+    const avgSale = parseFloat(comparables.rows[0].avg_sale);
+    const saleCount = parseInt(comparables.rows[0].sale_count);
+    const genreAvgPrice = parseFloat(genreAvg.rows[0].avg_price);
+    const likeCount = parseInt(demand.rows[0].like_count);
+
+    // Condition multipliers
+    const conditionMultipliers = { 'Mint': 1.5, 'Near Mint': 1.3, 'Very Good Plus': 1.1, 'Very Good': 1.0, 'Good Plus': 0.8, 'Good': 0.6, 'Fair': 0.4, 'Poor': 0.2 };
+    const condMult = conditionMultipliers[r.condition] || 1.0;
+
+    // Base price from best available data
+    let basePrice = saleCount >= 2 ? avgSale : genreAvgPrice > 0 ? genreAvgPrice : 15;
+    basePrice *= condMult;
+
+    // Demand adjustment
+    const demandMultiplier = likeCount >= 20 ? 1.2 : likeCount >= 10 ? 1.1 : likeCount >= 5 ? 1.05 : 1.0;
+    basePrice *= demandMultiplier;
+
+    // Strategy adjustment
+    const strategyMultipliers = { competitive: 0.9, market_value: 1.0, quick_sale: 0.75, premium: 1.25 };
+    const suggestedPrice = Math.round(basePrice * strategyMultipliers[pricingStrategy] * 100) / 100;
+
+    const confidence = saleCount >= 5 ? 'high' : saleCount >= 2 ? 'medium' : 'low';
+
+    res.json({
+      success: true,
+      recordId,
+      pricing: {
+        suggestedPrice,
+        strategy: pricingStrategy,
+        confidence,
+        factors: {
+          comparableSales: saleCount,
+          avgComparablePrice: Math.round(avgSale * 100) / 100,
+          genreAvgPrice: Math.round(genreAvgPrice * 100) / 100,
+          conditionMultiplier: condMult,
+          demandMultiplier,
+          likeCount,
+        },
+        range: {
+          low: Math.round(suggestedPrice * 0.8 * 100) / 100,
+          high: Math.round(suggestedPrice * 1.2 * 100) / 100,
+        },
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Auto-price error:', err.message);
+    res.status(500).json({ error: 'Failed to generate price suggestion' });
+  }
+});
+
 // ── Feature 20: Server startup banner with configuration summary ──────────────
 
 const PORT = process.env.PORT || process.env.SERVER_PORT || 3001;

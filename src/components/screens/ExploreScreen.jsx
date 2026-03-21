@@ -12,6 +12,57 @@ import Empty from '../ui/Empty';
 import { GENRES, GENRE_MAP, CONDITIONS, USER_PROFILES, USER_WISHLISTS } from '../../constants';
 import { getProfile, condColor } from '../../utils/helpers';
 
+// Improvement A1: Simulated record weight/pressing info based on format + year
+const getPressingInfo = (record) => {
+  const format = (record.format || '').toLowerCase();
+  let weight = '140g';
+  let pressing = 'Standard';
+  if (format.includes('180') || (record.year && record.year >= 2010)) weight = '180g';
+  if (record.year && record.year < 1975) { pressing = 'Original pressing'; weight = '120g'; }
+  else if (record.year && record.year < 1990) pressing = 'Early pressing';
+  else if (record.year && record.year >= 2015) pressing = 'Reissue';
+  return { weight, pressing };
+};
+
+// Improvement A4: Auction countdown timer helper
+const getAuctionCountdown = (record) => {
+  if (!record.forSale) return null;
+  // Simulate auction end times deterministically based on record id
+  const hoursLeft = (record.id * 7 + 3) % 72;
+  if (hoursLeft > 48) return null; // Only some records have auctions
+  const h = Math.floor(hoursLeft);
+  const m = (record.id * 13) % 60;
+  return { hours: h, minutes: m, urgent: h < 6 };
+};
+
+// Improvement A3: Seller trust score (deterministic from username)
+const getSellerTrustScore = (username) => {
+  let hash = 0;
+  for (let i = 0; i < username.length; i++) hash = ((hash << 5) - hash + username.charCodeAt(i)) | 0;
+  return 70 + (Math.abs(hash) % 30); // 70-99
+};
+
+// Improvement A9: Shipping speed estimates
+const getShippingEstimate = (record) => {
+  const score = getSellerTrustScore(record.user || '');
+  if (score >= 95) return { label: '1-2 days', speed: 'fast' };
+  if (score >= 85) return { label: '2-4 days', speed: 'medium' };
+  return { label: '5-7 days', speed: 'slow' };
+};
+
+// Improvement A10: Price drop notification localStorage
+const PRICE_DROP_ALERTS_KEY = 'gs-price-drop-alerts';
+const loadPriceDropAlerts = () => {
+  try {
+    const raw = localStorage.getItem(PRICE_DROP_ALERTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+};
+const persistPriceDropAlerts = (ids) => {
+  try { localStorage.setItem(PRICE_DROP_ALERTS_KEY, JSON.stringify(ids)); }
+  catch { /* localStorage full or unavailable */ }
+};
+
 // Estimate heuristic: base price by condition with year multiplier
 function estimateValue(condition, year) {
   const basePrices = { M: 40, NM: 30, 'VG+': 22, VG: 15, 'G+': 10, G: 7, F: 5, P: 3 };
@@ -220,6 +271,25 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
 
   // Improvement 9: Price comparison tooltip
   const [hoveredRecordId, setHoveredRecordId] = useState(null);
+
+  // Improvement A1: AR record preview placeholder
+  const [arPreviewRecord, setArPreviewRecord] = useState(null);
+
+  // Improvement A5: Flash sale banner state
+  const [flashSaleDismissed, setFlashSaleDismissed] = useState(false);
+
+  // Improvement A10: Price drop notification toggle per record
+  const [priceDropAlerts, setPriceDropAlerts] = useState(loadPriceDropAlerts);
+
+  // Improvement A15: Quick compare tool — select 2 records to compare side by side
+  const [compareList, setCompareList] = useState([]);
+  const [showComparePanel, setShowComparePanel] = useState(false);
+
+  // Improvement A14: Similar taste users section
+  const [showSimilarTasteUsers, setShowSimilarTasteUsers] = useState(false);
+
+  // Improvement A12: Sound sample preview placeholder
+  const [soundPreviewRecordId, setSoundPreviewRecordId] = useState(null);
 
   // Improvement 10: Color-coded condition indicators (using condColor from helpers)
   // Already available via condColor, but we enhance usage in grid view
@@ -472,6 +542,87 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
     return records.filter(r => isNewThisWeek(r, records)).length;
   }, [records]);
 
+  // Improvement A2: Record authenticity verification badges helper
+  const getAuthBadge = useCallback((record) => {
+    if (record.verified) return { label: 'Verified', color: '#3b82f6' };
+    const trust = getSellerTrustScore(record.user || '');
+    if (trust >= 95) return { label: 'Trusted Seller', color: '#22c55e' };
+    return null;
+  }, []);
+
+  // Improvement A5: Flash sale records (top 3 cheapest for-sale below estimate)
+  const flashSaleRecords = useMemo(() => {
+    return records
+      .filter(r => r.forSale && r.price <= estimateValue(r.condition, r.year) * 0.8)
+      .sort((a, b) => a.price - b.price)
+      .slice(0, 3);
+  }, [records]);
+
+  // Improvement A6: Curated staff picks (deterministic selection of highly-rated records)
+  const staffPicks = useMemo(() => {
+    const candidates = records.filter(r => (r.likes || 0) >= 2 && r.forSale);
+    const today = new Date();
+    const seed = today.getFullYear() * 100 + today.getMonth();
+    return candidates
+      .sort((a, b) => ((a.id * seed) % 97) - ((b.id * seed) % 97))
+      .slice(0, 4);
+  }, [records]);
+
+  // Improvement A7: "New Arrivals" auto-section
+  const newArrivals = useMemo(() => {
+    return records
+      .filter(r => isNewThisWeek(r, records))
+      .sort((a, b) => b.id - a.id)
+      .slice(0, 8);
+  }, [records]);
+
+  // Improvement A10: Toggle price drop alert
+  const togglePriceDropAlert = useCallback((recordId) => {
+    setPriceDropAlerts(prev => {
+      const next = prev.includes(recordId)
+        ? prev.filter(id => id !== recordId)
+        : [...prev, recordId];
+      persistPriceDropAlerts(next);
+      return next;
+    });
+  }, []);
+
+  // Improvement A11: Collector's edition detection
+  const isCollectorsEdition = useCallback((record) => {
+    const fmt = (record.format || '').toLowerCase();
+    const album = (record.album || '').toLowerCase();
+    return fmt.includes('limited') || fmt.includes('deluxe') || fmt.includes('collector') ||
+           fmt.includes('colored') || fmt.includes('picture disc') ||
+           album.includes('deluxe') || album.includes('collector') || album.includes('limited');
+  }, []);
+
+  // Improvement A14: Similar taste users based on collection overlap
+  const similarTasteUsers = useMemo(() => {
+    const myAlbums = new Set(records.filter(r => r.user === currentUser).map(r => `${r.artist}::${r.album}`));
+    if (myAlbums.size === 0) return [];
+    const userScores = {};
+    records.forEach(r => {
+      if (r.user === currentUser) return;
+      const key = `${r.artist}::${r.album}`;
+      if (myAlbums.has(key)) {
+        userScores[r.user] = (userScores[r.user] || 0) + 1;
+      }
+    });
+    return Object.entries(userScores)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([user, overlap]) => ({ user, overlap, profile: getProfile(user) }));
+  }, [records, currentUser]);
+
+  // Improvement A15: Compare helpers
+  const toggleCompare = useCallback((record) => {
+    setCompareList(prev => {
+      if (prev.find(r => r.id === record.id)) return prev.filter(r => r.id !== record.id);
+      if (prev.length >= 2) return [prev[1], record]; // Replace oldest
+      return [...prev, record];
+    });
+  }, []);
+
   return (
     <div className="gs-page-transition">
       {/* Header with mode toggle */}
@@ -556,6 +707,113 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Improvement A5: Flash sale banner */}
+      {mode === "shop" && !flashSaleDismissed && flashSaleRecords.length > 0 && (
+        <div className="mb-4 p-3.5 rounded-xl border border-red-500/30 bg-gradient-to-r from-red-500/10 to-amber-500/10 relative">
+          <button
+            onClick={() => setFlashSaleDismissed(true)}
+            className="absolute top-2 right-2 bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-sm"
+          >×</button>
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="text-[10px] font-bold tracking-widest text-red-400 font-mono">FLASH SALE</span>
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {flashSaleRecords.map(r => (
+              <div key={r.id} onClick={() => trackView(r)} className="shrink-0 flex gap-2 items-center bg-[#111] rounded-lg px-3 py-2 cursor-pointer hover:bg-[#1a1a1a] transition-colors">
+                <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={36} />
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-gs-text truncate max-w-[100px]">{r.album}</div>
+                  <div className="text-[10px] text-gs-faint truncate max-w-[100px]">{r.artist}</div>
+                  <div className="flex gap-1.5 items-center mt-0.5">
+                    <span className="text-xs font-bold text-red-400">${r.price}</span>
+                    <span className="text-[9px] text-gs-faint line-through">~${estimateValue(r.condition, r.year)}</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Improvement A1: AR Record Preview Modal */}
+      {arPreviewRecord && (
+        <div className="mb-4 p-4 rounded-xl border border-purple-500/30 bg-gradient-to-br from-purple-500/5 to-transparent">
+          <div className="flex justify-between items-center mb-3">
+            <span className="text-[10px] font-bold tracking-widest text-purple-400 font-mono">AR PREVIEW</span>
+            <button onClick={() => setArPreviewRecord(null)} className="bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-sm">×</button>
+          </div>
+          <div className="flex gap-4 items-center">
+            <div className="w-[120px] h-[120px] rounded-xl border-2 border-dashed border-purple-500/30 flex items-center justify-center bg-[#111]">
+              <div className="text-center">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#a855f7" strokeWidth="1.5" className="mx-auto mb-1"><rect x="2" y="2" width="20" height="20" rx="2"/><circle cx="12" cy="12" r="4"/><path d="M2 2l4 4M22 2l-4 4M2 22l4-4M22 22l-4-4"/></svg>
+                <div className="text-[9px] text-purple-400 font-mono">Camera required</div>
+              </div>
+            </div>
+            <div className="flex-1">
+              <div className="text-sm font-bold text-gs-text">{arPreviewRecord.album}</div>
+              <div className="text-xs text-gs-dim mb-2">{arPreviewRecord.artist}</div>
+              <div className="text-[10px] text-purple-300">Point your camera at a flat surface to preview this record in your space. AR preview coming soon.</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Improvement A15: Compare panel */}
+      {compareList.length > 0 && (
+        <div className="mb-4 p-3.5 rounded-xl border border-cyan-500/30 bg-cyan-500/5">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-[10px] font-bold tracking-widest text-cyan-400 font-mono">
+              COMPARE {compareList.length === 1 ? '(select 1 more)' : ''}
+            </span>
+            <button onClick={() => { setCompareList([]); setShowComparePanel(false); }} className="bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-xs">Clear</button>
+          </div>
+          {compareList.length === 2 && (
+            <button
+              onClick={() => setShowComparePanel(!showComparePanel)}
+              className="text-[10px] px-3 py-1 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-cyan-400 cursor-pointer font-semibold mb-2"
+            >
+              {showComparePanel ? 'Hide Comparison' : 'Compare Side by Side'}
+            </button>
+          )}
+          <div className="flex gap-3">
+            {compareList.map(r => (
+              <div key={r.id} className="flex-1 flex gap-2 items-center bg-[#111] rounded-lg px-2 py-1.5">
+                <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={32} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[10px] font-bold text-gs-text truncate">{r.album}</div>
+                  <div className="text-[9px] text-gs-faint truncate">{r.artist}</div>
+                </div>
+                <button onClick={() => toggleCompare(r)} className="bg-transparent border-none text-gs-faint hover:text-red-400 cursor-pointer text-xs p-0">×</button>
+              </div>
+            ))}
+          </div>
+          {showComparePanel && compareList.length === 2 && (
+            <div className="mt-3 pt-3 border-t border-cyan-500/20">
+              <div className="grid grid-cols-2 gap-3 text-[10px]">
+                {compareList.map(r => {
+                  const pressing = getPressingInfo(r);
+                  const shipping = getShippingEstimate(r);
+                  return (
+                    <div key={r.id} className="space-y-1.5">
+                      <div className="text-gs-text font-bold text-xs">{r.album}</div>
+                      <div className="text-gs-dim">{r.artist} ({r.year})</div>
+                      <div className="flex items-center gap-1"><span className="text-gs-faint">Condition:</span> <span style={{color: condColor(r.condition)}}>{r.condition}</span></div>
+                      <div><span className="text-gs-faint">Format:</span> <span className="text-gs-muted">{r.format}</span></div>
+                      <div><span className="text-gs-faint">Weight:</span> <span className="text-gs-muted">{pressing.weight}</span></div>
+                      <div><span className="text-gs-faint">Pressing:</span> <span className="text-gs-muted">{pressing.pressing}</span></div>
+                      {r.forSale && <div><span className="text-gs-faint">Price:</span> <span className="text-amber-400 font-bold">${r.price}</span></div>}
+                      {r.forSale && <div><span className="text-gs-faint">Shipping:</span> <span className="text-gs-muted">{shipping.label}</span></div>}
+                      <div><span className="text-gs-faint">Likes:</span> <span className="text-gs-muted">{r.likes || 0}</span></div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -808,6 +1066,75 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Improvement A6: Curated Staff Picks section */}
+      {mode === "browse" && !q && staffPicks.length > 0 && (
+        <div className="mb-5">
+          <h2 className="gs-label mb-2">STAFF PICKS</h2>
+          <div className="flex gap-2.5 overflow-x-auto pb-2">
+            {staffPicks.map(r => (
+              <div key={r.id} onClick={() => trackView(r)} className="shrink-0 w-[130px] cursor-pointer group">
+                <div className="relative">
+                  <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={130} />
+                  <div className="absolute top-1 left-1 text-[8px] px-1.5 py-0.5 rounded-full bg-amber-500/90 text-black font-bold">PICK</div>
+                </div>
+                <div className="text-[11px] font-bold text-gs-text mt-1.5 truncate group-hover:text-gs-accent transition-colors">{r.album}</div>
+                <div className="text-[10px] text-gs-faint truncate">{r.artist}</div>
+                {r.forSale && <span className="text-[10px] font-bold text-amber-400">${r.price}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Improvement A7: New Arrivals auto-section */}
+      {mode === "browse" && !q && newArrivals.length > 0 && (
+        <div className="mb-5">
+          <h2 className="gs-label mb-2">NEW ARRIVALS</h2>
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {newArrivals.map(r => (
+              <div key={r.id} onClick={() => trackView(r)} className="shrink-0 flex gap-2 items-center bg-gs-card border border-gs-border rounded-lg px-3 py-2 cursor-pointer hover:border-gs-accent/30 transition-colors">
+                <AlbumArt album={r.album} artist={r.artist} accent={r.accent || "#555"} size={36} />
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold text-gs-muted truncate max-w-[100px]">{r.album}</div>
+                  <div className="text-[9px] text-gs-faint truncate max-w-[100px]">{r.artist}</div>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <span className="text-[8px] px-1 py-px rounded bg-green-500/15 text-green-400 font-bold">NEW</span>
+                    {r.forSale && <span className="text-[9px] text-amber-400 font-bold">${r.price}</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Improvement A14: Similar Taste Users */}
+      {mode === "browse" && !q && similarTasteUsers.length > 0 && (
+        <div className="mb-5">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="gs-label">COLLECTORS WITH SIMILAR TASTE</h2>
+            <button
+              onClick={() => setShowSimilarTasteUsers(!showSimilarTasteUsers)}
+              className="text-[10px] text-gs-faint hover:text-gs-accent bg-transparent border-none cursor-pointer"
+            >
+              {showSimilarTasteUsers ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          {showSimilarTasteUsers && (
+            <div className="flex gap-2.5 overflow-x-auto pb-2">
+              {similarTasteUsers.map(({ user, overlap, profile: p }) => (
+                <div key={user} onClick={() => onViewUser(user)} className="shrink-0 bg-gs-card border border-gs-border rounded-xl p-3 min-w-[130px] cursor-pointer hover:border-gs-accent/30 transition-colors text-center">
+                  <Avatar username={user} size={40} />
+                  <div className="text-[11px] font-bold text-gs-text mt-2">{p.displayName}</div>
+                  <div className="text-[9px] text-gs-dim font-mono">@{user}</div>
+                  <div className="text-[9px] text-green-400 mt-1">{overlap} records in common</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1107,6 +1434,41 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
                       <span key={t} className="gs-pill">#{t}</span>
                     ))}
                   </div>
+                  {/* Improvement A2: Authenticity verification badge */}
+                  {(() => {
+                    const auth = getAuthBadge(r);
+                    if (!auth) return null;
+                    return (
+                      <div className="flex items-center gap-1 mt-1">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={auth.color} strokeWidth="2.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                        <span className="text-[9px] font-semibold" style={{ color: auth.color }}>{auth.label}</span>
+                      </div>
+                    );
+                  })()}
+                  {/* Improvement A3: Seller trust score */}
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <span className="text-[9px] text-gs-faint">Trust:</span>
+                    <div className="h-1 w-12 rounded-full bg-[#1a1a1a] overflow-hidden">
+                      <div className="h-full rounded-full" style={{
+                        width: `${getSellerTrustScore(r.user)}%`,
+                        backgroundColor: getSellerTrustScore(r.user) >= 90 ? '#22c55e' : getSellerTrustScore(r.user) >= 80 ? '#eab308' : '#ef4444'
+                      }} />
+                    </div>
+                    <span className="text-[9px] font-mono text-gs-faint">{getSellerTrustScore(r.user)}</span>
+                  </div>
+                  {/* Improvement A8: Record weight/pressing info */}
+                  {(() => {
+                    const info = getPressingInfo(r);
+                    return (
+                      <div className="text-[9px] text-gs-faint mt-0.5">
+                        {info.weight} · {info.pressing}
+                      </div>
+                    );
+                  })()}
+                  {/* Improvement A11: Collector's edition highlighting */}
+                  {isCollectorsEdition(r) && (
+                    <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-400 border border-purple-500/20 font-bold mt-1 inline-block">COLLECTOR&apos;S EDITION</span>
+                  )}
                 </div>
                 <div className="text-right shrink-0">
                   <div className="relative">
@@ -1159,14 +1521,92 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
                       </>
                     )}
                   </div>
-                  {/* Improvement 7: Show similar in shop */}
+                  {/* Improvement A4: Auction countdown timer */}
+                  {(() => {
+                    const auction = getAuctionCountdown(r);
+                    if (!auction) return null;
+                    return (
+                      <div className={`text-[9px] font-mono mt-1 ${auction.urgent ? 'text-red-400' : 'text-amber-400'}`}>
+                        {auction.urgent && <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse mr-1" />}
+                        Auction ends: {auction.hours}h {auction.minutes}m
+                      </div>
+                    );
+                  })()}
+                  {/* Improvement A9: Shipping speed estimate */}
+                  {(() => {
+                    const ship = getShippingEstimate(r);
+                    return (
+                      <div className="text-[9px] text-gs-faint mt-0.5 flex items-center gap-1">
+                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+                        <span className={ship.speed === 'fast' ? 'text-green-400' : ship.speed === 'medium' ? 'text-amber-400' : 'text-gs-faint'}>{ship.label}</span>
+                      </div>
+                    );
+                  })()}
+                  {/* Improvement A10: Price drop notification toggle */}
                   <button
-                    onClick={e => { e.stopPropagation(); setSimilarTo(r.id); }}
-                    className="bg-transparent border-none text-gs-faint hover:text-gs-accent cursor-pointer p-0 mt-1.5 text-[10px]"
-                    title="Show similar records"
+                    onClick={e => { e.stopPropagation(); togglePriceDropAlert(r.id); }}
+                    className={`text-[9px] mt-1 bg-transparent border-none cursor-pointer p-0 flex items-center gap-0.5 ${priceDropAlerts.includes(r.id) ? 'text-amber-400' : 'text-gs-faint hover:text-amber-400'}`}
+                    title={priceDropAlerts.includes(r.id) ? 'Price alert on' : 'Notify me of price drops'}
                   >
-                    Similar
+                    <svg width="8" height="8" viewBox="0 0 24 24" fill={priceDropAlerts.includes(r.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    {priceDropAlerts.includes(r.id) ? 'Alert on' : 'Price alert'}
                   </button>
+                  {/* Action row: Similar, Sound, AR, Provenance, Compare */}
+                  <div className="flex gap-2 mt-1.5 flex-wrap justify-end">
+                    {/* Improvement 7: Show similar in shop */}
+                    <button
+                      onClick={e => { e.stopPropagation(); setSimilarTo(r.id); }}
+                      className="bg-transparent border-none text-gs-faint hover:text-gs-accent cursor-pointer p-0 text-[10px]"
+                      title="Show similar records"
+                    >
+                      Similar
+                    </button>
+                    {/* Improvement A12: Sound sample preview button placeholder */}
+                    <button
+                      onClick={e => { e.stopPropagation(); setSoundPreviewRecordId(soundPreviewRecordId === r.id ? null : r.id); }}
+                      className={`bg-transparent border-none cursor-pointer p-0 text-[10px] ${soundPreviewRecordId === r.id ? 'text-gs-accent' : 'text-gs-faint hover:text-gs-accent'}`}
+                      title="Preview sound sample"
+                    >
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill={soundPreviewRecordId === r.id ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                    </button>
+                    {/* Improvement A1: AR preview button */}
+                    <button
+                      onClick={e => { e.stopPropagation(); setArPreviewRecord(r); }}
+                      className="bg-transparent border-none text-gs-faint hover:text-purple-400 cursor-pointer p-0 text-[10px]"
+                      title="AR Preview"
+                    >
+                      AR
+                    </button>
+                    {/* Improvement A13: Provenance/ownership history link */}
+                    <button
+                      onClick={e => { e.stopPropagation(); }}
+                      className="bg-transparent border-none text-gs-faint hover:text-gs-accent cursor-pointer p-0 text-[10px]"
+                      title="View ownership history"
+                    >
+                      History
+                    </button>
+                    {/* Improvement A15: Compare toggle */}
+                    <button
+                      onClick={e => { e.stopPropagation(); toggleCompare(r); }}
+                      className={`bg-transparent border-none cursor-pointer p-0 text-[10px] ${compareList.find(c => c.id === r.id) ? 'text-cyan-400' : 'text-gs-faint hover:text-cyan-400'}`}
+                      title="Add to compare"
+                    >
+                      Compare
+                    </button>
+                  </div>
+                  {/* Improvement A12: Sound preview placeholder when active */}
+                  {soundPreviewRecordId === r.id && (
+                    <div className="mt-1.5 p-2 rounded-lg bg-[#111] border border-gs-border">
+                      <div className="flex items-center gap-2">
+                        <div className="w-full h-4 bg-[#1a1a1a] rounded overflow-hidden flex items-center">
+                          {[...Array(20)].map((_, i) => (
+                            <div key={i} className="flex-1 mx-px bg-gs-accent/40 rounded-full" style={{ height: `${4 + (i * r.id) % 12}px` }} />
+                          ))}
+                        </div>
+                      </div>
+                      <div className="text-[8px] text-gs-faint mt-1 text-center">Sound preview coming soon</div>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
