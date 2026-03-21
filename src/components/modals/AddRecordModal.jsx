@@ -431,6 +431,17 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser, reco
   const [batchMode, setBatchMode] = useState(false);
   const [batchCount, setBatchCount] = useState(0);
 
+  // [Improvement #6] Voice-to-text description input
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceSupported] = useState(() => typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window));
+  const recognitionRef = useRef(null);
+
+  // [Improvement #7] Template from favorites (user's top-rated records as templates)
+  const [showFavTemplates, setShowFavTemplates] = useState(false);
+
+  // [Improvement #8] Quick add from clipboard paste
+  const [clipboardParsed, setClipboardParsed] = useState(null);
+
   // [Improvement 11] Price suggestion based on filled details
   const autoPrice = useMemo(() => {
     if (!condition || !year) return null;
@@ -454,6 +465,24 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser, reco
       .filter(r => r.user === currentUser)
       .sort((a, b) => (b.id || 0) - (a.id || 0))
       .slice(0, 5);
+  }, [records, currentUser]);
+
+  // [Improvement #7] Favorite record templates — user's highest-rated records
+  const favoriteTemplates = useMemo(() => {
+    if (!records || !currentUser) return [];
+    return records
+      .filter(r => r.user === currentUser && r.rating >= 4)
+      .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+      .slice(0, 6)
+      .map(r => ({
+        name: `${r.album} style`,
+        format: r.format || 'LP',
+        condition: r.condition || 'VG+',
+        tags: r.tags || [],
+        year: String(r.year || ''),
+        genre: r.genre || '',
+        label: r.label || '',
+      }));
   }, [records, currentUser]);
 
   // [Improvement 5] Duplicate detection
@@ -589,6 +618,93 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser, reco
     }
     setCustomTagInput('');
   };
+
+  // [Improvement #6] Voice-to-text — start/stop speech recognition for review field
+  const startVoiceInput = useCallback(() => {
+    if (!voiceSupported) return;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    let finalTranscript = review;
+    recognition.onresult = (event) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          finalTranscript += event.results[i][0].transcript + ' ';
+        } else {
+          interim += event.results[i][0].transcript;
+        }
+      }
+      setReview(finalTranscript + interim);
+    };
+    recognition.onerror = () => setIsRecording(false);
+    recognition.onend = () => setIsRecording(false);
+    recognitionRef.current = recognition;
+    recognition.start();
+    setIsRecording(true);
+  }, [voiceSupported, review]);
+
+  const stopVoiceInput = useCallback(() => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsRecording(false);
+  }, []);
+
+  // [Improvement #7] Apply a favorite template
+  const applyFavoriteTemplate = useCallback((tmpl) => {
+    setFormat(tmpl.format);
+    setCondition(tmpl.condition);
+    setTags(tmpl.tags);
+    if (tmpl.year) setYear(tmpl.year);
+    if (tmpl.label) setLabel(tmpl.label);
+    setShowFavTemplates(false);
+  }, []);
+
+  // [Improvement #8] Quick add from clipboard paste — parse "Artist - Album" or "Album by Artist"
+  const handleClipboardPaste = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text || text.length < 3) return;
+      let parsed = null;
+      // Try "Artist - Album (Year)" format
+      const dashMatch = text.match(/^(.+?)\s*[-\u2013\u2014]\s*(.+?)(?:\s*\((\d{4})\))?\s*$/);
+      if (dashMatch) {
+        parsed = { artist: dashMatch[1].trim(), album: dashMatch[2].trim(), year: dashMatch[3] || '' };
+      }
+      // Try "Album by Artist" format
+      if (!parsed) {
+        const byMatch = text.match(/^(.+?)\s+by\s+(.+?)(?:\s*\((\d{4})\))?\s*$/i);
+        if (byMatch) {
+          parsed = { album: byMatch[1].trim(), artist: byMatch[2].trim(), year: byMatch[3] || '' };
+        }
+      }
+      // Fallback: just use it as album name
+      if (!parsed && text.trim().length > 0 && text.trim().length < 200) {
+        parsed = { album: text.trim(), artist: '', year: '' };
+      }
+      if (parsed) {
+        setClipboardParsed(parsed);
+      }
+    } catch {
+      // Clipboard access denied
+    }
+  }, []);
+
+  const applyClipboardData = useCallback(() => {
+    if (!clipboardParsed) return;
+    if (clipboardParsed.album) setAlbum(clipboardParsed.album);
+    if (clipboardParsed.artist) setArtist(clipboardParsed.artist);
+    if (clipboardParsed.year) setYear(clipboardParsed.year);
+    setClipboardParsed(null);
+  }, [clipboardParsed]);
+
+  const dismissClipboardData = useCallback(() => {
+    setClipboardParsed(null);
+  }, []);
 
   // Toggles a genre tag on/off in the selected tags array
   const toggleTag = t => setTags(p => p.includes(t) ? p.filter(x => x !== t) : [...p, t]);
@@ -781,6 +897,58 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser, reco
         </div>
       </div>
 
+      {/* [Improvement #8] Quick add from clipboard paste */}
+      <div className="mb-4">
+        <button
+          onClick={handleClipboardPaste}
+          className="w-full py-2 bg-[#111] border border-[#1a1a1a] rounded-lg text-[12px] font-semibold cursor-pointer hover:border-gs-accent/40 transition-colors flex items-center justify-center gap-1.5 text-[#aaa]"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+          Paste from Clipboard
+        </button>
+        {clipboardParsed && (
+          <div className="mt-2 p-3 bg-emerald-500/[0.06] border border-emerald-500/15 rounded-lg">
+            <div className="text-[11px] text-emerald-400 font-semibold mb-1.5">Parsed from clipboard:</div>
+            <div className="text-[11px] text-gs-muted mb-2">
+              {clipboardParsed.album && <span className="font-bold">{clipboardParsed.album}</span>}
+              {clipboardParsed.artist && <span> by {clipboardParsed.artist}</span>}
+              {clipboardParsed.year && <span> ({clipboardParsed.year})</span>}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={applyClipboardData} className="px-3 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold cursor-pointer hover:bg-emerald-500/30 transition-colors">Apply</button>
+              <button onClick={dismissClipboardData} className="px-3 py-1 rounded-lg bg-[#1a1a1a] border border-gs-border text-gs-dim text-[11px] cursor-pointer hover:text-gs-muted transition-colors">Dismiss</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* [Improvement #7] Templates from your favorites */}
+      {favoriteTemplates.length > 0 && (
+        <div className="mb-4">
+          <button
+            onClick={() => setShowFavTemplates(s => !s)}
+            className="w-full py-2 bg-[#111] border border-[#1a1a1a] rounded-lg text-[12px] font-semibold cursor-pointer hover:border-amber-500/40 transition-colors flex items-center justify-center gap-1.5 text-[#aaa]"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            {showFavTemplates ? 'Hide Favorite Templates' : 'Use Template from Favorites'}
+          </button>
+          {showFavTemplates && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {favoriteTemplates.map((t, i) => (
+                <button
+                  key={i}
+                  onClick={() => applyFavoriteTemplate(t)}
+                  className="px-2.5 py-1 rounded-full border border-amber-500/20 bg-amber-500/[0.06] text-[10px] text-amber-400 font-semibold cursor-pointer hover:border-amber-500/40 transition-colors"
+                  title={`${t.format} / ${t.condition} / ${t.tags.join(', ')}`}
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Record details form ── */}
       <div className="grid grid-cols-2 gap-x-3.5 gap-y-0">
         <div className="col-span-2"><FormInput label="ALBUM TITLE *" value={album} onChange={setAlbum} placeholder="e.g. Kind of Blue" /></div>
@@ -817,6 +985,28 @@ export default function AddRecordModal({ open, onClose, onAdd, currentUser, reco
         <Stars rating={rating} onRate={setRating} size={22} />
       </div>
       <FormTextarea label="REVIEW / NOTES" value={review} onChange={setReview} placeholder="What makes this pressing special?" />
+      {/* [Improvement #6] Voice-to-text description input */}
+      {voiceSupported && (
+        <div className="mb-2 flex items-center gap-2">
+          <button
+            onClick={isRecording ? stopVoiceInput : startVoiceInput}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold cursor-pointer transition-colors border ${
+              isRecording
+                ? 'bg-red-500/15 border-red-500/30 text-red-400 animate-pulse'
+                : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-gs-accent/40'
+            }`}
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill={isRecording ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+            {isRecording ? 'Stop Recording' : 'Voice Input'}
+          </button>
+          {isRecording && <span className="text-[10px] text-red-400 font-mono">Listening...</span>}
+        </div>
+      )}
       {/* [Improvement 10] Auto-grading suggestions based on review text */}
       <AutoGradingSuggestion review={review} condition={condition} onSelect={setCondition} />
 

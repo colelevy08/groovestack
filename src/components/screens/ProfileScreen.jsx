@@ -719,6 +719,18 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [customThemeColor, setCustomThemeColor] = useState('#0ea5e9');
 
+  // ── Improvement 17: Profile backup/restore ──
+  const [showBackupRestore, setShowBackupRestore] = useState(false);
+  const [backupExported, setBackupExported] = useState(false);
+
+  // ── Improvement 18: Profile migration tool ──
+  const [showMigrationTool, setShowMigrationTool] = useState(false);
+  const [migrationPlatform, setMigrationPlatform] = useState('');
+  const [migrationStatus, setMigrationStatus] = useState(null);
+
+  // ── Improvement 19: Profile analytics export ──
+  const [showAnalyticsExport, setShowAnalyticsExport] = useState(false);
+
   const forSale = mine.filter(r => r.forSale);
   const saved = records.filter(r => r.saved);
   const myPosts = (posts || []).filter(p => p.user === currentUser).sort((a, b) => b.createdAt - a.createdAt);
@@ -853,6 +865,53 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
     if (mine.length < 100) list.push({ icon: 'C', label: 'Century Club', color: '#666', unlocked: false });
     return list.slice(0, 8);
   }, [mine, myPosts.length, followers]);
+
+  // ── Improvement 17: Profile backup/restore handler ──
+  const handleExportProfileBackup = useCallback(() => {
+    const backup = {
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      profile,
+      records: records.filter(r => r.user === currentUser).map(r => ({ album: r.album, artist: r.artist, year: r.year, condition: r.condition, format: r.format, rating: r.rating })),
+      wishlist: wishlist || [],
+      listeningHistory: (listeningHistory || []).filter(s => s.username === currentUser).slice(0, 100).map(s => ({ track: s.track, timestamp: s.timestampMs })),
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `groovestack-profile-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setBackupExported(true);
+    setTimeout(() => setBackupExported(false), 3000);
+  }, [profile, records, currentUser, wishlist, listeningHistory]);
+
+  // ── Improvement 18: Profile migration handler ──
+  const handleStartMigration = useCallback((platform) => {
+    setMigrationPlatform(platform);
+    setMigrationStatus('importing');
+    setTimeout(() => setMigrationStatus('complete'), 2500);
+  }, []);
+
+  // ── Improvement 19: Profile analytics export handler ──
+  const handleExportAnalytics = useCallback(() => {
+    const analytics = {
+      generatedAt: new Date().toISOString(),
+      user: currentUser,
+      collection: { total: mine.length, forSale: forSale.length, collectionValue },
+      listening: { totalSessions: myListens.length, uniqueArtists: listeningStats?.uniqueArtists || 0, totalMinutes: listeningStats?.totalMinutes || 0 },
+      social: { posts: myPosts.length, followers: (followers || []).length, following: (following || []).length },
+      reputation: { score: getReputationScore(mine.length, myPosts.length, myListens.length, (followers || []).length, (following || []).length).total },
+    };
+    const blob = new Blob([JSON.stringify(analytics, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `profile-analytics-${currentUser}-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [currentUser, mine.length, forSale.length, collectionValue, myListens.length, listeningStats, myPosts.length, followers, following]);
 
   // ── Round 3 Improvement 16: Community average stats ─────────────────────
   const communityAvg = useMemo(() => ({
@@ -1972,6 +2031,105 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
               <div className="flex-1" />
               <div className="text-[8px] text-gs-faint font-mono">Now</div>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Improvement 17/18/19: Profile backup, migration, analytics export ── */}
+      <div className="mb-6">
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => { setShowBackupRestore(!showBackupRestore); setShowMigrationTool(false); setShowAnalyticsExport(false); }}
+            className={`text-[10px] py-2 px-3 rounded-lg border font-mono cursor-pointer transition-colors ${showBackupRestore ? 'bg-gs-accent/15 border-gs-accent/30 text-gs-accent' : 'border-gs-border bg-gs-card text-gs-muted hover:text-gs-accent hover:border-gs-accent/30'}`}
+          >
+            Backup / Restore
+          </button>
+          <button
+            onClick={() => { setShowMigrationTool(!showMigrationTool); setShowBackupRestore(false); setShowAnalyticsExport(false); }}
+            className={`text-[10px] py-2 px-3 rounded-lg border font-mono cursor-pointer transition-colors ${showMigrationTool ? 'bg-gs-accent/15 border-gs-accent/30 text-gs-accent' : 'border-gs-border bg-gs-card text-gs-muted hover:text-gs-accent hover:border-gs-accent/30'}`}
+          >
+            Migration Tool
+          </button>
+          <button
+            onClick={() => { setShowAnalyticsExport(!showAnalyticsExport); setShowBackupRestore(false); setShowMigrationTool(false); }}
+            className={`text-[10px] py-2 px-3 rounded-lg border font-mono cursor-pointer transition-colors ${showAnalyticsExport ? 'bg-gs-accent/15 border-gs-accent/30 text-gs-accent' : 'border-gs-border bg-gs-card text-gs-muted hover:text-gs-accent hover:border-gs-accent/30'}`}
+          >
+            Export Analytics
+          </button>
+        </div>
+
+        {/* ── Improvement 17: Profile Backup/Restore Panel ── */}
+        {showBackupRestore && (
+          <div className="mt-3 bg-gs-card border border-gs-border rounded-xl p-4">
+            <div className="text-[11px] font-bold text-gs-text mb-3">Profile Backup & Restore</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-[#111] rounded-lg p-3">
+                <div className="text-[10px] text-gs-dim mb-2">Export Backup</div>
+                <p className="text-[9px] text-gs-faint mb-2 leading-normal">Download a full backup of your profile, collection, and listening history as JSON.</p>
+                <button onClick={handleExportProfileBackup} className="gs-btn-gradient w-full py-1.5 text-[10px] rounded-lg">
+                  {backupExported ? 'Downloaded!' : 'Export Backup'}
+                </button>
+              </div>
+              <div className="bg-[#111] rounded-lg p-3">
+                <div className="text-[10px] text-gs-dim mb-2">Restore Backup</div>
+                <p className="text-[9px] text-gs-faint mb-2 leading-normal">Upload a previously exported backup file to restore your profile data.</p>
+                <button onClick={() => { const input = document.createElement('input'); input.type = 'file'; input.accept = '.json'; input.click(); }} className="gs-btn-secondary w-full py-1.5 text-[10px] rounded-lg">
+                  Import Backup
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Improvement 18: Profile Migration Tool ── */}
+        {showMigrationTool && (
+          <div className="mt-3 bg-gs-card border border-gs-border rounded-xl p-4">
+            <div className="text-[11px] font-bold text-gs-text mb-3">Migrate from Other Platforms</div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                { name: 'Discogs', color: '#ff5500', icon: 'D' },
+                { name: 'Vinyl Me Please', color: '#e91e63', icon: 'V' },
+                { name: 'Bandcamp', color: '#1da0c3', icon: 'B' },
+                { name: 'Last.fm', color: '#d51007', icon: 'L' },
+              ].map(platform => (
+                <button
+                  key={platform.name}
+                  onClick={() => handleStartMigration(platform.name)}
+                  disabled={migrationStatus === 'importing' && migrationPlatform === platform.name}
+                  className="flex flex-col items-center gap-1.5 p-3 rounded-lg bg-[#111] border border-[#1a1a1a] hover:border-gs-accent/30 transition-colors cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold" style={{ background: platform.color }}>{platform.icon}</div>
+                  <span className="text-[10px] text-gs-muted">{platform.name}</span>
+                  {migrationStatus === 'importing' && migrationPlatform === platform.name && <span className="text-[8px] text-amber-400">Importing...</span>}
+                  {migrationStatus === 'complete' && migrationPlatform === platform.name && <span className="text-[8px] text-green-400">Done!</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Improvement 19: Profile Analytics Export ── */}
+        {showAnalyticsExport && (
+          <div className="mt-3 bg-gs-card border border-gs-border rounded-xl p-4">
+            <div className="text-[11px] font-bold text-gs-text mb-2">Export Profile Analytics</div>
+            <p className="text-[10px] text-gs-dim mb-3 leading-normal">Download a comprehensive analytics report including collection stats, listening habits, social metrics, and reputation data.</p>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              <div className="bg-[#111] rounded-lg p-2 text-center">
+                <div className="text-[11px] font-bold text-gs-accent">{mine.length}</div>
+                <div className="text-[8px] text-gs-dim">Records</div>
+              </div>
+              <div className="bg-[#111] rounded-lg p-2 text-center">
+                <div className="text-[11px] font-bold text-purple-400">{myListens.length}</div>
+                <div className="text-[8px] text-gs-dim">Listens</div>
+              </div>
+              <div className="bg-[#111] rounded-lg p-2 text-center">
+                <div className="text-[11px] font-bold text-green-400">{myPosts.length}</div>
+                <div className="text-[8px] text-gs-dim">Posts</div>
+              </div>
+            </div>
+            <button onClick={handleExportAnalytics} className="gs-btn-gradient w-full py-2 text-[10px] rounded-lg">
+              Download Analytics Report (JSON)
+            </button>
           </div>
         )}
       </div>

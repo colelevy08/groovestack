@@ -44,6 +44,7 @@ const DEFAULT_WIDGET_ORDER = [
   'bestTimeToBuy',
   'marketTrends',
   'diversityScore',
+  'predictiveAnalytics',
 ];
 
 // ── Deterministic hash for stable demo data ──────────────────────────────
@@ -582,6 +583,37 @@ export default function AnalyticsScreen({
     setDraggedWidget(null);
   }, [draggedWidget, widgetOrder, onUpdateWidgetOrder]);
 
+  // ── Improvement 23: Predictive analytics widget ──
+  const predictiveData = useMemo(() => {
+    const monthlyValues = valueOverTime.slice(-6).map(m => m.value);
+    if (monthlyValues.length < 2) return null;
+    const avgGrowth = monthlyValues.reduce((sum, v, i, arr) => {
+      if (i === 0) return 0;
+      return sum + (v - arr[i - 1]) / arr[i - 1];
+    }, 0) / (monthlyValues.length - 1);
+    const currentValue = monthlyValues[monthlyValues.length - 1];
+    const predictions = [];
+    const now = new Date();
+    for (let i = 1; i <= 6; i++) {
+      const d = new Date(now); d.setMonth(d.getMonth() + i);
+      const label = d.toLocaleString('default', { month: 'short' });
+      const predicted = Math.round(currentValue * Math.pow(1 + avgGrowth, i));
+      const low = Math.round(predicted * 0.85);
+      const high = Math.round(predicted * 1.15);
+      predictions.push({ label, predicted, low, high });
+    }
+    const peakMonth = predictions.reduce((best, cur) => cur.predicted > best.predicted ? cur : best, predictions[0]);
+    const acquisitionRate = myRecords.length > 0 ? Math.round(myRecords.length / 6 * 10) / 10 : 0;
+    const projectedTotal = Math.round(myRecords.length + acquisitionRate * 6);
+    return {
+      predictions,
+      growthRate: Math.round(avgGrowth * 100 * 10) / 10,
+      peakMonth,
+      acquisitionRate,
+      projectedTotal,
+    };
+  }, [valueOverTime, myRecords]);
+
   if (myRecords.length === 0) {
     return (
       <div className="p-6">
@@ -948,6 +980,49 @@ export default function AnalyticsScreen({
         </div>
       </div>
     ),
+
+    // ── Improvement 23: Predictive Analytics Widget ──
+    predictiveAnalytics: predictiveData ? (
+      <div key="predictiveAnalytics" className="bg-gs-card border border-gs-border rounded-xl p-4">
+        <h3 className="text-[13px] font-bold text-gs-text m-0 mb-3">Predictive Analytics</h3>
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <div className="bg-[#111] rounded-lg p-2.5 text-center">
+            <div className="text-[14px] font-bold" style={{ color: predictiveData.growthRate >= 0 ? '#22c55e' : '#ef4444' }}>
+              {predictiveData.growthRate >= 0 ? '+' : ''}{predictiveData.growthRate}%
+            </div>
+            <div className="text-[8px] text-gs-dim font-mono mt-0.5">Monthly Growth</div>
+          </div>
+          <div className="bg-[#111] rounded-lg p-2.5 text-center">
+            <div className="text-[14px] font-bold text-[#8b5cf6]">{predictiveData.projectedTotal}</div>
+            <div className="text-[8px] text-gs-dim font-mono mt-0.5">Est. Records (6mo)</div>
+          </div>
+          <div className="bg-[#111] rounded-lg p-2.5 text-center">
+            <div className="text-[14px] font-bold text-[#f59e0b]">{predictiveData.acquisitionRate}/mo</div>
+            <div className="text-[8px] text-gs-dim font-mono mt-0.5">Acquisition Rate</div>
+          </div>
+        </div>
+        <div className="text-[10px] text-gs-dim font-mono mb-2">6-Month Value Forecast</div>
+        <div className="flex items-end gap-1" style={{ height: 60 }}>
+          {predictiveData.predictions.map((p, i) => {
+            const maxVal = Math.max(1, ...predictiveData.predictions.map(x => x.high));
+            const hPred = Math.max(3, (p.predicted / maxVal) * 60);
+            const hHigh = Math.max(3, (p.high / maxVal) * 60);
+            return (
+              <div key={i} className="flex-1 relative flex flex-col items-center justify-end" style={{ height: 60 }}>
+                <div className="absolute bottom-0 w-full rounded-t-sm opacity-15" style={{ height: hHigh, background: '#0ea5e9' }} />
+                <div className="w-full rounded-t-sm relative z-[1]" style={{ height: hPred, background: i === 0 ? '#0ea5e9' : '#0ea5e955' }} title={`$${p.predicted}`} />
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex gap-1 mt-1.5">
+          {predictiveData.predictions.map((p, i) => <div key={i} className="flex-1 text-center text-[8px] text-gs-faint font-mono">{p.label}</div>)}
+        </div>
+        <div className="mt-2 p-2 rounded-lg bg-[#111] text-[10px] text-gs-muted">
+          <span className="text-gs-accent font-semibold">Peak forecast:</span> {predictiveData.peakMonth.label} at ${predictiveData.peakMonth.predicted.toLocaleString()} (range: ${predictiveData.peakMonth.low.toLocaleString()}-${predictiveData.peakMonth.high.toLocaleString()})
+        </div>
+      </div>
+    ) : null,
   };
 
   // Render widgets in custom order

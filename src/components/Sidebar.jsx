@@ -159,6 +159,25 @@ export default function Sidebar({
   /* NEW #15: Recent searches expanded state */
   const [recentSearchesExpanded, setRecentSearchesExpanded] = useState(false);
 
+  /* ── Improvement 9: Collapsible section groups ── */
+  const [collapsedSections, setCollapsedSections] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs-sidebar-collapsed-sections')) || {}; } catch { return {}; }
+  });
+
+  /* ── Improvement 10: Quick create menu ── */
+  const [showQuickCreate, setShowQuickCreate] = useState(false);
+
+  /* ── Improvement 11: Recently visited pages list ── */
+  const [recentPages, setRecentPages] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs-sidebar-recent-pages')) || []; } catch { return []; }
+  });
+
+  /* ── Improvement 12: Sidebar accessibility mode ── */
+  const [accessibilityMode, setAccessibilityMode] = useState(false);
+
+  /* ── Improvement 13: Sidebar overlay mode for mobile ── */
+  const [overlayOpen, setOverlayOpen] = useState(false);
+
   /* Improvement 14: Smooth scroll to active nav item on mobile */
   const mobileBarRef = useRef(null);
   const activeTabRef = useRef(null);
@@ -194,6 +213,23 @@ export default function Sidebar({
   useEffect(() => {
     try { localStorage.setItem('gs-sidebar-hidden', JSON.stringify(hiddenNavItems)); } catch { /* ignore */ }
   }, [hiddenNavItems]);
+
+  /* ── Improvement 9: Persist collapsed section state ── */
+  useEffect(() => {
+    try { localStorage.setItem('gs-sidebar-collapsed-sections', JSON.stringify(collapsedSections)); } catch { /* ignore */ }
+  }, [collapsedSections]);
+
+  /* ── Improvement 11: Track recently visited pages ── */
+  useEffect(() => {
+    if (nav) {
+      setRecentPages(prev => {
+        const filtered = prev.filter(p => p !== nav);
+        const updated = [nav, ...filtered].slice(0, 8);
+        try { localStorage.setItem('gs-sidebar-recent-pages', JSON.stringify(updated)); } catch { /* ignore */ }
+        return updated;
+      });
+    }
+  }, [nav]);
 
   /* NEW #19: Simulate update check on mount */
   useEffect(() => {
@@ -489,23 +525,58 @@ export default function Sidebar({
           </div>
         )}
 
+        {/* ── Improvement 10: Quick create menu ── */}
+        {!collapsed && !isGuest && showQuickCreate && (
+          <div className={`mx-3 mb-2 p-2 rounded-lg ${darkMode ? 'bg-[#111] border border-gs-border-subtle' : 'bg-gray-50 border border-gray-200'} animate-fade-in`}>
+            <div className={`text-[9px] font-semibold uppercase tracking-wider ${sectionLabelColor} mb-1.5`}>Quick Create</div>
+            <div className="space-y-0.5">
+              {[
+                { label: 'New Record', action: onAddRecord, icon: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10' },
+                { label: 'New Post', action: () => { setShowQuickCreate(false); setNav('Social'); }, icon: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z' },
+                { label: 'New Message', action: () => { setShowQuickCreate(false); if (onMessages) onMessages(); }, icon: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z' },
+              ].map(item => (
+                <button
+                  key={item.label}
+                  onClick={() => { setShowQuickCreate(false); if (item.action) item.action(); }}
+                  className={`w-full flex items-center gap-2 px-2.5 py-1.5 bg-transparent border-none cursor-pointer ${sidebarText} text-[11px] rounded-md ${sidebarHoverBg} ${sidebarHoverText} transition-colors text-left`}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 opacity-60"><path d={item.icon} /></svg>
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Nav links — grouped by section with dividers (Improvements 4, 5) */}
-        <nav className={`flex-1 ${collapsed ? 'px-1' : 'px-2'} overflow-y-auto transition-[padding] duration-300 relative`}>
+        <nav className={`flex-1 ${collapsed ? 'px-1' : 'px-2'} overflow-y-auto transition-[padding] duration-300 relative`} role={accessibilityMode ? 'navigation' : undefined} aria-label={accessibilityMode ? 'Main sidebar navigation' : undefined}>
           {groupedNav.map(({ section, items }, sectionIdx) => {
             if (items.length === 0) return null;
+            const isSectionCollapsed = collapsedSections[section] === true;
             return (
               <div key={section}>
-                {/* Improvement 5: Section divider with label */}
+                {/* Improvement 5 + 9: Section divider with label — now collapsible */}
                 {!collapsed && (
-                  <div className={`flex items-center gap-2 px-2.5 ${sectionIdx === 0 ? 'pt-0 pb-1.5' : 'pt-3 pb-1.5'}`}>
+                  <button
+                    onClick={() => setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }))}
+                    className={`w-full flex items-center gap-2 px-2.5 ${sectionIdx === 0 ? 'pt-0 pb-1.5' : 'pt-3 pb-1.5'} bg-transparent border-none cursor-pointer`}
+                    aria-expanded={!isSectionCollapsed}
+                    aria-controls={`sidebar-section-${section.replace(/\s/g, '-')}`}
+                  >
                     <span className={`text-[9px] font-semibold uppercase tracking-widest ${sectionLabelColor} whitespace-nowrap`}>{section}</span>
                     <div className={`flex-1 h-px ${darkMode ? 'bg-gs-border-subtle' : 'bg-gray-200'}`} />
-                  </div>
+                    <svg
+                      width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+                      className={`transition-transform duration-200 ${sectionLabelColor} ${isSectionCollapsed ? '-rotate-90' : ''}`}
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  </button>
                 )}
                 {collapsed && sectionIdx > 0 && (
                   <div className={`mx-2 my-2 h-px ${darkMode ? 'bg-gs-border-subtle' : 'bg-gray-200'}`} />
                 )}
-                <div className="space-y-0.5">
+                <div id={`sidebar-section-${section.replace(/\s/g, '-')}`} className={`space-y-0.5 ${!collapsed && isSectionCollapsed ? 'hidden' : ''}`}>
                   {items.map((item) => {
                     const { id, path, shortcut } = item;
                     const globalIdx = navItems.indexOf(item);
@@ -636,6 +707,28 @@ export default function Sidebar({
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── Improvement 11: Recently visited pages ── */}
+          {!collapsed && recentPages.length > 1 && (
+            <div className={`mt-3 pt-3 border-t ${sidebarBorder}`}>
+              <div className={`px-2.5 py-1 ${sectionLabelColor} text-[10px] font-semibold uppercase tracking-wider flex items-center gap-1`}>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
+                Recent Pages
+              </div>
+              <div className="mt-1 space-y-0.5">
+                {recentPages.filter(p => p !== nav).slice(0, 4).map((page) => (
+                  <button
+                    key={page}
+                    onClick={() => setNav(page)}
+                    className={`w-full flex items-center gap-2 px-2.5 py-1.5 bg-transparent border-none cursor-pointer ${sidebarText} text-[11px] rounded-md ${sidebarHoverBg} ${sidebarHoverText} transition-colors text-left`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-gs-accent/30 flex-shrink-0" />
+                    <span className="truncate">{page}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -842,6 +935,37 @@ export default function Sidebar({
           </div>
         )}
 
+        {/* ── Improvement 10: Quick create menu toggle ── */}
+        {!collapsed && !isGuest && (
+          <div className="px-3 mb-1">
+            <button
+              onClick={() => setShowQuickCreate(prev => !prev)}
+              className={`w-full py-1.5 bg-transparent border-none text-[10px] font-medium cursor-pointer text-center flex items-center justify-center gap-1 transition-colors rounded ${showQuickCreate ? 'text-gs-accent' : `${sectionLabelColor} hover:text-gs-dim ${sidebarHoverBg}`}`}
+              type="button"
+              aria-expanded={showQuickCreate}
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Quick Create
+            </button>
+          </div>
+        )}
+
+        {/* ── Improvement 12: Sidebar accessibility mode toggle ── */}
+        {!collapsed && (
+          <div className="px-3 mb-1">
+            <button
+              onClick={() => setAccessibilityMode(prev => !prev)}
+              className={`w-full py-1 bg-transparent border-none text-[9px] font-medium cursor-pointer text-center flex items-center justify-center gap-1 transition-colors ${accessibilityMode ? 'text-gs-accent' : `${sectionLabelColor} hover:text-gs-dim`}`}
+              type="button"
+              aria-pressed={accessibilityMode}
+              title="Toggle accessibility mode for enhanced screen reader support"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="8" r="2"/><path d="M12 10v6M9 20l3-4 3 4"/></svg>
+              {accessibilityMode ? 'Accessibility: On' : 'Accessibility'}
+            </button>
+          </div>
+        )}
+
         {/* NEW #20: Keyboard shortcut legend */}
         {!collapsed && (
           <div className="px-3 mb-1">
@@ -1042,6 +1166,44 @@ export default function Sidebar({
           />
         )}
       </nav>
+
+      {/* ── Improvement 13: Sidebar overlay mode for mobile ── */}
+      {overlayOpen && (
+        <div className="gs-mobile-overlay fixed inset-0 z-[150] hidden">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setOverlayOpen(false)} />
+          <div className="absolute left-0 top-0 bottom-0 w-[260px] bg-gs-sidebar border-r border-gs-border-subtle overflow-y-auto animate-fade-in py-5 px-3">
+            <div className="flex items-center justify-between mb-4 px-1">
+              <span className="text-[15px] font-extrabold tracking-tight">
+                groove<span className="text-gs-accent">stack</span>
+              </span>
+              <button onClick={() => setOverlayOpen(false)} className="p-1 text-gs-dim hover:text-gs-muted bg-transparent border-none cursor-pointer">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div className="space-y-0.5">
+              {navItems.filter(item => !hiddenNavItems.includes(item.id)).map(item => {
+                const active = nav === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => { setNav(item.id); setOverlayOpen(false); }}
+                    className={`gs-nav-item w-full ${active ? 'gs-nav-item-active text-gs-accent' : 'text-gs-dim hover:text-gs-muted hover:bg-[#111]'} transition-colors`}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={item.path} /></svg>
+                    <span className="gs-sidebar-label">{item.label}</span>
+                    {renderBadge(item.id)}
+                  </button>
+                );
+              })}
+            </div>
+            {!isGuest && onLogout && (
+              <button onClick={() => { setOverlayOpen(false); onLogout(); }} className="w-full py-2.5 px-2.5 bg-transparent border-none text-gs-dim text-[11px] font-medium cursor-pointer mt-4 font-mono text-center hover:text-red-400 transition-colors">
+                Log out
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Mobile bottom tab bar (Improvement 14: smooth scroll to active) ── */}
       <nav

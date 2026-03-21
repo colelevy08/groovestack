@@ -4,7 +4,7 @@
 // Includes: #16 Reputation badge, #17 Activity indicator, #18 Quick action dropdown,
 // #19 Mini collection preview on hover, #20 Verified seller checkmark,
 // #21 Last active timestamp, #22 Trade count badge, #23 Listening now indicator (renamed from old numbering).
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import Avatar from './ui/Avatar';
 import { getProfile } from '../utils/helpers';
 
@@ -44,6 +44,38 @@ export default function UserChip({
       recentAlbums: [],
     };
   }, [username, collectionPreview]);
+
+  // [Improvement #16] Mini chart data for expanded hover card
+  const miniChartData = useMemo(() => {
+    const hash = username.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    // Simulate 8 weeks of activity for sparkline
+    return Array.from({ length: 8 }, (_, i) => {
+      const val = Math.max(0, Math.sin(hash + i * 0.8) * 3 + Math.cos(hash * 0.3 + i) * 2 + 3);
+      return Math.round(val);
+    });
+  }, [username]);
+
+  // [Improvement #17] Quick collection stats for tooltip
+  const collectionStats = useMemo(() => {
+    const hash = username.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    return {
+      totalValue: ((hash % 200) + 50) * 10,
+      avgRating: (3 + (hash % 20) / 10).toFixed(1),
+      rarest: hash % 3 === 0 ? 'First pressing' : hash % 3 === 1 ? 'Limited edition' : 'Import',
+      completionPct: 40 + (hash % 50),
+    };
+  }, [username]);
+
+  // [Improvement #18] Listening status animation state
+  const [listeningAnimFrame, setListeningAnimFrame] = useState(0);
+  // Animate the listening bars when listeningNow is active
+  useEffect(() => {
+    if (!listeningNow) return;
+    const interval = setInterval(() => {
+      setListeningAnimFrame(f => (f + 1) % 4);
+    }, 400);
+    return () => clearInterval(interval);
+  }, [listeningNow]);
 
   // Online status (simulated from username hash)
   const isOnline = username.length % 3 !== 0;
@@ -153,10 +185,27 @@ export default function UserChip({
                 <span className="hidden sm:inline">{currentActivity.label}</span>
               </span>
             )}
-            {/* #23 — Listening now indicator */}
+            {/* #23 + [Improvement #18] — Listening now indicator with animated equalizer bars */}
             {listeningNow && (
-              <span className="inline-flex items-center gap-0.5 text-[8px] text-green-400 animate-pulse" title={`Listening to ${listeningNow}`}>
-                <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="1" y="10" width="3" height="10" rx="1"/><rect x="6" y="6" width="3" height="14" rx="1"/><rect x="11" y="3" width="3" height="18" rx="1"/><rect x="16" y="8" width="3" height="12" rx="1"/><rect x="21" y="12" width="3" height="8" rx="1"/></svg>
+              <span className="inline-flex items-center gap-0.5 text-[8px] text-green-400" title={`Listening to ${listeningNow}`}>
+                <span className="inline-flex items-end gap-[1px] h-[8px]">
+                  {[0, 1, 2, 3].map(bar => {
+                    const heights = [
+                      [3, 6, 4, 7],
+                      [5, 3, 7, 4],
+                      [7, 5, 3, 6],
+                      [4, 7, 6, 3],
+                    ];
+                    const h = heights[listeningAnimFrame % 4][bar];
+                    return (
+                      <span
+                        key={bar}
+                        className="inline-block w-[1.5px] bg-green-400 rounded-t-sm transition-all duration-300"
+                        style={{ height: `${h}px` }}
+                      />
+                    );
+                  })}
+                </span>
                 <span className="hidden sm:inline truncate max-w-[60px]">{listeningNow}</span>
               </span>
             )}
@@ -320,6 +369,41 @@ export default function UserChip({
               )}
             </div>
           )}
+          {/* [Improvement #16] Expanded hover card with mini activity chart */}
+          <div className="mb-2.5 p-2 bg-[#0d0d0d] border border-gs-border rounded-lg">
+            <div className="text-[9px] text-gs-faint font-semibold mb-1 uppercase tracking-wide">Activity (8 weeks)</div>
+            <div className="flex items-end gap-[3px] h-[24px]">
+              {miniChartData.map((val, i) => (
+                <div
+                  key={i}
+                  className="flex-1 rounded-t-sm transition-all duration-300"
+                  style={{
+                    height: `${Math.max(2, (val / Math.max(...miniChartData)) * 24)}px`,
+                    background: i === miniChartData.length - 1 ? '#0ea5e9' : '#0ea5e944',
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+          {/* [Improvement #17] Quick collection stats tooltip */}
+          <div className="mb-2.5 grid grid-cols-2 gap-1.5">
+            <div className="p-1.5 bg-[#0d0d0d] border border-gs-border rounded-lg text-center">
+              <div className="text-[10px] font-bold text-gs-text">${(collectionStats.totalValue).toLocaleString()}</div>
+              <div className="text-[7px] text-gs-faint">Est. Value</div>
+            </div>
+            <div className="p-1.5 bg-[#0d0d0d] border border-gs-border rounded-lg text-center">
+              <div className="text-[10px] font-bold text-gs-text">{collectionStats.avgRating}/5</div>
+              <div className="text-[7px] text-gs-faint">Avg Rating</div>
+            </div>
+            <div className="p-1.5 bg-[#0d0d0d] border border-gs-border rounded-lg text-center">
+              <div className="text-[10px] font-bold text-gs-text">{collectionStats.rarest}</div>
+              <div className="text-[7px] text-gs-faint">Rarest Find</div>
+            </div>
+            <div className="p-1.5 bg-[#0d0d0d] border border-gs-border rounded-lg text-center">
+              <div className="text-[10px] font-bold text-gs-text">{collectionStats.completionPct}%</div>
+              <div className="text-[7px] text-gs-faint">Profile Score</div>
+            </div>
+          </div>
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-gs-faint font-mono">{p.followers?.length || 0} followers</span>
             <button

@@ -155,6 +155,54 @@ module.exports = {
         'layout': 'auto 1fr auto',
         'card': 'auto 1fr auto',
       },
+      /* Improvement 21: Card flip transform utilities */
+      rotate: {
+        'y-0': '0deg',
+        'y-180': '180deg',
+        'x-0': '0deg',
+        'x-180': '180deg',
+      },
+      transformOrigin: {
+        'center-center': 'center center',
+      },
+      perspective: {
+        'none': 'none',
+        '500': '500px',
+        '800': '800px',
+        '1000': '1000px',
+        '1500': '1500px',
+        '2000': '2000px',
+      },
+      /* Improvement 22: Drawer width utilities */
+      width: {
+        'drawer-sm': '280px',
+        'drawer': '320px',
+        'drawer-md': '400px',
+        'drawer-lg': '480px',
+        'drawer-xl': '560px',
+      },
+      maxWidth: {
+        'drawer-sm': '280px',
+        'drawer': '320px',
+        'drawer-md': '400px',
+        'drawer-lg': '480px',
+        'drawer-xl': '560px',
+      },
+      /* Improvement 23: Bottom sheet height utilities */
+      height: {
+        'sheet-sm': '30vh',
+        'sheet': '50vh',
+        'sheet-md': '65vh',
+        'sheet-lg': '80vh',
+        'sheet-full': '95vh',
+      },
+      maxHeight: {
+        'sheet-sm': '30vh',
+        'sheet': '50vh',
+        'sheet-md': '65vh',
+        'sheet-lg': '80vh',
+        'sheet-full': '95vh',
+      },
       animation: {
         'fade-in': 'fadeIn 0.2s ease-out',
         'slide-up': 'slideUp 0.25s ease-out',

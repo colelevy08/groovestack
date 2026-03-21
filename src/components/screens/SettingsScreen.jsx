@@ -394,6 +394,38 @@ export default function SettingsScreen({ currentUser, profile, deviceCode, vinyl
   const [showNewApiKeyForm, setShowNewApiKeyForm] = useState(false);
   const [newApiKeyName, setNewApiKeyName] = useState('');
 
+  // ── Improvement 25: Settings diff viewer ──
+  const [showSettingsDiff, setShowSettingsDiff] = useState(false);
+  const settingsDiff = useMemo(() => {
+    const defaults = {
+      emailNotifs: true, pushNotifs: true, dmNotifs: true,
+      publicProfile: true, showListening: true,
+      accent: '#0ea5e9', fontSize: 'medium', highContrast: false,
+      reduceAnimations: false, language: 'en',
+      quietHoursEnabled: false, devMode: false,
+      filterExplicit: false, filterBootlegs: false,
+      autoArchive: false, autoListEnabled: false,
+      syncEnabled: false, parentalEnabled: false,
+    };
+    const current = {
+      emailNotifs, pushNotifs, dmNotifs,
+      publicProfile, showListening,
+      accent, fontSize, highContrast,
+      reduceAnimations, language,
+      quietHoursEnabled, devMode,
+      filterExplicit, filterBootlegs,
+      autoArchive, autoListEnabled,
+      syncEnabled, parentalEnabled,
+    };
+    const changes = [];
+    Object.keys(defaults).forEach(key => {
+      if (defaults[key] !== current[key]) {
+        changes.push({ key, defaultVal: String(defaults[key]), currentVal: String(current[key]) });
+      }
+    });
+    return changes;
+  }, [emailNotifs, pushNotifs, dmNotifs, publicProfile, showListening, accent, fontSize, highContrast, reduceAnimations, language, quietHoursEnabled, devMode, filterExplicit, filterBootlegs, autoArchive, autoListEnabled, syncEnabled, parentalEnabled]);
+
   // Micro-improvement 24: Settings search/filter
   const [settingsSearch, setSettingsSearch] = useState('');
   const settingsSections = useMemo(() => [
@@ -616,6 +648,35 @@ export default function SettingsScreen({ currentUser, profile, deviceCode, vinyl
             )}
           </div>
         </div>
+      </div>
+
+      {/* ── Improvement 25: Settings diff viewer ── */}
+      <div className="mb-4">
+        <button
+          onClick={() => setShowSettingsDiff(!showSettingsDiff)}
+          className={`text-[10px] py-2 px-3 rounded-lg border font-mono cursor-pointer transition-colors ${showSettingsDiff ? 'bg-gs-accent/15 border-gs-accent/30 text-gs-accent' : 'border-gs-border bg-gs-card text-gs-muted hover:text-gs-accent hover:border-gs-accent/30'}`}
+        >
+          {showSettingsDiff ? 'Hide' : 'Show'} Settings Diff ({settingsDiff.length} changes)
+        </button>
+        {showSettingsDiff && (
+          <div className="mt-2 bg-gs-card border border-gs-border rounded-[14px] p-4">
+            <div className="text-[11px] font-bold text-gs-text mb-2">Changes from Defaults</div>
+            {settingsDiff.length === 0 ? (
+              <p className="text-[11px] text-gs-faint text-center py-3">All settings are at their default values.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {settingsDiff.map(d => (
+                  <div key={d.key} className="flex items-center gap-2 py-1.5 border-b border-[#111] last:border-b-0">
+                    <span className="text-[10px] text-gs-muted font-mono flex-1 truncate">{d.key}</span>
+                    <span className="text-[10px] text-red-400 font-mono line-through px-1.5 py-0.5 rounded bg-red-500/10">{d.defaultVal}</span>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gs-dim flex-shrink-0"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    <span className="text-[10px] text-green-400 font-mono px-1.5 py-0.5 rounded bg-green-500/10">{d.currentVal}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Micro-improvement 24: Settings search bar */}

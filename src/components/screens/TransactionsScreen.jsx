@@ -345,6 +345,17 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
   const [transactionNotes, setTransactionNotes] = useState({}); // New Improvement 19: Notes/tags
   const [transactionTags, setTransactionTags] = useState({}); // New Improvement 19
 
+  // ── Improvement 14: Transaction calendar view ──
+  const [showCalendarView, setShowCalendarView] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date().getMonth());
+  const [calendarYear, setCalendarYear] = useState(() => new Date().getFullYear());
+
+  // ── Improvement 15: Revenue vs spending chart ──
+  const [showRevenueChart, setShowRevenueChart] = useState(false);
+
+  // ── Improvement 16: Tax document generator ──
+  const [showTaxDocGenerator, setShowTaxDocGenerator] = useState(false)
+
   const sentOffers = (offers || []).filter(o => o.from === currentUser);
   const receivedOffers = (offers || []).filter(o => o.to === currentUser);
 
@@ -639,6 +650,80 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
     };
   }, [purchases]);
 
+  // ── Improvement 14: Calendar view data ──
+  const calendarData = useMemo(() => {
+    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
+    const days = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const dayPurchases = (purchases || []).filter(p => {
+        let h = 0; const s = String(p.id); for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+        return (Math.abs(h) % daysInMonth) + 1 === d;
+      });
+      days.push({ day: d, dateStr, purchases: dayPurchases, total: dayPurchases.reduce((s, p) => s + (parseFloat(p.price) || 0), 0) });
+    }
+    return { days, firstDay, daysInMonth };
+  }, [calendarYear, calendarMonth, purchases]);
+
+  // ── Improvement 15: Revenue vs spending chart data ──
+  const revenueVsSpending = useMemo(() => {
+    const months = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now); d.setMonth(d.getMonth() - i);
+      const label = d.toLocaleString("default", { month: "short" });
+      let revenue = 0, spending = 0;
+      (purchases || []).forEach(p => {
+        let h = 0; const s = String(p.id); for (let j = 0; j < s.length; j++) h = ((h << 5) - h + s.charCodeAt(j)) | 0;
+        if (Math.abs(h) % 6 === 5 - i) spending += parseFloat(p.price) || 0;
+      });
+      sentOffers.filter(o => o.status === 'accepted').forEach(o => {
+        let h = 0; const s = String(o.id); for (let j = 0; j < s.length; j++) h = ((h << 5) - h + s.charCodeAt(j)) | 0;
+        if (Math.abs(h) % 6 === 5 - i) revenue += parseFloat(o.price) || 0;
+      });
+      months.push({ label, revenue, spending });
+    }
+    return months;
+  }, [purchases, sentOffers]);
+
+  // ── Improvement 16: Tax document generator ──
+  const generateTaxDocument = useCallback(() => {
+    const year = new Date().getFullYear();
+    const totalPurchased = (purchases || []).reduce((sum, p) => sum + (parseFloat(p.price) || 0), 0);
+    const totalFees = totalPurchased * 0.05;
+    const totalShipping = (purchases || []).length * 6;
+    const totalSold = sentOffers.filter(o => o.status === 'accepted').reduce((sum, o) => sum + (parseFloat(o.price) || 0), 0);
+    const doc = [
+      "TAX DOCUMENT — GROOVESTACK",
+      `Tax Year: ${year}`,
+      `Generated: ${new Date().toLocaleDateString()}`,
+      `Taxpayer: @${currentUser}`,
+      "",
+      "INCOME:",
+      `  Sales Revenue:        $${totalSold.toFixed(2)}`,
+      "",
+      "DEDUCTIONS:",
+      `  Purchases:            $${totalPurchased.toFixed(2)}`,
+      `  Platform Fees (5%):   $${totalFees.toFixed(2)}`,
+      `  Shipping Costs:       $${totalShipping.toFixed(2)}`,
+      `  Total Deductions:     $${(totalPurchased + totalFees + totalShipping).toFixed(2)}`,
+      "",
+      "SUMMARY:",
+      `  Net Income (Loss):    $${(totalSold - totalPurchased - totalFees - totalShipping).toFixed(2)}`,
+      "",
+      "Note: This is an estimate for informational purposes only.",
+      "Consult a tax professional for official filings.",
+    ].join("\n");
+    const blob = new Blob([doc], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tax-document-${year}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [purchases, sentOffers, currentUser]);
+
   // Micro-improvement 17: Tax summary for year-end
   const [showTaxSummary, setShowTaxSummary] = useState(false);
   const taxSummary = useMemo(() => {
@@ -709,6 +794,78 @@ export default function TransactionsScreen({ offers, purchases, cart, currentUse
           <div className="mt-2 pt-2 border-t border-[#1a1a1a] flex justify-between text-xs">
             <span className="text-gs-dim font-mono">Net Spend:</span>
             <span className="font-extrabold" style={{ color: taxSummary.netSpend > 0 ? '#ef4444' : '#22c55e' }}>${Math.abs(taxSummary.netSpend).toFixed(2)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Improvement 14/15/16: Calendar view, Revenue chart, Tax doc buttons ── */}
+      <div className="flex gap-2 mb-3">
+        <button
+          onClick={() => { setShowCalendarView(!showCalendarView); setShowRevenueChart(false); setShowTaxDocGenerator(false); }}
+          className={`flex-1 text-[10px] py-2 rounded-lg border font-mono cursor-pointer transition-colors ${showCalendarView ? 'bg-gs-accent/15 border-gs-accent/30 text-gs-accent' : 'border-gs-border bg-gs-card text-gs-muted hover:text-gs-accent hover:border-gs-accent/30'}`}
+        >
+          Calendar View
+        </button>
+        <button
+          onClick={() => { setShowRevenueChart(!showRevenueChart); setShowCalendarView(false); setShowTaxDocGenerator(false); }}
+          className={`flex-1 text-[10px] py-2 rounded-lg border font-mono cursor-pointer transition-colors ${showRevenueChart ? 'bg-gs-accent/15 border-gs-accent/30 text-gs-accent' : 'border-gs-border bg-gs-card text-gs-muted hover:text-gs-accent hover:border-gs-accent/30'}`}
+        >
+          Revenue vs Spending
+        </button>
+        <button
+          onClick={generateTaxDocument}
+          className="flex-1 text-[10px] py-2 rounded-lg border border-gs-border bg-gs-card text-gs-muted cursor-pointer hover:text-gs-accent hover:border-gs-accent/30 transition-colors font-mono"
+        >
+          Generate Tax Doc
+        </button>
+      </div>
+
+      {/* ── Improvement 14: Transaction Calendar View ── */}
+      {showCalendarView && (
+        <div className="bg-gs-card border border-gs-border rounded-xl p-4 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <button onClick={() => { if (calendarMonth === 0) { setCalendarMonth(11); setCalendarYear(y => y - 1); } else setCalendarMonth(m => m - 1); }} className="text-gs-dim hover:text-gs-text text-xs bg-transparent border-none cursor-pointer">&lt;</button>
+            <span className="text-[11px] font-bold text-gs-text">{new Date(calendarYear, calendarMonth).toLocaleString('default', { month: 'long', year: 'numeric' })}</span>
+            <button onClick={() => { if (calendarMonth === 11) { setCalendarMonth(0); setCalendarYear(y => y + 1); } else setCalendarMonth(m => m + 1); }} className="text-gs-dim hover:text-gs-text text-xs bg-transparent border-none cursor-pointer">&gt;</button>
+          </div>
+          <div className="grid grid-cols-7 gap-1 text-center">
+            {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => <div key={d} className="text-[8px] text-gs-faint font-mono py-1">{d}</div>)}
+            {Array.from({ length: calendarData.firstDay }, (_, i) => <div key={`e-${i}`} />)}
+            {calendarData.days.map(d => (
+              <div key={d.day} className={`py-1.5 rounded text-[10px] ${d.purchases.length > 0 ? 'bg-gs-accent/15 text-gs-accent font-bold' : 'text-gs-dim'}`} title={d.total > 0 ? `$${d.total.toFixed(2)} spent` : ''}>
+                {d.day}
+                {d.purchases.length > 0 && <div className="w-1 h-1 rounded-full bg-gs-accent mx-auto mt-0.5" />}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Improvement 15: Revenue vs Spending Chart ── */}
+      {showRevenueChart && (
+        <div className="bg-gs-card border border-gs-border rounded-xl p-4 mb-4">
+          <div className="text-[10px] font-mono text-gs-dim uppercase tracking-wider mb-3">Revenue vs Spending (6 Months)</div>
+          <div className="flex items-end gap-2" style={{ height: 80 }}>
+            {revenueVsSpending.map((m, i) => {
+              const maxVal = Math.max(1, ...revenueVsSpending.flatMap(d => [d.revenue, d.spending]));
+              const rH = Math.max(3, (m.revenue / maxVal) * 80);
+              const sH = Math.max(3, (m.spending / maxVal) * 80);
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <div className="flex items-end gap-0.5 w-full justify-center" style={{ height: 80 }}>
+                    <div className="w-2.5 rounded-t-sm" style={{ height: rH, background: '#22c55e' }} title={`Revenue: $${m.revenue.toFixed(0)}`} />
+                    <div className="w-2.5 rounded-t-sm" style={{ height: sH, background: '#ef4444' }} title={`Spending: $${m.spending.toFixed(0)}`} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex gap-2 mt-1.5">
+            {revenueVsSpending.map((m, i) => <div key={i} className="flex-1 text-center text-[8px] text-gs-faint font-mono">{m.label}</div>)}
+          </div>
+          <div className="flex gap-4 mt-2 justify-center">
+            <span className="flex items-center gap-1 text-[9px] text-gs-dim"><span className="w-2 h-2 rounded-full bg-green-500" />Revenue</span>
+            <span className="flex items-center gap-1 text-[9px] text-gs-dim"><span className="w-2 h-2 rounded-full bg-red-500" />Spending</span>
           </div>
         </div>
       )}

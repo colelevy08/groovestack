@@ -4070,6 +4070,140 @@ function CompanionAppDownload() {
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
+// ── Improvement 20: Device comparison tool ──────────────────────────────
+function DeviceComparisonTool() {
+  const [showComparison, setShowComparison] = useState(false);
+  const devices = [
+    { name: 'Vinyl Buddy v1', chip: 'ESP32-S3', mic: 'INMP441', display: '0.96" OLED', wifi: '2.4GHz', price: '$35', accuracy: '92%', battery: 'USB-C', features: ['Track ID', 'History', 'Stats'] },
+    { name: 'Vinyl Buddy v2', chip: 'ESP32-S3-WROOM', mic: 'SPH0645', display: '1.3" OLED', wifi: '2.4/5GHz', price: '$49', accuracy: '96%', battery: 'USB-C + Battery', features: ['Track ID', 'History', 'Stats', 'Album Art', 'BLE'] },
+    { name: 'Vinyl Buddy Pro', chip: 'ESP32-S3-MINI', mic: 'ICS-43434', display: '1.5" Color', wifi: '2.4/5GHz + BLE', price: '$79', accuracy: '99%', battery: 'USB-C + 2000mAh', features: ['Track ID', 'History', 'Stats', 'Album Art', 'BLE', 'Audio Out', 'Multi-room'] },
+  ];
+
+  if (!showComparison) {
+    return (
+      <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+        <button onClick={() => setShowComparison(true)} className="w-full text-left flex items-center justify-between bg-transparent border-none cursor-pointer p-0">
+          <div>
+            <div className="text-[13px] font-bold text-gs-text">Device Comparison</div>
+            <div className="text-[10px] text-gs-dim mt-0.5">Compare Vinyl Buddy models side by side</div>
+          </div>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gs-dim"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[13px] font-bold text-gs-text">Device Comparison</div>
+        <button onClick={() => setShowComparison(false)} className="text-[10px] text-gs-dim hover:text-gs-muted bg-transparent border-none cursor-pointer">Hide</button>
+      </div>
+      <div className="overflow-x-auto">
+        <div className="grid grid-cols-3 gap-2 min-w-[500px]">
+          {devices.map(d => (
+            <div key={d.name} className="bg-[#111] rounded-lg p-3 text-center">
+              <div className="text-[11px] font-bold text-gs-text mb-2">{d.name}</div>
+              <div className="text-lg font-extrabold text-gs-accent mb-2">{d.price}</div>
+              <div className="space-y-1.5 text-[9px] text-left">
+                <div className="flex justify-between"><span className="text-gs-faint">Chip:</span><span className="text-gs-muted">{d.chip}</span></div>
+                <div className="flex justify-between"><span className="text-gs-faint">Mic:</span><span className="text-gs-muted">{d.mic}</span></div>
+                <div className="flex justify-between"><span className="text-gs-faint">Display:</span><span className="text-gs-muted">{d.display}</span></div>
+                <div className="flex justify-between"><span className="text-gs-faint">WiFi:</span><span className="text-gs-muted">{d.wifi}</span></div>
+                <div className="flex justify-between"><span className="text-gs-faint">Accuracy:</span><span className="text-green-400 font-bold">{d.accuracy}</span></div>
+                <div className="flex justify-between"><span className="text-gs-faint">Power:</span><span className="text-gs-muted">{d.battery}</span></div>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1 justify-center">
+                {d.features.map(f => <span key={f} className="text-[7px] px-1 py-0.5 rounded bg-gs-accent/10 text-gs-accent">{f}</span>)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Improvement 21: Listening session templates ─────────────────────────
+function ListeningSessionTemplates({ onStart }) {
+  const [showTemplates, setShowTemplates] = useState(false);
+  const templates = [
+    { name: 'Morning Chill', duration: '30 min', mood: 'Relaxed', genres: ['Jazz', 'Ambient', 'Classical'], color: '#f59e0b' },
+    { name: 'Deep Listening', duration: '60 min', mood: 'Focused', genres: ['Progressive', 'Post-Rock', 'Electronic'], color: '#8b5cf6' },
+    { name: 'Discovery Session', duration: '45 min', mood: 'Curious', genres: ['Mixed', 'New Releases'], color: '#0ea5e9' },
+    { name: 'Party Mode', duration: '120 min', mood: 'Energetic', genres: ['Funk', 'Disco', 'Dance'], color: '#22c55e' },
+    { name: 'Late Night Vinyl', duration: '90 min', mood: 'Mellow', genres: ['Blues', 'Soul', 'Lo-fi'], color: '#ec4899' },
+  ];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <button onClick={() => setShowTemplates(!showTemplates)} className="w-full text-left flex items-center justify-between bg-transparent border-none cursor-pointer p-0">
+        <div>
+          <div className="text-[13px] font-bold text-gs-text">Session Templates</div>
+          <div className="text-[10px] text-gs-dim mt-0.5">Pre-configured listening sessions</div>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`text-gs-dim transition-transform ${showTemplates ? 'rotate-90' : ''}`}><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      {showTemplates && (
+        <div className="mt-3 space-y-2">
+          {templates.map(t => (
+            <div key={t.name} className="flex items-center gap-3 p-2.5 rounded-lg bg-[#111] hover:bg-[#161616] transition-colors">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold text-white" style={{ background: t.color }}>{t.name[0]}</div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] font-semibold text-gs-text">{t.name}</div>
+                <div className="text-[9px] text-gs-dim">{t.duration} &middot; {t.mood} &middot; {t.genres.join(', ')}</div>
+              </div>
+              <button onClick={() => onStart?.(t)} className="text-[9px] px-2 py-1 rounded bg-gs-accent/15 text-gs-accent border-none cursor-pointer hover:bg-gs-accent/25 transition-colors">Start</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Improvement 22: Audio quality benchmarks ────────────────────────────
+function AudioQualityBenchmarks() {
+  const [showBenchmarks, setShowBenchmarks] = useState(false);
+  const benchmarks = [
+    { label: 'Signal-to-Noise', value: 82, max: 100, unit: 'dB', color: '#22c55e', status: 'Excellent' },
+    { label: 'Frequency Response', value: 94, max: 100, unit: '%', color: '#0ea5e9', status: 'Great' },
+    { label: 'Identification Speed', value: 2.3, max: 5, unit: 's', color: '#8b5cf6', status: 'Fast', invert: true },
+    { label: 'Match Confidence', value: 96, max: 100, unit: '%', color: '#f59e0b', status: 'High' },
+    { label: 'Background Rejection', value: 88, max: 100, unit: '%', color: '#ec4899', status: 'Good' },
+  ];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <button onClick={() => setShowBenchmarks(!showBenchmarks)} className="w-full text-left flex items-center justify-between bg-transparent border-none cursor-pointer p-0">
+        <div>
+          <div className="text-[13px] font-bold text-gs-text">Audio Quality Benchmarks</div>
+          <div className="text-[10px] text-gs-dim mt-0.5">Device performance metrics</div>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`text-gs-dim transition-transform ${showBenchmarks ? 'rotate-90' : ''}`}><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      {showBenchmarks && (
+        <div className="mt-3 space-y-3">
+          {benchmarks.map(b => {
+            const pct = b.invert ? Math.max(0, 100 - (b.value / b.max * 100)) : (b.value / b.max * 100);
+            return (
+              <div key={b.label}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] text-gs-dim">{b.label}</span>
+                  <span className="text-[10px] font-bold" style={{ color: b.color }}>{b.value}{b.unit} — {b.status}</span>
+                </div>
+                <div className="h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+                  <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(pct, 100)}%`, background: b.color }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function VinylBuddyScreen({ currentUser, listeningHistory, activated, deviceCode, onActivate, onDeactivate }) {
   useEffect(() => { ensureKeyframes(); }, []);
 
@@ -4077,12 +4211,18 @@ export default function VinylBuddyScreen({ currentUser, listeningHistory, activa
     return <LandingPage onActivate={onActivate} />;
   }
   return (
-    <Dashboard
-      currentUser={currentUser}
-      listeningHistory={listeningHistory}
-      deviceCode={deviceCode}
-      onDeactivate={onDeactivate}
-    />
+    <div>
+      {/* ── Improvements 20-22: Device comparison, session templates, benchmarks ── */}
+      <DeviceComparisonTool />
+      <ListeningSessionTemplates />
+      <AudioQualityBenchmarks />
+      <Dashboard
+        currentUser={currentUser}
+        listeningHistory={listeningHistory}
+        deviceCode={deviceCode}
+        onDeactivate={onDeactivate}
+      />
+    </div>
   );
 }
 

@@ -534,6 +534,295 @@ const COUNTRY_FLAGS = {
   IT: "\uD83C\uDDEE\uD83C\uDDF9", Italy: "\uD83C\uDDEE\uD83C\uDDF9",
 };
 
+// [Improvement #16] Record Comparison Mode (side-by-side)
+function RecordComparisonMode({ record, records, onClose }) {
+  const [compareId, setCompareId] = useState(null);
+  const candidates = useMemo(() => {
+    if (!record || !records) return [];
+    return records
+      .filter(r => r.id !== record.id && (r.artist === record.artist || r.genre === record.genre || r.tags?.some(t => record.tags?.includes(t))))
+      .slice(0, 10);
+  }, [record, records]);
+
+  const compareRecord = compareId ? records.find(r => r.id === compareId) : null;
+
+  const fields = [
+    { label: 'Album', get: r => r.album },
+    { label: 'Artist', get: r => r.artist },
+    { label: 'Year', get: r => r.year },
+    { label: 'Condition', get: r => r.condition },
+    { label: 'Format', get: r => r.format },
+    { label: 'Price', get: r => r.forSale ? `$${r.price}` : 'Not for sale' },
+    { label: 'Rating', get: r => r.rating ? `${r.rating}/5` : 'N/A' },
+    { label: 'Label', get: r => r.label || 'Unknown' },
+    { label: 'Verified', get: r => r.verified ? 'Yes' : 'No' },
+  ];
+
+  return (
+    <div className="mb-4 p-3.5 bg-[#0d0d0d] border border-[#1a1a1a] rounded-xl">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-[11px] text-gs-dim font-mono tracking-wider">COMPARE RECORDS</span>
+        <button onClick={onClose} className="text-[10px] text-gs-dim bg-transparent border-none cursor-pointer hover:text-gs-muted">Close</button>
+      </div>
+      {!compareRecord && (
+        <div className="mb-2">
+          <div className="text-[10px] text-gs-faint mb-1.5">Select a record to compare with:</div>
+          <div className="flex flex-col gap-1 max-h-[120px] overflow-y-auto">
+            {candidates.length === 0 && <div className="text-[10px] text-gs-faint">No similar records found to compare.</div>}
+            {candidates.map(r => (
+              <button key={r.id} onClick={() => setCompareId(r.id)} className="w-full text-left px-2 py-1.5 bg-[#111] border border-[#1a1a1a] rounded-lg text-[10px] text-gs-muted cursor-pointer hover:border-gs-accent/40 transition-colors">
+                {r.album} - {r.artist} ({r.condition})
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {compareRecord && (
+        <div>
+          <div className="grid grid-cols-3 gap-1 text-[10px]">
+            <div className="text-gs-faint font-mono text-right pr-2">Field</div>
+            <div className="text-gs-accent font-bold text-center">This Record</div>
+            <div className="text-amber-400 font-bold text-center">Compared</div>
+            {fields.map(f => (
+              <div key={f.label} className="contents">
+                <div className="text-gs-faint font-mono text-right pr-2 py-0.5">{f.label}</div>
+                <div className="text-gs-muted text-center py-0.5 truncate">{f.get(record)}</div>
+                <div className="text-gs-muted text-center py-0.5 truncate">{f.get(compareRecord)}</div>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => setCompareId(null)} className="mt-2 text-[10px] text-gs-dim bg-transparent border-none cursor-pointer hover:text-gs-muted">Compare another</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// [Improvement #17] Record Investment Calculator
+function RecordInvestmentCalculator({ record }) {
+  const [show, setShow] = useState(false);
+  const [purchasePrice, setPurchasePrice] = useState('');
+  const [yearsHeld, setYearsHeld] = useState('5');
+
+  const projection = useMemo(() => {
+    const buy = parseFloat(purchasePrice) || (record?.price ? parseFloat(record.price) : 0);
+    const years = parseInt(yearsHeld) || 5;
+    if (!buy || buy <= 0) return null;
+    // Vinyl appreciation: ~3-8% per year depending on condition and age
+    const condRates = { M: 0.08, NM: 0.06, 'VG+': 0.05, VG: 0.04, 'G+': 0.03, G: 0.02, F: 0.01, P: 0.005 };
+    const rate = condRates[record?.condition] || 0.04;
+    const yearBonus = record?.year && record.year < 1980 ? 0.02 : 0;
+    const totalRate = rate + yearBonus;
+    const futureValue = buy * Math.pow(1 + totalRate, years);
+    const roi = ((futureValue - buy) / buy * 100).toFixed(1);
+    return { futureValue: futureValue.toFixed(2), roi, annualRate: (totalRate * 100).toFixed(1) };
+  }, [purchasePrice, yearsHeld, record]);
+
+  if (!record) return null;
+  return (
+    <div className="mb-4">
+      <button onClick={() => setShow(s => !s)} className="text-[10px] text-gs-dim hover:text-gs-muted bg-transparent border-none cursor-pointer p-0 font-mono">
+        {show ? 'Hide Investment Calculator' : 'Investment Calculator'}
+      </button>
+      {show && (
+        <div className="mt-2 p-3 bg-[#0a0a0a] rounded-lg border border-[#1a1a1a]">
+          <div className="grid grid-cols-2 gap-2 mb-2">
+            <div>
+              <label className="text-[9px] text-gs-faint font-mono block mb-0.5">PURCHASE PRICE ($)</label>
+              <input type="number" value={purchasePrice} onChange={e => setPurchasePrice(e.target.value)} placeholder={String(record.price || 20)} className="w-full bg-[#111] border border-[#222] rounded px-2 py-1.5 text-[11px] text-gs-text outline-none font-mono" />
+            </div>
+            <div>
+              <label className="text-[9px] text-gs-faint font-mono block mb-0.5">YEARS TO HOLD</label>
+              <select value={yearsHeld} onChange={e => setYearsHeld(e.target.value)} className="w-full bg-[#111] border border-[#222] rounded px-2 py-1.5 text-[11px] text-gs-text outline-none cursor-pointer">
+                {[1, 2, 3, 5, 10, 15, 20].map(y => <option key={y} value={y}>{y} year{y > 1 ? 's' : ''}</option>)}
+              </select>
+            </div>
+          </div>
+          {projection && (
+            <div className="bg-[#111] rounded-lg p-2 text-center">
+              <div className="text-[9px] text-gs-faint font-mono mb-1">PROJECTED VALUE ({projection.annualRate}% annual appreciation)</div>
+              <div className="text-lg font-extrabold text-emerald-400">${projection.futureValue}</div>
+              <div className="text-[10px] text-emerald-400/70">+{projection.roi}% ROI</div>
+            </div>
+          )}
+          <div className="text-[8px] text-gs-faint mt-1.5">Based on condition ({record.condition}), release year, and historical vinyl appreciation rates. Not financial advice.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// [Improvement #18] Record Trade Value Estimator
+function RecordTradeValueEstimator({ record, records }) {
+  const [show, setShow] = useState(false);
+
+  const tradeData = useMemo(() => {
+    if (!record || !records) return null;
+    const basePrices = { M: 40, NM: 30, 'VG+': 22, VG: 15, 'G+': 10, G: 7, F: 5, P: 3 };
+    const myValue = record.price ? parseFloat(record.price) : (basePrices[record.condition] || 15);
+    // Find records of similar value that could be trade candidates
+    const candidates = records
+      .filter(r => r.id !== record.id && r.user !== record.user && r.forSale)
+      .map(r => {
+        const theirValue = r.price ? parseFloat(r.price) : (basePrices[r.condition] || 15);
+        const diff = Math.abs(myValue - theirValue);
+        const fairness = diff <= myValue * 0.15 ? 'Fair' : diff <= myValue * 0.3 ? 'Possible' : 'Uneven';
+        return { ...r, theirValue, diff, fairness };
+      })
+      .filter(r => r.fairness !== 'Uneven')
+      .sort((a, b) => a.diff - b.diff)
+      .slice(0, 5);
+    return { myValue, candidates };
+  }, [record, records]);
+
+  if (!record) return null;
+  return (
+    <div className="mb-4">
+      <button onClick={() => setShow(s => !s)} className="text-[10px] text-gs-dim hover:text-gs-muted bg-transparent border-none cursor-pointer p-0 font-mono">
+        {show ? 'Hide Trade Estimator' : 'Trade Value Estimator'}
+      </button>
+      {show && tradeData && (
+        <div className="mt-2 p-3 bg-[#0a0a0a] rounded-lg border border-[#1a1a1a]">
+          <div className="text-[10px] text-gs-dim font-mono mb-2">ESTIMATED TRADE VALUE: <span className="text-emerald-400 font-bold">${tradeData.myValue.toFixed(2)}</span></div>
+          {tradeData.candidates.length > 0 ? (
+            <div className="space-y-1.5">
+              <div className="text-[9px] text-gs-faint mb-1">Potential trade matches:</div>
+              {tradeData.candidates.map(c => (
+                <div key={c.id} className="flex items-center gap-2 px-2 py-1.5 bg-[#111] rounded-lg">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] text-gs-text font-semibold truncate">{c.album}</div>
+                    <div className="text-[9px] text-gs-faint">{c.artist} - ${c.theirValue.toFixed(2)}</div>
+                  </div>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${c.fairness === 'Fair' ? 'text-emerald-400 bg-emerald-500/10' : 'text-amber-400 bg-amber-500/10'}`}>{c.fairness}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-[10px] text-gs-faint">No suitable trade matches found at this time.</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// [Improvement #19] Record Completion Checker
+function RecordCompletionChecker({ record }) {
+  const [show, setShow] = useState(false);
+
+  const checks = useMemo(() => {
+    if (!record) return [];
+    return [
+      { label: 'Album title', done: !!record.album?.trim(), required: true },
+      { label: 'Artist name', done: !!record.artist?.trim(), required: true },
+      { label: 'Release year', done: !!record.year, required: false },
+      { label: 'Record label', done: !!record.label?.trim(), required: false },
+      { label: 'Condition graded', done: !!record.condition, required: true },
+      { label: 'Format specified', done: !!record.format, required: false },
+      { label: 'Rating given', done: record.rating > 0, required: false },
+      { label: 'Review written', done: !!record.review?.trim(), required: false },
+      { label: 'Genre tagged', done: record.tags?.length > 0, required: false },
+      { label: 'Vinyl verified', done: !!record.verified, required: false },
+      { label: 'Price set (if for sale)', done: !record.forSale || !!record.price, required: record.forSale },
+    ];
+  }, [record]);
+
+  const completed = checks.filter(c => c.done).length;
+  const total = checks.length;
+  const pct = Math.round((completed / total) * 100);
+
+  if (!record) return null;
+  return (
+    <div className="mb-4">
+      <button onClick={() => setShow(s => !s)} className="text-[10px] text-gs-dim hover:text-gs-muted bg-transparent border-none cursor-pointer p-0 font-mono flex items-center gap-1.5">
+        {show ? 'Hide Completion Check' : 'Record Completeness'}
+        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${pct === 100 ? 'text-emerald-400 bg-emerald-500/10' : pct >= 60 ? 'text-amber-400 bg-amber-500/10' : 'text-red-400 bg-red-500/10'}`}>{pct}%</span>
+      </button>
+      {show && (
+        <div className="mt-2 p-3 bg-[#0a0a0a] rounded-lg border border-[#1a1a1a]">
+          <div className="mb-2">
+            <div className="w-full h-2 bg-[#1a1a1a] rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: pct === 100 ? '#10b981' : pct >= 60 ? '#f59e0b' : '#ef4444' }} />
+            </div>
+            <div className="text-[9px] text-gs-faint mt-0.5 text-right">{completed}/{total} fields</div>
+          </div>
+          <div className="space-y-1">
+            {checks.map(c => (
+              <div key={c.label} className="flex items-center gap-1.5 text-[10px]">
+                <span className={c.done ? 'text-emerald-400' : c.required ? 'text-red-400' : 'text-gs-faint'}>{c.done ? '\u2713' : '\u2717'}</span>
+                <span className={c.done ? 'text-gs-muted' : 'text-gs-dim'}>{c.label}</span>
+                {c.required && !c.done && <span className="text-[8px] text-red-400">required</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// [Improvement #20] Record Authenticity Checklist
+function RecordAuthenticityChecklist({ record }) {
+  const [show, setShow] = useState(false);
+  const [checkedItems, setCheckedItems] = useState({});
+
+  const items = useMemo(() => [
+    { id: 'matrix', label: 'Matrix/run-out etchings match known pressings', category: 'Physical' },
+    { id: 'label_print', label: 'Label print quality and color are consistent with era', category: 'Physical' },
+    { id: 'weight', label: 'Vinyl weight feels correct for the format/era', category: 'Physical' },
+    { id: 'sleeve', label: 'Sleeve artwork and printing quality match original', category: 'Packaging' },
+    { id: 'inserts', label: 'Inner sleeve/inserts present and period-correct', category: 'Packaging' },
+    { id: 'barcode', label: 'Barcode/catalog number matches known releases', category: 'Catalog' },
+    { id: 'pressing_plant', label: 'Pressing plant markings are identifiable', category: 'Catalog' },
+    { id: 'sound', label: 'Audio quality consistent with pressing type', category: 'Audio' },
+  ], []);
+
+  const toggleCheck = (id) => {
+    setCheckedItems(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const checkedCount = Object.values(checkedItems).filter(Boolean).length;
+  const totalItems = items.length;
+  const score = Math.round((checkedCount / totalItems) * 100);
+
+  if (!record) return null;
+  return (
+    <div className="mb-4">
+      <button onClick={() => setShow(s => !s)} className="text-[10px] text-gs-dim hover:text-gs-muted bg-transparent border-none cursor-pointer p-0 font-mono flex items-center gap-1.5">
+        {show ? 'Hide Authenticity Checklist' : 'Authenticity Checklist'}
+        {checkedCount > 0 && <span className="text-[9px] font-bold text-emerald-400">{checkedCount}/{totalItems}</span>}
+      </button>
+      {show && (
+        <div className="mt-2 p-3 bg-[#0a0a0a] rounded-lg border border-[#1a1a1a]">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] text-gs-dim font-mono">AUTHENTICITY SCORE</span>
+            <span className={`text-[11px] font-bold ${score >= 80 ? 'text-emerald-400' : score >= 50 ? 'text-amber-400' : 'text-gs-dim'}`}>
+              {score}% ({score >= 80 ? 'Likely Authentic' : score >= 50 ? 'Partial Verification' : 'Needs Review'})
+            </span>
+          </div>
+          <div className="w-full h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden mb-3">
+            <div className="h-full rounded-full transition-all" style={{ width: `${score}%`, background: score >= 80 ? '#10b981' : score >= 50 ? '#f59e0b' : '#6b7280' }} />
+          </div>
+          {['Physical', 'Packaging', 'Catalog', 'Audio'].map(cat => {
+            const catItems = items.filter(i => i.category === cat);
+            return (
+              <div key={cat} className="mb-2">
+                <div className="text-[9px] text-gs-faint font-mono font-bold mb-1">{cat.toUpperCase()}</div>
+                {catItems.map(item => (
+                  <label key={item.id} className="flex items-center gap-2 py-0.5 cursor-pointer group">
+                    <input type="checkbox" checked={!!checkedItems[item.id]} onChange={() => toggleCheck(item.id)} className="w-3 h-3 rounded border-gs-border accent-emerald-500 cursor-pointer" />
+                    <span className={`text-[10px] ${checkedItems[item.id] ? 'text-gs-muted line-through' : 'text-gs-dim group-hover:text-gs-muted'}`}>{item.label}</span>
+                  </label>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DetailModal({ open, onClose, record, onLike, onSave, onComment, onBuy, onViewUser, onViewArtist, onAddWishlistItem, currentUser, records, onOfferFromDetail, onVerifyRecord, onViewRecord }) {
   const [copied, setCopied] = useState(false);
   const [showLightbox, setShowLightbox] = useState(false);
@@ -543,6 +832,8 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
   const [offerAmount, setOfferAmount] = useState('');
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [discogsPrice, setDiscogsPrice] = useState(null);
+  // [Improvement #16] Record comparison mode
+  const [showCompareMode, setShowCompareMode] = useState(false);
   // [Improvement 6] Similar records carousel scroll position
   const [carouselIndex, setCarouselIndex] = useState(0);
   const carouselRef = useCallback(node => {
@@ -935,6 +1226,28 @@ export default function DetailModal({ open, onClose, record, onLike, onSave, onC
           Save Note
         </button>
       </div>
+
+      {/* [Improvement #16] Record Comparison Mode */}
+      {showCompareMode ? (
+        <RecordComparisonMode record={record} records={records} onClose={() => setShowCompareMode(false)} />
+      ) : (
+        <button onClick={() => setShowCompareMode(true)} className="w-full mb-4 py-2 bg-[#111] border border-[#1a1a1a] rounded-lg text-[11px] text-gs-dim font-semibold cursor-pointer hover:border-gs-accent/40 transition-colors flex items-center justify-center gap-1.5">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="2" x2="12" y2="22"/><polyline points="7 8 3 12 7 16"/><polyline points="17 8 21 12 17 16"/></svg>
+          Compare with Similar Records
+        </button>
+      )}
+
+      {/* [Improvement #17] Record Investment Calculator */}
+      <RecordInvestmentCalculator record={record} />
+
+      {/* [Improvement #18] Record Trade Value Estimator */}
+      <RecordTradeValueEstimator record={record} records={records} />
+
+      {/* [Improvement #19] Record Completion Checker */}
+      <RecordCompletionChecker record={record} />
+
+      {/* [Improvement #20] Record Authenticity Checklist */}
+      <RecordAuthenticityChecklist record={record} />
 
       {/* Divider */}
       <div className="border-t border-[#1a1a1a] mb-5" />

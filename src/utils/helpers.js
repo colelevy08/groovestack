@@ -616,3 +616,146 @@ export function darken(hex, amount) {
     rgb.b * (1 - amount),
   );
 }
+
+// ---------------------------------------------------------------------------
+// 6. Image compression utility
+// ---------------------------------------------------------------------------
+
+/**
+ * Compress an image file or blob by drawing it onto a canvas and exporting
+ * at the requested quality and optional max dimensions.
+ *
+ * Works in browser environments only (requires Canvas / Image APIs).
+ *
+ * @param {File|Blob} file               - The source image file.
+ * @param {Object}    [opts]             - Compression options.
+ * @param {number}    [opts.maxWidth=1920]  - Maximum output width in pixels.
+ * @param {number}    [opts.maxHeight=1920] - Maximum output height in pixels.
+ * @param {number}    [opts.quality=0.8]    - JPEG/WebP quality (0-1).
+ * @param {string}    [opts.type='image/jpeg'] - Output MIME type.
+ * @returns {Promise<{blob: Blob, width: number, height: number, originalSize: number, compressedSize: number, ratio: number}>}
+ */
+export async function compressImage(file, opts = {}) {
+  const {
+    maxWidth = 1920,
+    maxHeight = 1920,
+    quality = 0.8,
+    type = "image/jpeg",
+  } = opts;
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+
+      let { width, height } = img;
+
+      // Scale down proportionally if either dimension exceeds the max
+      if (width > maxWidth || height > maxHeight) {
+        const scale = Math.min(maxWidth / width, maxHeight / height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) return reject(new Error("Canvas toBlob returned null"));
+          resolve({
+            blob,
+            width,
+            height,
+            originalSize: file.size,
+            compressedSize: blob.size,
+            ratio: Math.round((blob.size / file.size) * 100),
+          });
+        },
+        type,
+        quality
+      );
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Failed to load image for compression"));
+    };
+
+    img.src = url;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 7. Performance timing utility
+// ---------------------------------------------------------------------------
+
+/**
+ * Measure the execution time of a synchronous or asynchronous function.
+ *
+ * @param {string}   label - A descriptive label for the measurement.
+ * @param {Function} fn    - The function to measure. May be async.
+ * @returns {Promise<{result: *, duration: number, label: string}>}
+ *   An object containing the function's return value, the elapsed time in ms,
+ *   and the label.
+ *
+ * @example
+ * const { result, duration } = await measurePerformance('fetchRecords', () => fetch('/api/records'));
+ * console.log(`${duration}ms`);
+ */
+export async function measurePerformance(label, fn) {
+  const start = typeof performance !== "undefined" ? performance.now() : Date.now();
+  try {
+    const result = await fn();
+    const end = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const duration = Math.round((end - start) * 100) / 100;
+    return { result, duration, label };
+  } catch (err) {
+    const end = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const duration = Math.round((end - start) * 100) / 100;
+    err._perfDuration = duration;
+    err._perfLabel = label;
+    throw err;
+  }
+}
+
+/**
+ * Create a reusable performance tracker that accumulates multiple measurements.
+ *
+ * @returns {{ mark: Function, getMarks: Function, summary: Function }}
+ *
+ * @example
+ * const perf = createPerfTracker();
+ * perf.mark('db-query', 45.2);
+ * perf.mark('render', 12.1);
+ * console.log(perf.summary()); // { total: 57.3, marks: [...] }
+ */
+export function createPerfTracker() {
+  const marks = [];
+
+  return {
+    /** Record a named timing measurement in milliseconds. */
+    mark(label, durationMs) {
+      marks.push({ label, duration: durationMs, timestamp: Date.now() });
+    },
+    /** Return all recorded marks. */
+    getMarks() {
+      return [...marks];
+    },
+    /** Return a summary with total time and all individual marks. */
+    summary() {
+      const total = marks.reduce((sum, m) => sum + m.duration, 0);
+      return {
+        total: Math.round(total * 100) / 100,
+        count: marks.length,
+        marks: marks.map(m => ({ label: m.label, duration: m.duration })),
+      };
+    },
+  };
+}

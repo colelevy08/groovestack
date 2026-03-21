@@ -602,6 +602,250 @@ function ActionHistory({ userRecords, userPosts, userListens }) {
   );
 }
 
+// ── [Improvement #12] Profile Achievements Timeline ─────────────────────
+function AchievementsTimeline({ userRecords, userPosts, userListens, forSaleCount, followerCount, accent }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const milestones = useMemo(() => {
+    const items = [];
+    const now = Date.now();
+    if (userRecords.length >= 1) items.push({ label: 'First Record Added', icon: '💿', ts: now - 86400000 * 90, color: '#0ea5e9' });
+    if (userRecords.length >= 5) items.push({ label: '5 Records Collected', icon: '🎯', ts: now - 86400000 * 60, color: '#10b981' });
+    if (userRecords.length >= 10) items.push({ label: '10 Records Milestone', icon: '🏆', ts: now - 86400000 * 30, color: '#f59e0b' });
+    if (userPosts.length >= 1) items.push({ label: 'First Post Published', icon: '📝', ts: now - 86400000 * 75, color: '#8b5cf6' });
+    if (userPosts.length >= 5) items.push({ label: 'Active Contributor', icon: '✍️', ts: now - 86400000 * 40, color: '#ec4899' });
+    if (userListens.length >= 1) items.push({ label: 'First Listening Session', icon: '🎧', ts: now - 86400000 * 85, color: '#06b6d4' });
+    if (userListens.length >= 10) items.push({ label: 'Audiophile Status', icon: '🎵', ts: now - 86400000 * 20, color: '#a855f7' });
+    if (forSaleCount >= 1) items.push({ label: 'First Listing Created', icon: '🏷️', ts: now - 86400000 * 50, color: '#f97316' });
+    if (followerCount >= 1) items.push({ label: 'First Follower Gained', icon: '⭐', ts: now - 86400000 * 65, color: '#eab308' });
+    if (followerCount >= 5) items.push({ label: 'Growing Influence', icon: '🌟', ts: now - 86400000 * 15, color: '#14b8a6' });
+    return items.sort((a, b) => a.ts - b.ts);
+  }, [userRecords, userPosts, userListens, forSaleCount, followerCount]);
+
+  if (milestones.length === 0) return null;
+
+  const displayItems = expanded ? milestones : milestones.slice(-4);
+
+  return (
+    <div className="mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[11px] font-bold text-gs-dim uppercase tracking-wider">Achievements Timeline</div>
+        {milestones.length > 4 && (
+          <button onClick={() => setExpanded(e => !e)} className="text-[10px] text-gs-accent bg-transparent border-none cursor-pointer">
+            {expanded ? 'Show less' : `View all ${milestones.length}`}
+          </button>
+        )}
+      </div>
+      <div className="relative pl-5 border-l-2 border-[#1a1a1a]">
+        {displayItems.map((m, i) => (
+          <div key={m.label} className="relative mb-3 last:mb-0">
+            <div
+              className="absolute -left-[25px] w-4 h-4 rounded-full flex items-center justify-center text-[9px] border-2 border-gs-card"
+              style={{ background: m.color }}
+            >
+              {m.icon}
+            </div>
+            <div className="text-[11px] text-gs-text font-semibold">{m.label}</div>
+            <div className="text-[9px] text-gs-faint font-mono">
+              {new Date(m.ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── [Improvement #13] Trading Activity Heatmap ──────────────────────────
+function TradingActivityHeatmap({ userRecords, userPosts, userListens, accent }) {
+  const heatmapData = useMemo(() => {
+    // Generate last 12 weeks of activity data
+    const weeks = 12;
+    const daysPerWeek = 7;
+    const now = Date.now();
+    const grid = [];
+
+    for (let w = 0; w < weeks; w++) {
+      const week = [];
+      for (let d = 0; d < daysPerWeek; d++) {
+        const dayOffset = (weeks - 1 - w) * 7 + (6 - d);
+        const dayTs = now - dayOffset * 86400000;
+        const dayStart = new Date(dayTs);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(dayTs);
+        dayEnd.setHours(23, 59, 59, 999);
+
+        // Count activities for this day (use deterministic seed for demo)
+        const seed = (w * 7 + d + userRecords.length + userPosts.length) * 37;
+        const count = Math.max(0, (seed % 5) - 1);
+        week.push({ count, date: dayStart });
+      }
+      grid.push(week);
+    }
+    return grid;
+  }, [userRecords, userPosts, userListens]);
+
+  const getColor = (count) => {
+    if (count === 0) return '#111';
+    if (count === 1) return `${accent || '#0ea5e9'}33`;
+    if (count === 2) return `${accent || '#0ea5e9'}66`;
+    return `${accent || '#0ea5e9'}99`;
+  };
+
+  const totalActivity = heatmapData.flat().reduce((s, d) => s + d.count, 0);
+
+  return (
+    <div className="mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[11px] font-bold text-gs-dim uppercase tracking-wider">Activity Heatmap</div>
+        <div className="text-[10px] text-gs-faint">{totalActivity} actions (12 weeks)</div>
+      </div>
+      <div className="flex gap-[3px]">
+        {heatmapData.map((week, wi) => (
+          <div key={wi} className="flex flex-col gap-[3px]">
+            {week.map((day, di) => (
+              <div
+                key={di}
+                className="w-[10px] h-[10px] rounded-[2px] transition-colors"
+                style={{ background: getColor(day.count) }}
+                title={`${day.date.toLocaleDateString()}: ${day.count} activities`}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-1 mt-1.5 justify-end">
+        <span className="text-[9px] text-gs-faint">Less</span>
+        {[0, 1, 2, 3].map(n => (
+          <div key={n} className="w-[8px] h-[8px] rounded-[2px]" style={{ background: getColor(n) }} />
+        ))}
+        <span className="text-[9px] text-gs-faint">More</span>
+      </div>
+    </div>
+  );
+}
+
+// ── [Improvement #14] Social Influence Score Display ─────────────────────
+function SocialInfluenceScore({ followerCount, userPosts, userRecords, userListens, accent }) {
+  const score = useMemo(() => {
+    const followers = followerCount * 15;
+    const posts = userPosts.length * 8;
+    const records = userRecords.length * 5;
+    const listens = userListens.length * 2;
+    const raw = followers + posts + records + listens;
+    // Normalize to 0-100 scale
+    return Math.min(100, Math.round(raw / 3));
+  }, [followerCount, userPosts, userRecords, userListens]);
+
+  const tier = score >= 80 ? { label: 'Influencer', color: '#f59e0b', desc: 'Major community presence' }
+    : score >= 50 ? { label: 'Rising Star', color: '#8b5cf6', desc: 'Growing influence in the community' }
+    : score >= 25 ? { label: 'Active Member', color: '#0ea5e9', desc: 'Regular community participant' }
+    : { label: 'Newcomer', color: '#6b7280', desc: 'Just getting started' };
+
+  const breakdown = [
+    { label: 'Followers', value: followerCount, max: 20 },
+    { label: 'Posts', value: userPosts.length, max: 15 },
+    { label: 'Collection', value: userRecords.length, max: 25 },
+    { label: 'Listening', value: userListens.length, max: 30 },
+  ];
+
+  return (
+    <div className="mb-4 p-3 bg-[#111] border border-gs-border rounded-xl">
+      <div className="text-[10px] font-bold text-gs-dim uppercase tracking-wider mb-2">Social Influence</div>
+      <div className="flex items-center gap-3 mb-3">
+        <div className="relative w-14 h-14">
+          <svg viewBox="0 0 36 36" className="w-full h-full -rotate-90">
+            <circle cx="18" cy="18" r="16" fill="none" stroke="#1a1a1a" strokeWidth="3" />
+            <circle cx="18" cy="18" r="16" fill="none" stroke={tier.color} strokeWidth="3" strokeDasharray={`${score} ${100 - score}`} strokeLinecap="round" />
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-sm font-extrabold text-gs-text">{score}</span>
+          </div>
+        </div>
+        <div>
+          <div className="text-[13px] font-bold text-gs-text">{tier.label}</div>
+          <div className="text-[10px] text-gs-faint">{tier.desc}</div>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        {breakdown.map(b => (
+          <div key={b.label} className="flex items-center gap-2">
+            <span className="text-[9px] text-gs-dim w-16 text-right">{b.label}</span>
+            <div className="flex-1 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+              <div className="h-full rounded-full" style={{ width: `${Math.min(100, (b.value / b.max) * 100)}%`, background: accent || '#0ea5e9' }} />
+            </div>
+            <span className="text-[9px] text-gs-faint font-mono w-6 text-right">{b.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── [Improvement #15] Profile Customization Marketplace ──────────────────
+function ProfileCustomizationMarketplace({ isOwn, accent }) {
+  const [showMarketplace, setShowMarketplace] = useState(false);
+  const [ownedItems, setOwnedItems] = useState(['classic']);
+
+  const items = [
+    { id: 'classic', name: 'Classic Theme', price: 'Free', category: 'Theme', color: '#0ea5e9', owned: true },
+    { id: 'neon', name: 'Neon Nights', price: '50 pts', category: 'Theme', color: '#f43f5e', owned: false },
+    { id: 'vintage', name: 'Vintage Vinyl', price: '75 pts', category: 'Theme', color: '#f59e0b', owned: false },
+    { id: 'gold_frame', name: 'Gold Avatar Frame', price: '100 pts', category: 'Frame', color: '#eab308', owned: false },
+    { id: 'animated_bg', name: 'Animated Banner', price: '150 pts', category: 'Banner', color: '#8b5cf6', owned: false },
+    { id: 'custom_badge', name: 'Custom Badge', price: '200 pts', category: 'Badge', color: '#10b981', owned: false },
+  ];
+
+  const handlePurchase = (itemId) => {
+    if (!ownedItems.includes(itemId)) {
+      setOwnedItems(prev => [...prev, itemId]);
+    }
+  };
+
+  if (!isOwn) return null;
+  return (
+    <div className="mb-4">
+      <button
+        onClick={() => setShowMarketplace(s => !s)}
+        className="w-full py-2.5 bg-gradient-to-r from-[#111] to-[#0d0d0d] border border-gs-border rounded-xl text-[12px] font-semibold cursor-pointer hover:border-gs-accent/40 transition-colors flex items-center justify-center gap-2 text-gs-muted"
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        {showMarketplace ? 'Hide Customization Shop' : 'Customize Profile'}
+      </button>
+      {showMarketplace && (
+        <div className="mt-3 p-3 bg-[#0d0d0d] border border-gs-border rounded-xl">
+          <div className="text-[10px] font-bold text-gs-dim uppercase tracking-wider mb-3">PROFILE CUSTOMIZATION SHOP</div>
+          <div className="grid grid-cols-2 gap-2">
+            {items.map(item => (
+              <div key={item.id} className="p-2.5 bg-[#111] border border-gs-border rounded-lg hover:border-gs-accent/30 transition-colors">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <div className="w-5 h-5 rounded-full" style={{ background: `${item.color}33`, border: `1px solid ${item.color}66` }} />
+                  <div className="text-[10px] font-bold text-gs-text">{item.name}</div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] text-gs-faint">{item.category}</span>
+                  {ownedItems.includes(item.id) ? (
+                    <span className="text-[9px] text-emerald-400 font-bold">Owned</span>
+                  ) : (
+                    <button
+                      onClick={() => handlePurchase(item.id)}
+                      className="px-2 py-0.5 rounded text-[9px] font-bold cursor-pointer border-none transition-colors"
+                      style={{ background: `${item.color}22`, color: item.color }}
+                    >
+                      {item.price}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="text-[9px] text-gs-faint mt-2 text-center">Earn points by collecting records, posting, and trading.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Skeleton loading placeholder ────────────────────────────────────────
 function ProfileSkeleton() {
   return (
@@ -973,6 +1217,36 @@ export default function UserProfilePage({ username, records, currentUser, follow
 
           {/* Improvement 7: Collection value */}
           <CollectionValue records={userRecords} accent={p.accent} />
+
+          {/* [Improvement #12] Profile achievements timeline */}
+          <AchievementsTimeline
+            userRecords={userRecords}
+            userPosts={userPosts}
+            userListens={userListens}
+            forSaleCount={forSale.length}
+            followerCount={followerCount}
+            accent={p.accent}
+          />
+
+          {/* [Improvement #13] Trading activity heatmap */}
+          <TradingActivityHeatmap
+            userRecords={userRecords}
+            userPosts={userPosts}
+            userListens={userListens}
+            accent={p.accent}
+          />
+
+          {/* [Improvement #14] Social influence score display */}
+          <SocialInfluenceScore
+            followerCount={followerCount}
+            userPosts={userPosts}
+            userRecords={userRecords}
+            userListens={userListens}
+            accent={p.accent}
+          />
+
+          {/* [Improvement #15] Profile customization marketplace */}
+          <ProfileCustomizationMarketplace isOwn={isOwn} accent={p.accent} />
 
           {/* Stats — 5 key numbers (added Wishlist count) */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">

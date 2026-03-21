@@ -11665,6 +11665,770 @@ app.get('/api/admin/api-usage', authMiddleware, (req, res) => {
   });
 });
 
+// ── Feature F56: Marketplace Leaderboard ──────────────────────────────────────
+
+// GET /api/marketplace/leaderboard — weekly/monthly/all-time seller & buyer rankings
+app.get('/api/marketplace/leaderboard', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { period = 'all-time', limit: rawLimit = 20 } = req.query;
+    const safeLimit = Math.min(Math.max(1, parseInt(rawLimit)), 100);
+
+    let dateFilter = '';
+    if (period === 'weekly') dateFilter = "AND p2.created_at >= NOW() - INTERVAL '7 days'";
+    else if (period === 'monthly') dateFilter = "AND p2.created_at >= NOW() - INTERVAL '30 days'";
+
+    const [topSellers, topBuyers] = await Promise.all([
+      pool.query(
+        `SELECT pr.username, pr.display_name, COUNT(p2.id) as total_sales,
+                COALESCE(SUM(p2.amount), 0) as total_revenue,
+                COALESCE(AVG(rv.rating), 0) as avg_rating
+         FROM profiles pr
+         JOIN records r ON r.user_id = pr.id
+         JOIN purchases p2 ON p2.record_id = r.id AND p2.status IN ('completed', 'paid') ${dateFilter}
+         LEFT JOIN reviews rv ON rv.seller_id = pr.id
+         GROUP BY pr.id, pr.username, pr.display_name
+         ORDER BY total_revenue DESC LIMIT $1`,
+        [safeLimit]
+      ),
+      pool.query(
+        `SELECT pr.username, pr.display_name, COUNT(p2.id) as total_purchases,
+                COALESCE(SUM(p2.amount), 0) as total_spent
+         FROM profiles pr
+         JOIN purchases p2 ON p2.buyer_id = pr.id AND p2.status IN ('completed', 'paid') ${dateFilter}
+         GROUP BY pr.id, pr.username, pr.display_name
+         ORDER BY total_purchases DESC LIMIT $1`,
+        [safeLimit]
+      ),
+    ]);
+
+    res.json({
+      success: true,
+      period,
+      leaderboard: {
+        topSellers: topSellers.rows,
+        topBuyers: topBuyers.rows,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Leaderboard error:', err.message);
+    res.status(500).json({ error: 'Failed to generate leaderboard' });
+  }
+});
+
+// ── Feature F57: Collection Comparison ────────────────────────────────────────
+
+// GET /api/collections/compare — compare two users' collections
+app.get('/api/collections/compare', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { userA, userB } = req.query;
+    if (!userA || !userB) return res.status(400).json({ error: 'Both userA and userB query params required' });
+
+    const [collA, collB] = await Promise.all([
+      pool.query(
+        `SELECT r.id, r.title, r.artist, r.genre, r.year, r.condition
+         FROM records r JOIN profiles p ON r.user_id = p.id
+         WHERE p.username = $1 AND r.for_sale = false ORDER BY r.artist, r.title`,
+        [userA]
+      ),
+      pool.query(
+        `SELECT r.id, r.title, r.artist, r.genre, r.year, r.condition
+         FROM records r JOIN profiles p ON r.user_id = p.id
+         WHERE p.username = $1 AND r.for_sale = false ORDER BY r.artist, r.title`,
+        [userB]
+      ),
+    ]);
+
+    const setA = new Set(collA.rows.map(r => `${r.artist}|||${r.title}`));
+    const setB = new Set(collB.rows.map(r => `${r.artist}|||${r.title}`));
+
+    const shared = collA.rows.filter(r => setB.has(`${r.artist}|||${r.title}`));
+    const onlyA = collA.rows.filter(r => !setB.has(`${r.artist}|||${r.title}`));
+    const onlyB = collB.rows.filter(r => !setA.has(`${r.artist}|||${r.title}`));
+
+    const genresA = {};
+    collA.rows.forEach(r => { genresA[r.genre] = (genresA[r.genre] || 0) + 1; });
+    const genresB = {};
+    collB.rows.forEach(r => { genresB[r.genre] = (genresB[r.genre] || 0) + 1; });
+
+    res.json({
+      success: true,
+      comparison: {
+        userA: { username: userA, totalRecords: collA.rows.length, genreBreakdown: genresA },
+        userB: { username: userB, totalRecords: collB.rows.length, genreBreakdown: genresB },
+        shared: shared.length,
+        sharedRecords: shared.slice(0, 50),
+        uniqueToA: onlyA.length,
+        uniqueToB: onlyB.length,
+        overlapPercent: collA.rows.length > 0
+          ? Math.round((shared.length / Math.min(collA.rows.length, collB.rows.length)) * 100)
+          : 0,
+      },
+    });
+  } catch (err) {
+    console.error('Collection comparison error:', err.message);
+    res.status(500).json({ error: 'Failed to compare collections' });
+  }
+});
+
+// ── Feature F58: Social Engagement Metrics ────────────────────────────────────
+
+// GET /api/analytics/social-engagement — platform-wide social engagement stats
+app.get('/api/analytics/social-engagement', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { days = 30 } = req.query;
+    const safeDays = Math.min(Math.max(1, parseInt(days)), 365);
+
+    const [likes, comments, follows, shares] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) as total, COUNT(DISTINCT user_id) as unique_users
+         FROM likes WHERE created_at >= NOW() - INTERVAL '1 day' * $1`,
+        [safeDays]
+      ),
+      pool.query(
+        `SELECT COUNT(*) as total, COUNT(DISTINCT user_id) as unique_users
+         FROM comments WHERE created_at >= NOW() - INTERVAL '1 day' * $1`,
+        [safeDays]
+      ),
+      pool.query(
+        `SELECT COUNT(*) as total, COUNT(DISTINCT follower_id) as unique_followers
+         FROM follows WHERE created_at >= NOW() - INTERVAL '1 day' * $1`,
+        [safeDays]
+      ),
+      pool.query(
+        `SELECT COUNT(*) as total FROM shares WHERE created_at >= NOW() - INTERVAL '1 day' * $1`,
+        [safeDays]
+      ),
+    ]);
+
+    const totalEngagement =
+      parseInt(likes.rows[0].total) +
+      parseInt(comments.rows[0].total) +
+      parseInt(follows.rows[0].total) +
+      parseInt(shares.rows[0].total);
+
+    res.json({
+      success: true,
+      period: `${safeDays} days`,
+      engagement: {
+        total: totalEngagement,
+        likes: { total: parseInt(likes.rows[0].total), uniqueUsers: parseInt(likes.rows[0].unique_users) },
+        comments: { total: parseInt(comments.rows[0].total), uniqueUsers: parseInt(comments.rows[0].unique_users) },
+        follows: { total: parseInt(follows.rows[0].total), uniqueFollowers: parseInt(follows.rows[0].unique_followers) },
+        shares: { total: parseInt(shares.rows[0].total) },
+        engagementRate: totalEngagement > 0 ? Math.round(totalEngagement / safeDays) : 0,
+      },
+    });
+  } catch (err) {
+    console.error('Social engagement error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch social engagement metrics' });
+  }
+});
+
+// ── Feature F59: Record Popularity Scoring ────────────────────────────────────
+
+// GET /api/records/:id/popularity — compute a composite popularity score for a record
+app.get('/api/records/:id/popularity', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const recordId = parseInt(req.params.id);
+    const [record, likes, views, saves, comments] = await Promise.all([
+      pool.query('SELECT id, title, artist FROM records WHERE id = $1', [recordId]),
+      pool.query('SELECT COUNT(*) as cnt FROM likes WHERE record_id = $1', [recordId]),
+      pool.query('SELECT COUNT(*) as cnt FROM record_views WHERE record_id = $1', [recordId]),
+      pool.query('SELECT COUNT(*) as cnt FROM saves WHERE record_id = $1', [recordId]),
+      pool.query('SELECT COUNT(*) as cnt FROM comments WHERE record_id = $1', [recordId]),
+    ]);
+
+    if (record.rows.length === 0) return res.status(404).json({ error: 'Record not found' });
+
+    const likeCount = parseInt(likes.rows[0].cnt);
+    const viewCount = parseInt(views.rows[0].cnt);
+    const saveCount = parseInt(saves.rows[0].cnt);
+    const commentCount = parseInt(comments.rows[0].cnt);
+
+    // Weighted popularity score: views=1, likes=3, saves=5, comments=4
+    const score = viewCount * 1 + likeCount * 3 + saveCount * 5 + commentCount * 4;
+
+    res.json({
+      success: true,
+      record: record.rows[0],
+      popularity: {
+        score,
+        breakdown: { views: viewCount, likes: likeCount, saves: saveCount, comments: commentCount },
+        tier: score >= 500 ? 'viral' : score >= 200 ? 'trending' : score >= 50 ? 'rising' : 'new',
+      },
+    });
+  } catch (err) {
+    console.error('Popularity scoring error:', err.message);
+    res.status(500).json({ error: 'Failed to compute popularity score' });
+  }
+});
+
+// ── Feature F60: User Influence Score ─────────────────────────────────────────
+
+// GET /api/users/:username/influence — calculate user influence score
+app.get('/api/users/:username/influence', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { username } = req.params;
+    const profile = await pool.query('SELECT id, username, display_name FROM profiles WHERE username = $1', [username]);
+    if (profile.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const userId = profile.rows[0].id;
+
+    const [followers, reviews, sales, likes, listCount] = await Promise.all([
+      pool.query('SELECT COUNT(*) as cnt FROM follows WHERE followed_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt, COALESCE(AVG(rating), 0) as avg FROM reviews WHERE seller_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM purchases p JOIN records r ON p.record_id = r.id WHERE r.user_id = $1 AND p.status IN (\'completed\', \'paid\')', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM likes l JOIN records r ON l.record_id = r.id WHERE r.user_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM records WHERE user_id = $1', [userId]),
+    ]);
+
+    const followerCount = parseInt(followers.rows[0].cnt);
+    const reviewCount = parseInt(reviews.rows[0].cnt);
+    const avgRating = parseFloat(reviews.rows[0].avg);
+    const saleCount = parseInt(sales.rows[0].cnt);
+    const likeCount = parseInt(likes.rows[0].cnt);
+    const totalListings = parseInt(listCount.rows[0].cnt);
+
+    // Influence = followers * 2 + sales * 3 + reviews * 1.5 + avgRating * 10 + likes * 0.5
+    const influenceScore = Math.round(
+      followerCount * 2 + saleCount * 3 + reviewCount * 1.5 + avgRating * 10 + likeCount * 0.5
+    );
+
+    res.json({
+      success: true,
+      user: profile.rows[0],
+      influence: {
+        score: influenceScore,
+        tier: influenceScore >= 500 ? 'authority' : influenceScore >= 200 ? 'influencer' : influenceScore >= 50 ? 'contributor' : 'newcomer',
+        breakdown: { followers: followerCount, sales: saleCount, reviews: reviewCount, avgRating, likesReceived: likeCount, totalListings },
+      },
+    });
+  } catch (err) {
+    console.error('Influence score error:', err.message);
+    res.status(500).json({ error: 'Failed to compute influence score' });
+  }
+});
+
+// ── Feature F61: Automated Welcome Messages ───────────────────────────────────
+
+// POST /api/users/welcome — send automated welcome message to a new user
+app.post('/api/users/welcome', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { targetUserId } = req.body;
+    if (!targetUserId) return res.status(400).json({ error: 'targetUserId is required' });
+
+    // Check if a welcome message was already sent
+    const existing = await pool.query(
+      `SELECT id FROM messages WHERE sender_id = 0 AND recipient_id = $1 AND message_type = 'welcome'`,
+      [targetUserId]
+    );
+    if (existing.rows.length > 0) {
+      return res.json({ success: true, alreadySent: true, message: 'Welcome message was already sent' });
+    }
+
+    const welcomeText = `Welcome to GrooveStack! We're thrilled to have you in our vinyl community. Start by adding records to your collection, exploring the marketplace, and connecting with fellow collectors. Happy digging!`;
+
+    await pool.query(
+      `INSERT INTO messages (sender_id, recipient_id, body, message_type, created_at)
+       VALUES (0, $1, $2, 'welcome', NOW())`,
+      [targetUserId, welcomeText]
+    );
+
+    res.json({ success: true, alreadySent: false, message: 'Welcome message sent' });
+  } catch (err) {
+    console.error('Welcome message error:', err.message);
+    res.status(500).json({ error: 'Failed to send welcome message' });
+  }
+});
+
+// ── Feature F62: Platform Health Dashboard ────────────────────────────────────
+
+// GET /api/admin/platform-health — comprehensive platform health metrics
+app.get('/api/admin/platform-health', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const [users, records, sales, activeUsers, dbSize] = await Promise.all([
+      pool.query('SELECT COUNT(*) as total FROM profiles'),
+      pool.query('SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE for_sale = true) as for_sale FROM records'),
+      pool.query(
+        `SELECT COUNT(*) as total, COALESCE(SUM(amount), 0) as volume
+         FROM purchases WHERE status IN ('completed', 'paid')`
+      ),
+      pool.query(
+        `SELECT COUNT(DISTINCT user_id) as cnt FROM record_views WHERE viewed_at >= NOW() - INTERVAL '24 hours'`
+      ),
+      pool.query(`SELECT pg_database_size(current_database()) as size_bytes`),
+    ]);
+
+    const uptimeSeconds = Math.floor((Date.now() - SERVER_START_TIME) / 1000);
+
+    res.json({
+      success: true,
+      health: {
+        status: 'healthy',
+        uptime: {
+          seconds: uptimeSeconds,
+          human: `${Math.floor(uptimeSeconds / 3600)}h ${Math.floor((uptimeSeconds % 3600) / 60)}m`,
+        },
+        database: {
+          connected: true,
+          sizeBytes: parseInt(dbSize.rows[0].size_bytes),
+          sizeMB: Math.round(parseInt(dbSize.rows[0].size_bytes) / 1024 / 1024),
+        },
+        platform: {
+          totalUsers: parseInt(users.rows[0].total),
+          totalRecords: parseInt(records.rows[0].total),
+          recordsForSale: parseInt(records.rows[0].for_sale),
+          totalSales: parseInt(sales.rows[0].total),
+          salesVolume: parseFloat(sales.rows[0].volume),
+          activeUsersLast24h: parseInt(activeUsers.rows[0].cnt),
+        },
+        serverStartTime: new Date(SERVER_START_TIME).toISOString(),
+        checkedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Platform health error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch platform health', health: { status: 'degraded' } });
+  }
+});
+
+// ── Feature F63: Content Trending Algorithm ───────────────────────────────────
+
+// GET /api/trending — trending records weighted by recency and engagement
+app.get('/api/trending', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { limit: rawLimit = 20, window = 7 } = req.query;
+    const safeLimit = Math.min(Math.max(1, parseInt(rawLimit)), 50);
+    const safeWindow = Math.min(Math.max(1, parseInt(window)), 90);
+
+    const trending = await pool.query(
+      `SELECT r.id, r.title, r.artist, r.genre, r.cover_url, r.price, r.for_sale,
+              COALESCE(lk.like_count, 0) as likes,
+              COALESCE(vw.view_count, 0) as views,
+              COALESCE(sv.save_count, 0) as saves,
+              COALESCE(cm.comment_count, 0) as comments,
+              (COALESCE(vw.view_count, 0) * 1 + COALESCE(lk.like_count, 0) * 3
+               + COALESCE(sv.save_count, 0) * 5 + COALESCE(cm.comment_count, 0) * 4)
+               * (1.0 / (EXTRACT(EPOCH FROM (NOW() - r.created_at)) / 86400 + 1)) as trend_score
+       FROM records r
+       LEFT JOIN (SELECT record_id, COUNT(*) as like_count FROM likes WHERE created_at >= NOW() - INTERVAL '1 day' * $2 GROUP BY record_id) lk ON lk.record_id = r.id
+       LEFT JOIN (SELECT record_id, COUNT(*) as view_count FROM record_views WHERE viewed_at >= NOW() - INTERVAL '1 day' * $2 GROUP BY record_id) vw ON vw.record_id = r.id
+       LEFT JOIN (SELECT record_id, COUNT(*) as save_count FROM saves WHERE created_at >= NOW() - INTERVAL '1 day' * $2 GROUP BY record_id) sv ON sv.record_id = r.id
+       LEFT JOIN (SELECT record_id, COUNT(*) as comment_count FROM comments WHERE created_at >= NOW() - INTERVAL '1 day' * $2 GROUP BY record_id) cm ON cm.record_id = r.id
+       ORDER BY trend_score DESC NULLS LAST
+       LIMIT $1`,
+      [safeLimit, safeWindow]
+    );
+
+    res.json({
+      success: true,
+      window: `${safeWindow} days`,
+      trending: trending.rows.map((r, i) => ({ rank: i + 1, ...r, trend_score: Math.round(parseFloat(r.trend_score) * 100) / 100 })),
+    });
+  } catch (err) {
+    console.error('Trending error:', err.message);
+    res.status(500).json({ error: 'Failed to compute trending records' });
+  }
+});
+
+// ── Feature F64: User Achievement Check & Award ───────────────────────────────
+
+// POST /api/users/:username/achievements/check — evaluate and award achievements
+app.post('/api/users/:username/achievements/check', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { username } = req.params;
+    const profile = await pool.query('SELECT id FROM profiles WHERE username = $1', [username]);
+    if (profile.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+    const userId = profile.rows[0].id;
+
+    const [records, sales, reviews, followers] = await Promise.all([
+      pool.query('SELECT COUNT(*) as cnt FROM records WHERE user_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM purchases p JOIN records r ON p.record_id = r.id WHERE r.user_id = $1 AND p.status IN (\'completed\', \'paid\')', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM reviews WHERE seller_id = $1', [userId]),
+      pool.query('SELECT COUNT(*) as cnt FROM follows WHERE followed_id = $1', [userId]),
+    ]);
+
+    const stats = {
+      records: parseInt(records.rows[0].cnt),
+      sales: parseInt(sales.rows[0].cnt),
+      reviews: parseInt(reviews.rows[0].cnt),
+      followers: parseInt(followers.rows[0].cnt),
+    };
+
+    const achievements = [];
+    if (stats.records >= 1) achievements.push({ id: 'first_record', name: 'First Spin', description: 'Added your first record' });
+    if (stats.records >= 50) achievements.push({ id: 'collector_50', name: 'Serious Collector', description: 'Added 50 records' });
+    if (stats.records >= 200) achievements.push({ id: 'collector_200', name: 'Vinyl Vault', description: 'Added 200 records' });
+    if (stats.sales >= 1) achievements.push({ id: 'first_sale', name: 'First Sale', description: 'Completed your first sale' });
+    if (stats.sales >= 25) achievements.push({ id: 'top_seller', name: 'Top Seller', description: 'Completed 25 sales' });
+    if (stats.reviews >= 5) achievements.push({ id: 'trusted_seller', name: 'Trusted Seller', description: 'Received 5 reviews' });
+    if (stats.followers >= 10) achievements.push({ id: 'influencer_10', name: 'Groove Influencer', description: 'Gained 10 followers' });
+    if (stats.followers >= 100) achievements.push({ id: 'influencer_100', name: 'Vinyl Celebrity', description: 'Gained 100 followers' });
+
+    // Persist newly earned achievements
+    for (const ach of achievements) {
+      await pool.query(
+        `INSERT INTO user_achievements (user_id, achievement_id, name, description, earned_at)
+         VALUES ($1, $2, $3, $4, NOW()) ON CONFLICT (user_id, achievement_id) DO NOTHING`,
+        [userId, ach.id, ach.name, ach.description]
+      );
+    }
+
+    res.json({ success: true, username, stats, achievements, totalEarned: achievements.length });
+  } catch (err) {
+    console.error('Achievement check error:', err.message);
+    res.status(500).json({ error: 'Failed to check achievements' });
+  }
+});
+
+// ── Feature F65: Marketplace Daily Digest ─────────────────────────────────────
+
+// GET /api/marketplace/daily-digest — snapshot of yesterday's marketplace activity
+app.get('/api/marketplace/daily-digest', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const [newListings, salesYesterday, topSold, newSellers] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) as cnt FROM records WHERE for_sale = true AND created_at >= NOW() - INTERVAL '24 hours'`
+      ),
+      pool.query(
+        `SELECT COUNT(*) as cnt, COALESCE(SUM(amount), 0) as volume
+         FROM purchases WHERE status IN ('completed', 'paid') AND created_at >= NOW() - INTERVAL '24 hours'`
+      ),
+      pool.query(
+        `SELECT r.title, r.artist, p2.amount as price, pr.username as seller
+         FROM purchases p2 JOIN records r ON p2.record_id = r.id JOIN profiles pr ON r.user_id = pr.id
+         WHERE p2.status IN ('completed', 'paid') AND p2.created_at >= NOW() - INTERVAL '24 hours'
+         ORDER BY p2.amount DESC LIMIT 5`
+      ),
+      pool.query(
+        `SELECT DISTINCT pr.username FROM profiles pr
+         JOIN records r ON r.user_id = pr.id
+         WHERE r.for_sale = true AND r.created_at >= NOW() - INTERVAL '24 hours'
+         AND NOT EXISTS (SELECT 1 FROM records r2 WHERE r2.user_id = pr.id AND r2.for_sale = true AND r2.created_at < NOW() - INTERVAL '24 hours')
+         LIMIT 10`
+      ),
+    ]);
+
+    res.json({
+      success: true,
+      digest: {
+        period: 'last 24 hours',
+        newListings: parseInt(newListings.rows[0].cnt),
+        sales: { count: parseInt(salesYesterday.rows[0].cnt), volume: parseFloat(salesYesterday.rows[0].volume) },
+        topSoldItems: topSold.rows,
+        newSellers: newSellers.rows.map(r => r.username),
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('Daily digest error:', err.message);
+    res.status(500).json({ error: 'Failed to generate daily digest' });
+  }
+});
+
+// ── Feature F66: Seller Analytics Deep Dive ───────────────────────────────────
+
+// GET /api/sellers/:username/analytics — deep analytics for a specific seller
+app.get('/api/sellers/:username/analytics', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { username } = req.params;
+    const profile = await pool.query('SELECT id, username, display_name FROM profiles WHERE username = $1', [username]);
+    if (profile.rows.length === 0) return res.status(404).json({ error: 'Seller not found' });
+    const sellerId = profile.rows[0].id;
+
+    const [inventory, salesByMonth, topGenres, avgTimeToSell, repeatBuyers] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) as total, COUNT(*) FILTER (WHERE for_sale = true) as active,
+                COALESCE(AVG(price), 0) as avg_price, COALESCE(MIN(price), 0) as min_price,
+                COALESCE(MAX(price), 0) as max_price
+         FROM records WHERE user_id = $1`,
+        [sellerId]
+      ),
+      pool.query(
+        `SELECT DATE_TRUNC('month', p2.created_at) as month, COUNT(*) as sales, SUM(p2.amount) as revenue
+         FROM purchases p2 JOIN records r ON p2.record_id = r.id
+         WHERE r.user_id = $1 AND p2.status IN ('completed', 'paid')
+         GROUP BY month ORDER BY month DESC LIMIT 12`,
+        [sellerId]
+      ),
+      pool.query(
+        `SELECT r.genre, COUNT(*) as sold FROM purchases p2
+         JOIN records r ON p2.record_id = r.id
+         WHERE r.user_id = $1 AND p2.status IN ('completed', 'paid')
+         GROUP BY r.genre ORDER BY sold DESC LIMIT 10`,
+        [sellerId]
+      ),
+      pool.query(
+        `SELECT AVG(EXTRACT(EPOCH FROM (p2.created_at - r.created_at)) / 86400) as avg_days
+         FROM purchases p2 JOIN records r ON p2.record_id = r.id
+         WHERE r.user_id = $1 AND p2.status IN ('completed', 'paid')`,
+        [sellerId]
+      ),
+      pool.query(
+        `SELECT COUNT(*) as cnt FROM (
+           SELECT p2.buyer_id FROM purchases p2 JOIN records r ON p2.record_id = r.id
+           WHERE r.user_id = $1 AND p2.status IN ('completed', 'paid')
+           GROUP BY p2.buyer_id HAVING COUNT(*) > 1
+         ) sub`,
+        [sellerId]
+      ),
+    ]);
+
+    res.json({
+      success: true,
+      seller: profile.rows[0],
+      analytics: {
+        inventory: {
+          total: parseInt(inventory.rows[0].total),
+          active: parseInt(inventory.rows[0].active),
+          avgPrice: Math.round(parseFloat(inventory.rows[0].avg_price) * 100) / 100,
+          priceRange: { min: parseFloat(inventory.rows[0].min_price), max: parseFloat(inventory.rows[0].max_price) },
+        },
+        salesByMonth: salesByMonth.rows,
+        topGenres: topGenres.rows,
+        avgDaysToSell: Math.round(parseFloat(avgTimeToSell.rows[0].avg_days || 0) * 10) / 10,
+        repeatBuyers: parseInt(repeatBuyers.rows[0].cnt),
+      },
+    });
+  } catch (err) {
+    console.error('Seller analytics error:', err.message);
+    res.status(500).json({ error: 'Failed to generate seller analytics' });
+  }
+});
+
+// ── Feature F67: Buyer Journey Tracking ───────────────────────────────────────
+
+// GET /api/buyers/:username/journey — track a buyer's engagement funnel
+app.get('/api/buyers/:username/journey', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { username } = req.params;
+    const profile = await pool.query('SELECT id, username, created_at FROM profiles WHERE username = $1', [username]);
+    if (profile.rows.length === 0) return res.status(404).json({ error: 'Buyer not found' });
+    const buyerId = profile.rows[0].id;
+
+    const [views, likes, saves, purchases, reviews] = await Promise.all([
+      pool.query('SELECT COUNT(*) as cnt FROM record_views WHERE user_id = $1', [buyerId]),
+      pool.query('SELECT COUNT(*) as cnt FROM likes WHERE user_id = $1', [buyerId]),
+      pool.query('SELECT COUNT(*) as cnt FROM saves WHERE user_id = $1', [buyerId]),
+      pool.query(
+        `SELECT COUNT(*) as cnt, COALESCE(SUM(amount), 0) as total_spent
+         FROM purchases WHERE buyer_id = $1 AND status IN ('completed', 'paid')`,
+        [buyerId]
+      ),
+      pool.query('SELECT COUNT(*) as cnt FROM reviews WHERE reviewer_id = $1', [buyerId]),
+    ]);
+
+    const daysSinceJoin = Math.floor((Date.now() - new Date(profile.rows[0].created_at).getTime()) / 86400000);
+
+    res.json({
+      success: true,
+      buyer: { username, joinedDaysAgo: daysSinceJoin },
+      journey: {
+        funnel: {
+          viewed: parseInt(views.rows[0].cnt),
+          liked: parseInt(likes.rows[0].cnt),
+          saved: parseInt(saves.rows[0].cnt),
+          purchased: parseInt(purchases.rows[0].cnt),
+          reviewed: parseInt(reviews.rows[0].cnt),
+        },
+        totalSpent: parseFloat(purchases.rows[0].total_spent),
+        conversionRate: parseInt(views.rows[0].cnt) > 0
+          ? Math.round((parseInt(purchases.rows[0].cnt) / parseInt(views.rows[0].cnt)) * 10000) / 100
+          : 0,
+        avgDaysBetweenPurchases: parseInt(purchases.rows[0].cnt) > 1
+          ? Math.round(daysSinceJoin / parseInt(purchases.rows[0].cnt))
+          : null,
+      },
+    });
+  } catch (err) {
+    console.error('Buyer journey error:', err.message);
+    res.status(500).json({ error: 'Failed to track buyer journey' });
+  }
+});
+
+// ── Feature F68: Inventory Health Check ───────────────────────────────────────
+
+// GET /api/marketplace/inventory-health — marketplace inventory health overview
+app.get('/api/marketplace/inventory-health', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const [total, stale, priceDistribution, conditionBreakdown, genreDistribution] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) as cnt, COALESCE(AVG(price), 0) as avg_price FROM records WHERE for_sale = true`
+      ),
+      pool.query(
+        `SELECT COUNT(*) as cnt FROM records
+         WHERE for_sale = true AND updated_at < NOW() - INTERVAL '60 days'`
+      ),
+      pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE price < 10) as under_10,
+           COUNT(*) FILTER (WHERE price >= 10 AND price < 25) as range_10_25,
+           COUNT(*) FILTER (WHERE price >= 25 AND price < 50) as range_25_50,
+           COUNT(*) FILTER (WHERE price >= 50 AND price < 100) as range_50_100,
+           COUNT(*) FILTER (WHERE price >= 100) as over_100
+         FROM records WHERE for_sale = true`
+      ),
+      pool.query(
+        `SELECT condition, COUNT(*) as cnt FROM records WHERE for_sale = true GROUP BY condition ORDER BY cnt DESC`
+      ),
+      pool.query(
+        `SELECT genre, COUNT(*) as cnt FROM records WHERE for_sale = true GROUP BY genre ORDER BY cnt DESC LIMIT 15`
+      ),
+    ]);
+
+    const totalActive = parseInt(total.rows[0].cnt);
+    const staleCount = parseInt(stale.rows[0].cnt);
+
+    res.json({
+      success: true,
+      inventoryHealth: {
+        totalActiveListings: totalActive,
+        avgPrice: Math.round(parseFloat(total.rows[0].avg_price) * 100) / 100,
+        staleListings: staleCount,
+        stalePercent: totalActive > 0 ? Math.round((staleCount / totalActive) * 100) : 0,
+        priceDistribution: priceDistribution.rows[0],
+        conditionBreakdown: conditionBreakdown.rows,
+        genreDistribution: genreDistribution.rows,
+        healthScore: totalActive > 0
+          ? Math.max(0, 100 - Math.round((staleCount / totalActive) * 100))
+          : 0,
+      },
+    });
+  } catch (err) {
+    console.error('Inventory health error:', err.message);
+    res.status(500).json({ error: 'Failed to check inventory health' });
+  }
+});
+
+// ── Feature F69: Marketplace Conversion Funnel ────────────────────────────────
+
+// GET /api/analytics/conversion-funnel — platform-wide marketplace conversion metrics
+app.get('/api/analytics/conversion-funnel', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { days = 30 } = req.query;
+    const safeDays = Math.min(Math.max(1, parseInt(days)), 365);
+
+    const [views, cartAdds, checkouts, completedPurchases] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(DISTINCT user_id) as users, COUNT(*) as total
+         FROM record_views WHERE viewed_at >= NOW() - INTERVAL '1 day' * $1`,
+        [safeDays]
+      ),
+      pool.query(
+        `SELECT COUNT(DISTINCT user_id) as users, COUNT(*) as total
+         FROM cart_items WHERE added_at >= NOW() - INTERVAL '1 day' * $1`,
+        [safeDays]
+      ),
+      pool.query(
+        `SELECT COUNT(DISTINCT buyer_id) as users, COUNT(*) as total
+         FROM purchases WHERE created_at >= NOW() - INTERVAL '1 day' * $1`,
+        [safeDays]
+      ),
+      pool.query(
+        `SELECT COUNT(DISTINCT buyer_id) as users, COUNT(*) as total, COALESCE(SUM(amount), 0) as revenue
+         FROM purchases WHERE status IN ('completed', 'paid') AND created_at >= NOW() - INTERVAL '1 day' * $1`,
+        [safeDays]
+      ),
+    ]);
+
+    const viewUsers = parseInt(views.rows[0].users);
+    const cartUsers = parseInt(cartAdds.rows[0].users);
+    const checkoutUsers = parseInt(checkouts.rows[0].users);
+    const purchaseUsers = parseInt(completedPurchases.rows[0].users);
+
+    res.json({
+      success: true,
+      period: `${safeDays} days`,
+      funnel: {
+        viewed: { uniqueUsers: viewUsers, total: parseInt(views.rows[0].total) },
+        addedToCart: { uniqueUsers: cartUsers, total: parseInt(cartAdds.rows[0].total) },
+        startedCheckout: { uniqueUsers: checkoutUsers, total: parseInt(checkouts.rows[0].total) },
+        completed: { uniqueUsers: purchaseUsers, total: parseInt(completedPurchases.rows[0].total), revenue: parseFloat(completedPurchases.rows[0].revenue) },
+        rates: {
+          viewToCart: viewUsers > 0 ? Math.round((cartUsers / viewUsers) * 10000) / 100 : 0,
+          cartToCheckout: cartUsers > 0 ? Math.round((checkoutUsers / cartUsers) * 10000) / 100 : 0,
+          checkoutToComplete: checkoutUsers > 0 ? Math.round((purchaseUsers / checkoutUsers) * 10000) / 100 : 0,
+          overallConversion: viewUsers > 0 ? Math.round((purchaseUsers / viewUsers) * 10000) / 100 : 0,
+        },
+      },
+    });
+  } catch (err) {
+    console.error('Conversion funnel error:', err.message);
+    res.status(500).json({ error: 'Failed to compute conversion funnel' });
+  }
+});
+
+// ── Feature F70: Platform Notification Analytics ──────────────────────────────
+
+// GET /api/analytics/notifications — notification delivery and engagement metrics
+app.get('/api/analytics/notifications', authMiddleware, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not configured' });
+  try {
+    const { days = 30 } = req.query;
+    const safeDays = Math.min(Math.max(1, parseInt(days)), 365);
+
+    const [sent, read, byType, dailyVolume] = await Promise.all([
+      pool.query(
+        `SELECT COUNT(*) as total FROM notifications WHERE created_at >= NOW() - INTERVAL '1 day' * $1`,
+        [safeDays]
+      ),
+      pool.query(
+        `SELECT COUNT(*) as total FROM notifications WHERE read = true AND created_at >= NOW() - INTERVAL '1 day' * $1`,
+        [safeDays]
+      ),
+      pool.query(
+        `SELECT type, COUNT(*) as cnt, COUNT(*) FILTER (WHERE read = true) as read_cnt
+         FROM notifications WHERE created_at >= NOW() - INTERVAL '1 day' * $1
+         GROUP BY type ORDER BY cnt DESC`,
+        [safeDays]
+      ),
+      pool.query(
+        `SELECT DATE(created_at) as day, COUNT(*) as sent, COUNT(*) FILTER (WHERE read = true) as read
+         FROM notifications WHERE created_at >= NOW() - INTERVAL '1 day' * $1
+         GROUP BY day ORDER BY day DESC LIMIT 30`,
+        [safeDays]
+      ),
+    ]);
+
+    const totalSent = parseInt(sent.rows[0].total);
+    const totalRead = parseInt(read.rows[0].total);
+
+    res.json({
+      success: true,
+      period: `${safeDays} days`,
+      notifications: {
+        totalSent,
+        totalRead,
+        readRate: totalSent > 0 ? Math.round((totalRead / totalSent) * 10000) / 100 : 0,
+        byType: byType.rows.map(r => ({
+          type: r.type,
+          sent: parseInt(r.cnt),
+          read: parseInt(r.read_cnt),
+          readRate: parseInt(r.cnt) > 0 ? Math.round((parseInt(r.read_cnt) / parseInt(r.cnt)) * 10000) / 100 : 0,
+        })),
+        dailyVolume: dailyVolume.rows,
+      },
+    });
+  } catch (err) {
+    console.error('Notification analytics error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch notification analytics' });
+  }
+});
+
 // ── Feature 20: Server startup banner with configuration summary ──────────────
 
 const PORT = process.env.PORT || process.env.SERVER_PORT || 3001;

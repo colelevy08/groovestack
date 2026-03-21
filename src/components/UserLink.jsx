@@ -2,11 +2,11 @@
 // Animated underline on hover. Stops event propagation so parent card clicks don't also fire.
 // Includes: #21 Inline avatar, #22 Follow status indicator, #23 Context menu on right-click,
 // #24 Copy profile URL, #25 Report user option.
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import Avatar from './ui/Avatar';
 import { getProfile } from '../utils/helpers';
 
-export default function UserLink({ username, onViewUser, className = "", verified = false, isFollowing = false, isBlocked = false, onReport }) {
+export default function UserLink({ username, onViewUser, className = "", verified = false, isFollowing = false, isBlocked = false, onReport, onMessage, onFollow }) {
   // All hooks declared before any conditional returns
   const [showTooltip, setShowTooltip] = useState(false);
   const [ripple, setRipple] = useState(null);
@@ -14,9 +14,23 @@ export default function UserLink({ username, onViewUser, className = "", verifie
   const [contextMenu, setContextMenu] = useState(null);
   // #24 — Copy URL feedback
   const [showCopied, setShowCopied] = useState(false);
+  // [Improvement #20] Context menu feedback state
+  const [contextAction, setContextAction] = useState(null);
   const hoverTimeout = useRef(null);
   const linkRef = useRef(null);
   const p = getProfile(username);
+
+  // [Improvement #19] Inline activity status — derive from username hash
+  const activityStatus = useMemo(() => {
+    if (!username) return null;
+    const hash = username.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    const isOnline = hash % 3 !== 0;
+    if (isOnline) {
+      const activities = ['browsing', 'listening', 'posting'];
+      return { online: true, activity: activities[hash % 3], color: '#10b981' };
+    }
+    return { online: false, activity: 'offline', color: '#6b7280' };
+  }, [username]);
 
   // #23 — Context menu on right-click
   const handleContextMenu = useCallback((e) => {
@@ -99,8 +113,17 @@ export default function UserLink({ username, onViewUser, className = "", verifie
       onMouseLeave={handleMouseLeave}
       className={`text-gs-accent font-semibold cursor-pointer text-xs relative inline-flex items-center gap-1 group/link overflow-hidden ${className}`}
     >
-      {/* #21 — Inline avatar */}
-      <Avatar username={username} size={14} />
+      {/* #21 — Inline avatar with [Improvement #19] activity status dot */}
+      <span className="relative inline-block">
+        <Avatar username={username} size={14} />
+        {activityStatus && (
+          <span
+            className="absolute -bottom-[1px] -right-[1px] w-[5px] h-[5px] rounded-full border border-gs-surface"
+            style={{ background: activityStatus.color }}
+            title={activityStatus.online ? `Online (${activityStatus.activity})` : 'Offline'}
+          />
+        )}
+      </span>
 
       {/* Hover underline animation */}
       <span className="relative">
@@ -178,6 +201,12 @@ export default function UserLink({ username, onViewUser, className = "", verifie
           URL copied!
         </span>
       )}
+      {/* [Improvement #20] Context action feedback */}
+      {contextAction === 'handle_copied' && (
+        <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] text-gs-accent bg-gs-surface border border-gs-border rounded px-2 py-0.5 whitespace-nowrap animate-fade-in z-50">
+          @{username} copied!
+        </span>
+      )}
 
       {/* #23 — Context menu on right-click */}
       {contextMenu && (
@@ -201,6 +230,26 @@ export default function UserLink({ username, onViewUser, className = "", verifie
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               View Profile
             </button>
+            {/* [Improvement #20] Send message option */}
+            {onMessage && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setContextMenu(null); onMessage(username); }}
+                className="w-full text-left px-3 py-1.5 bg-transparent border-none text-gs-muted text-[11px] cursor-pointer hover:bg-gs-accent/10 flex items-center gap-2 transition-colors"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                Send Message
+              </button>
+            )}
+            {/* [Improvement #20] Follow/Unfollow option */}
+            {onFollow && (
+              <button
+                onClick={(e) => { e.stopPropagation(); setContextMenu(null); onFollow(username); }}
+                className="w-full text-left px-3 py-1.5 bg-transparent border-none text-gs-muted text-[11px] cursor-pointer hover:bg-gs-accent/10 flex items-center gap-2 transition-colors"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>
+                {isFollowing ? 'Unfollow' : 'Follow'}
+              </button>
+            )}
             {/* #24 — Copy Profile URL */}
             <button
               onClick={handleCopyProfileUrl}
@@ -208,6 +257,32 @@ export default function UserLink({ username, onViewUser, className = "", verifie
             >
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
               Copy Profile URL
+            </button>
+            {/* [Improvement #20] Copy @handle to clipboard */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigator.clipboard.writeText(`@${username}`).catch(() => {});
+                setContextAction('handle_copied');
+                setTimeout(() => setContextAction(null), 1500);
+                setContextMenu(null);
+              }}
+              className="w-full text-left px-3 py-1.5 bg-transparent border-none text-gs-muted text-[11px] cursor-pointer hover:bg-gs-accent/10 flex items-center gap-2 transition-colors"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy @handle
+            </button>
+            {/* [Improvement #20] Open in new tab option */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setContextMenu(null);
+                window.open(`/user/${username}`, '_blank');
+              }}
+              className="w-full text-left px-3 py-1.5 bg-transparent border-none text-gs-muted text-[11px] cursor-pointer hover:bg-gs-accent/10 flex items-center gap-2 transition-colors"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              Open in New Tab
             </button>
             {/* #25 — Report user */}
             <span className="block border-t border-gs-border my-0.5" />

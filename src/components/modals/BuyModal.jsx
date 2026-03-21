@@ -92,6 +92,19 @@ export default function BuyModal({ open, onClose, record, onPurchase, onAddToCar
   // Improvement 8: Loyalty points
   const [useLoyaltyPoints, setUseLoyaltyPoints] = useState(false);
 
+  // [Improvement #9] Gift purchase option
+  const [isGiftPurchase, setIsGiftPurchase] = useState(false);
+  const [giftRecipientName, setGiftRecipientName] = useState('');
+  const [giftMessage, setGiftMessage] = useState('');
+
+  // [Improvement #10] Group purchase coordinator
+  const [showGroupBuy, setShowGroupBuy] = useState(false);
+  const [groupMembers, setGroupMembers] = useState([{ name: '', share: 0 }]);
+
+  // [Improvement #11] Purchase anniversary reminder
+  const [setAnniversaryReminder, setSetAnniversaryReminder] = useState(false);
+  const [reminderEmail, setReminderEmail] = useState('');
+
   // Fix: reset form state when record changes so stale data from previous purchase flow is cleared
   useEffect(() => {
     if (record) {
@@ -100,6 +113,9 @@ export default function BuyModal({ open, onClose, record, onPurchase, onAddToCar
       setPaymentPlan(1); setShowPriceMatch(false); setPriceMatchUrl(""); setPriceMatchPrice("");
       setPriceMatchSubmitted(false); setBundleItems(1); setShowProtection(false);
       setShowDeliveryEstimate(false); setDisplayCurrency("USD"); setUseLoyaltyPoints(false);
+      setIsGiftPurchase(false); setGiftRecipientName(""); setGiftMessage("");
+      setShowGroupBuy(false); setGroupMembers([{ name: '', share: 0 }]);
+      setSetAnniversaryReminder(false); setReminderEmail("");
     }
   }, [record?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -122,6 +138,9 @@ export default function BuyModal({ open, onClose, record, onPurchase, onAddToCar
     setPriceMatchUrl(""); setPriceMatchPrice(""); setPriceMatchSubmitted(false);
     setBundleItems(1); setShowProtection(false); setShowDeliveryEstimate(false);
     setDisplayCurrency("USD"); setUseLoyaltyPoints(false);
+    setIsGiftPurchase(false); setGiftRecipientName(""); setGiftMessage("");
+    setShowGroupBuy(false); setGroupMembers([{ name: '', share: 0 }]);
+    setSetAnniversaryReminder(false); setReminderEmail("");
   };
 
   if (!record) return null;
@@ -590,6 +609,130 @@ export default function BuyModal({ open, onClose, record, onPurchase, onAddToCar
                   <span className="text-emerald-400 shrink-0 mt-0.5">*</span>
                   <span><strong className="text-gs-muted">Shipping coverage</strong> - Protected against loss or damage during transit.</span>
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* [Improvement #9] Gift purchase option */}
+          <div className="mb-3.5">
+            <label className="flex items-center gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={isGiftPurchase}
+                onChange={e => setIsGiftPurchase(e.target.checked)}
+                className="w-4 h-4 rounded border-gs-border accent-pink-500 cursor-pointer"
+              />
+              <span className="text-xs text-gs-muted group-hover:text-gs-text transition-colors flex items-center gap-1.5">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>
+                This is a gift purchase
+              </span>
+            </label>
+            {isGiftPurchase && (
+              <div className="mt-2 p-3 bg-pink-500/[0.04] border border-pink-500/15 rounded-lg space-y-2">
+                <div>
+                  <label className="text-[10px] font-bold text-gs-dim tracking-[0.08em] mb-0.5 block">RECIPIENT NAME</label>
+                  <input
+                    value={giftRecipientName}
+                    onChange={e => setGiftRecipientName(e.target.value)}
+                    placeholder="Who is this gift for?"
+                    className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-[12px] text-gs-text outline-none placeholder:text-gs-faint focus:border-pink-500/40"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gs-dim tracking-[0.08em] mb-0.5 block">GIFT MESSAGE (OPTIONAL)</label>
+                  <textarea
+                    value={giftMessage}
+                    onChange={e => setGiftMessage(e.target.value)}
+                    placeholder="Add a personal message..."
+                    maxLength={150}
+                    rows={2}
+                    className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-[12px] text-gs-text outline-none resize-none placeholder:text-gs-faint focus:border-pink-500/40"
+                  />
+                  {giftMessage.length > 0 && <div className="text-[9px] text-gs-faint text-right">{giftMessage.length}/150</div>}
+                </div>
+                <div className="text-[10px] text-pink-400/70">A gift card with your message will be included in the shipment.</div>
+              </div>
+            )}
+          </div>
+
+          {/* [Improvement #10] Group purchase coordinator */}
+          <div className="mb-3.5">
+            <button
+              onClick={() => setShowGroupBuy(v => !v)}
+              className="text-[11px] text-gs-dim bg-transparent border-none cursor-pointer hover:text-gs-muted p-0 font-semibold flex items-center gap-1.5"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              {showGroupBuy ? '- Hide group purchase' : 'Split cost with friends?'}
+            </button>
+            {showGroupBuy && (
+              <div className="mt-2 p-3 bg-[#0d0d0d] border border-[#1a1a1a] rounded-lg">
+                <div className="text-[10px] text-gs-dim font-mono mb-2">GROUP PURCHASE — SPLIT THE COST</div>
+                {groupMembers.map((member, idx) => (
+                  <div key={idx} className="flex gap-2 mb-1.5 items-center">
+                    <input
+                      value={member.name}
+                      onChange={e => {
+                        const updated = [...groupMembers];
+                        updated[idx] = { ...updated[idx], name: e.target.value };
+                        setGroupMembers(updated);
+                      }}
+                      placeholder={`Friend ${idx + 1} name or @handle`}
+                      className="flex-1 bg-[#111] border border-[#222] rounded-lg px-2 py-1.5 text-[11px] text-gs-text outline-none placeholder:text-gs-faint"
+                    />
+                    <span className="text-[11px] text-gs-muted font-mono w-16 text-right">
+                      ${(total / (groupMembers.length + 1)).toFixed(2)}
+                    </span>
+                    {groupMembers.length > 1 && (
+                      <button
+                        onClick={() => setGroupMembers(prev => prev.filter((_, i) => i !== idx))}
+                        className="text-red-400 bg-transparent border-none cursor-pointer text-[11px] p-0"
+                      >&times;</button>
+                    )}
+                  </div>
+                ))}
+                <div className="flex items-center justify-between mt-2">
+                  <button
+                    onClick={() => setGroupMembers(prev => [...prev, { name: '', share: 0 }])}
+                    disabled={groupMembers.length >= 5}
+                    className="text-[10px] text-gs-accent bg-transparent border-none cursor-pointer hover:text-gs-accent/80 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    + Add person
+                  </button>
+                  <div className="text-[10px] text-gs-muted">
+                    Your share: <span className="text-gs-text font-bold">${(total / (groupMembers.length + 1)).toFixed(2)}</span>
+                    <span className="text-gs-faint"> ({groupMembers.length + 1}-way split)</span>
+                  </div>
+                </div>
+                <div className="text-[9px] text-gs-faint mt-1.5">Payment requests will be sent to each member after checkout.</div>
+              </div>
+            )}
+          </div>
+
+          {/* [Improvement #11] Purchase anniversary reminder */}
+          <div className="mb-3.5">
+            <label className="flex items-center gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={setAnniversaryReminder}
+                onChange={e => setSetAnniversaryReminder(e.target.checked)}
+                className="w-4 h-4 rounded border-gs-border accent-violet-500 cursor-pointer"
+              />
+              <span className="text-xs text-gs-muted group-hover:text-gs-text transition-colors flex items-center gap-1.5">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Remind me on the anniversary of this purchase
+              </span>
+            </label>
+            {setAnniversaryReminder && (
+              <div className="mt-2 p-3 bg-violet-500/[0.04] border border-violet-500/15 rounded-lg">
+                <div className="text-[10px] text-gs-dim mb-1.5">We will remind you one year from today about this purchase.</div>
+                <input
+                  value={reminderEmail}
+                  onChange={e => setReminderEmail(e.target.value)}
+                  placeholder="Email for reminder (optional)"
+                  type="email"
+                  className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-[11px] text-gs-text outline-none placeholder:text-gs-faint focus:border-violet-500/40"
+                />
+                <div className="text-[9px] text-violet-400/70 mt-1.5">Track your collection milestones and watch how your vinyl investments grow over time.</div>
               </div>
             )}
           </div>
