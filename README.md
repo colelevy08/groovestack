@@ -4,7 +4,7 @@
 
 GrooveStack is a full-stack web application where collectors buy, sell, trade, and discover vinyl records within an active community. It combines a Discogs-powered marketplace, a social feed, deep collection analytics, and a custom ESP32 hardware device (Vinyl Buddy) that identifies records playing on your turntable in real time.
 
-Built across twenty development waves, the platform includes 1,800+ improvements, 275+ API endpoints, 35+ database tables, and supports 51 active users with 100+ seed records.
+Built across twenty-eight development waves, the platform includes 1,900+ improvements, 290+ API endpoints, 35+ database tables, and supports 51 active users with 100+ seed records.
 
 ---
 
@@ -19,6 +19,7 @@ Built across twenty development waves, the platform includes 1,800+ improvements
 - [Security Features](#security-features)
 - [Accessibility Features](#accessibility-features)
 - [Vinyl Buddy Hardware](#vinyl-buddy-hardware)
+- [Vinyl Buddy Build Guide](#vinyl-buddy-build-guide)
 - [Deployment](#deployment)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
@@ -113,6 +114,21 @@ Built across twenty development waves, the platform includes 1,800+ improvements
 - **Active noise cancellation** for cleaner audio capture in noisy environments
 - **Auto-gain control** for adapting to varying room volumes
 - **ESP-NOW mesh networking** — peer-to-peer communication between devices for multi-room sync
+- **MQTT support** — publish telemetry and subscribe to commands via an MQTT broker
+- **FFT peak detection** — real-time frequency analysis with dominant peak identification
+- **Battery fuel gauge** — coulomb-counting battery level estimation for accurate charge reporting
+- **Capacitive touch sensors** — touch-based controls for play/pause, skip, and volume
+- **WS2812 LED strip** — NeoPixel-compatible LED strip for ambient visualizations and status feedback
+- **Accelerometer (MPU6050)** — motion detection, orientation tracking, and tap-to-wake
+- **Real-time clock (DS3231)** — accurate timestamping independent of network time
+- **Audio AGC (automatic gain control)** — real-time gain adjustment based on signal envelope
+- **Spectral centroid calculation** — brightness metric for audio analysis and genre estimation
+- **Zero-crossing rate (ZCR)** — time-domain audio feature for percussiveness detection
+- **Firmware rollback** — automatic rollback to the previous firmware version on boot failure
+- **Power-on self-test (POST)** — hardware validation at startup covering I2S, WiFi, I2C, SPI, ADC, and GPIO
+- **Buzzer / haptic feedback** — audible and tactile feedback for user interactions
+- **Ambient light sensor** — auto-brightness control for the OLED display based on room lighting
+- **SPIFFS web interface** — local configuration and diagnostics served from on-device flash storage
 - **Listening history** with timestamped session logs
 - **Listening statistics** — total sessions, unique tracks, favorite artists, genre breakdown
 - **Device pairing** with 12-character activation codes displayed on the OLED screen
@@ -276,7 +292,7 @@ The frontend proxies API requests to `localhost:3001` during development via the
 
 ## API Reference
 
-The server exposes 275+ RESTful endpoints organized into the following groups. Full documentation is available at `GET /api/docs` and an OpenAPI spec at `GET /api/openapi.json`.
+The server exposes 290+ RESTful endpoints organized into the following groups. Full documentation is available at `GET /api/docs` and an OpenAPI spec at `GET /api/openapi.json`.
 
 ### Authentication (19 endpoints)
 
@@ -431,6 +447,26 @@ The server exposes 275+ RESTful endpoints organized into the following groups. F
 | POST | `/api/vinyl-buddy/gesture/configure` | Configure gesture sensor mappings |
 | GET | `/api/vinyl-buddy/gesture/:deviceId` | Get gesture configuration |
 | POST | `/api/vinyl-buddy/noise-cancel/calibrate` | Calibrate noise cancellation |
+
+### Vinyl Buddy Extended (15 endpoints)
+
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/api/vinyl-buddy/stream` | Stream raw audio chunks for server-side processing |
+| GET | `/api/vinyl-buddy/devices/:userId` | List all paired devices for a user (extended) |
+| POST | `/api/vinyl-buddy/devices/:deviceId/command` | Send a command to a device (identify, calibrate, reset, update) |
+| GET | `/api/vinyl-buddy/devices/:deviceId/telemetry` | Get device telemetry history (battery, temperature, signal, uptime) |
+| POST | `/api/vinyl-buddy/devices/:deviceId/name` | Rename a paired device |
+| GET | `/api/vinyl-buddy/identification-history/:userId` | Paginated identification history with stats |
+| POST | `/api/vinyl-buddy/identification/:id/correct` | Submit correction for a misidentified track |
+| GET | `/api/vinyl-buddy/leaderboard` | Global identification leaderboard (all, week, month) |
+| POST | `/api/vinyl-buddy/listening-party` | Create a listening party room |
+| POST | `/api/vinyl-buddy/listening-party/:id/join` | Join an active listening party |
+| GET | `/api/vinyl-buddy/listening-party/:id` | Get party status and participants |
+| POST | `/api/vinyl-buddy/devices/:deviceId/diagnostics` | Request a device diagnostic report |
+| GET | `/api/vinyl-buddy/firmware/versions` | List all available firmware versions |
+| POST | `/api/vinyl-buddy/firmware/rollback/:deviceId` | Rollback device to a previous firmware version |
+| GET | `/api/vinyl-buddy/analytics/:userId` | Detailed listening analytics per user |
 
 ### Analytics (9 endpoints)
 
@@ -588,7 +624,7 @@ groovestack/
 
 - **Express.js 5** REST API with JWT authentication
 - **PostgreSQL** with 35+ tables and an 8-version migration system that auto-applies on startup
-- **275+ API endpoints** across authentication, records, marketplace, auctions, social, stories, Vinyl Buddy, mesh, analytics, and utility
+- **290+ API endpoints** across authentication, records, marketplace, auctions, social, stories, Vinyl Buddy, mesh, analytics, and utility
 - **In-memory rate limiting** — configurable per-bucket with sliding windows
 - **Stripe webhook handling** for payment confirmation
 - **API response envelope** — standardized `{ data, meta, error }` format with request IDs
@@ -742,6 +778,33 @@ The MicroSD card module connects via SPI (GPIO 5 CS, GPIO 18 SCK, GPIO 23 MOSI, 
 - **LED indicators** — visual status for WiFi connection, BLE activity, and listening state
 - **FreeRTOS** — task-based architecture for concurrent audio capture, display, and networking
 - **Watchdog timer** — automatic crash recovery and device restart
+- **MQTT telemetry** — publish device metrics and subscribe to remote commands via MQTT broker
+- **FFT peak detection** — real-time frequency-domain analysis with dominant peak identification
+- **Fuel gauge** — coulomb-counting battery estimation for accurate charge percentage
+- **Capacitive touch** — touch sensor inputs for play/pause, skip, and volume control
+- **WS2812 LED strip** — addressable RGB LED strip for ambient listening visualizations
+- **Accelerometer (MPU6050)** — motion and orientation detection with tap-to-wake support
+- **Real-time clock (DS3231)** — hardware RTC for accurate timestamps without network dependency
+- **Audio AGC** — real-time automatic gain control based on signal envelope
+- **Spectral centroid** — frequency-weighted mean for audio brightness analysis
+- **Zero-crossing rate** — time-domain feature extraction for percussiveness detection
+- **Firmware rollback** — automatic rollback to previous version on consecutive boot failures
+- **Power-on self-test** — POST routine validating I2S, WiFi, I2C, SPI, ADC, and GPIO at startup
+- **Buzzer / haptic** — audible and tactile feedback for button presses and events
+- **Ambient light sensor** — auto-brightness for OLED based on room lighting
+- **SPIFFS web interface** — on-device web UI for configuration and diagnostics
+- **Audio fingerprint caching** — local cache to reduce redundant API calls for repeated tracks
+- **Sleep/wake scheduling** — configurable quiet hours with automatic deep sleep and wake
+
+---
+
+## Vinyl Buddy Build Guide
+
+A comprehensive step-by-step build guide for assembling your own Vinyl Buddy hardware device is available at:
+
+**[`/vinyl-buddy-guide.html`](/vinyl-buddy-guide.html)**
+
+The guide covers the complete parts list, wiring diagrams, firmware flashing instructions, all 64 firmware sections and capabilities, the 15+ VinylBuddy-specific API endpoints, and the 25 hardware UI components in the web interface.
 
 ---
 
@@ -864,6 +927,15 @@ Open a GitHub issue with a clear description, steps to reproduce, and expected v
 ---
 
 ## Changelog
+
+### Wave 28 (March 2026)
+
+- 15 new Vinyl Buddy server endpoints: audio streaming, device commands, telemetry, identification history with corrections, global leaderboard, listening parties (create/join/view), device diagnostics, firmware version listing, firmware rollback, and per-user listening analytics
+- 14 new firmware features: MQTT support, FFT peak detection, battery fuel gauge (coulomb counting), capacitive touch sensors, WS2812 LED strip, buzzer/haptic feedback, ambient light sensor, accelerometer (MPU6050), real-time clock (DS3231), audio AGC, spectral centroid, zero-crossing rate, firmware rollback on boot failure, and power-on self-test (POST)
+- 25 hardware UI components in the web interface: device pairing animation, hardware status dashboard, I2S audio pipeline visualizer, microphone polar pattern display, GPIO pin status monitor, power consumption graph, WiFi channel scanner, audio buffer status, firmware flash progress, hardware error log viewer, device factory reset confirmation, USB serial monitor, antenna signal pattern, voltage regulator status, I2C bus scanner, SPI bus monitor, DMA channel status, interrupt handler monitor, FreeRTOS task scheduler view, heap fragmentation visualizer, NVS storage browser, partition table viewer, boot log viewer, watchdog timer status, and hardware self-test panel
+- Vinyl Buddy Build Guide (`/vinyl-buddy-guide.html`) with complete parts list, wiring, firmware documentation, API reference, and software feature descriptions
+- Firmware expanded to 64 sections covering all hardware subsystems
+- Platform stats: 1,900+ improvements, 290+ API endpoints
 
 ### Wave 20 (March 2026)
 

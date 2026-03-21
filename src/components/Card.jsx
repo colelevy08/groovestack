@@ -639,63 +639,172 @@ export default function Card({
               <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={sizeConfig.artSize} />
             </div>
             <div className="absolute inset-0 rounded-xl bg-gradient-to-t from-black/20 to-transparent pointer-events-none" />
-            {/* Vinyl disc peek on hover */}
-            <div
-              className={`absolute -right-2 top-1/2 -translate-y-1/2 w-[52px] h-[52px] rounded-full transition-all duration-500 pointer-events-none ${
-                imgZoomed ? 'opacity-80 translate-x-3' : 'opacity-0 translate-x-0'
-              }`}
-            >
-              <svg
-                width="52"
-                height="52"
-                viewBox="0 0 100 100"
-                className={imgZoomed ? 'animate-spin-slow' : ''}
-                style={{ filter: 'drop-shadow(-2px 0 4px rgba(0,0,0,0.5))' }}
+            {/* Vinyl disc peek on hover — realistic label */}
+            {(() => {
+              // Genre-based label color schemes
+              const genreLabelStyles = {
+                jazz:       { bg: '#003366', fg: '#c8ddf0', accent: '#5ba3d9', ring: '#1a5a8a', style: 'blue-note' },
+                soul:       { bg: '#c44b00', fg: '#ffe8b0', accent: '#ffd700', ring: '#8b3300', style: 'motown' },
+                funk:       { bg: '#6b1d7b', fg: '#f0d0ff', accent: '#ff9f1c', ring: '#4a1055', style: 'motown' },
+                rock:       { bg: '#8b0000', fg: '#ffdada', accent: '#ff4444', ring: '#5c0000', style: 'classic' },
+                punk:       { bg: '#1a1a1a', fg: '#ff2d2d', accent: '#ffcc00', ring: '#333', style: 'classic' },
+                electronic: { bg: '#0a1628', fg: '#00ffcc', accent: '#00d4ff', ring: '#0d2847', style: 'warp' },
+                hiphop:     { bg: '#1a1a2e', fg: '#e94560', accent: '#ffd700', ring: '#16213e', style: 'def-jam' },
+                'hip-hop':  { bg: '#1a1a2e', fg: '#e94560', accent: '#ffd700', ring: '#16213e', style: 'def-jam' },
+                classical:  { bg: '#2c1810', fg: '#f5e6d3', accent: '#d4a574', ring: '#1a0e08', style: 'dg' },
+                reggae:     { bg: '#006400', fg: '#ffd700', accent: '#ff4500', ring: '#004200', style: 'classic' },
+                country:    { bg: '#4a3728', fg: '#f5deb3', accent: '#cd853f', ring: '#2d1f14', style: 'classic' },
+                blues:      { bg: '#191970', fg: '#b0c4de', accent: '#4169e1', ring: '#0d0d3d', style: 'blue-note' },
+                pop:        { bg: '#ff1493', fg: '#fff0f5', accent: '#fff', ring: '#c41078', style: 'classic' },
+                latin:      { bg: '#b22222', fg: '#ffefd5', accent: '#ffd700', ring: '#8b1a1a', style: 'fania' },
+                folk:       { bg: '#556b2f', fg: '#faebd7', accent: '#daa520', ring: '#3b4d20', style: 'classic' },
+                metal:      { bg: '#0d0d0d', fg: '#c0c0c0', accent: '#ff0000', ring: '#1a1a1a', style: 'classic' },
+              };
+              const primaryTag = (r.tags || [])[0]?.toLowerCase() || '';
+              const labelStyle = genreLabelStyles[primaryTag] || { bg: '#1a1a1a', fg: '#e0e0e0', accent: '#8b5cf6', ring: '#333', style: 'classic' };
+              // RPM based on format
+              const fmt = (r.format || '').toLowerCase();
+              const rpm = (fmt.includes('7') || fmt.includes('single') || fmt.includes('45')) ? '45' : '33\u2153';
+              const uid = `cv-${r.id}`;
+              return (
+              <div
+                className={`absolute -right-2 top-1/2 -translate-y-1/2 w-[60px] h-[60px] rounded-full transition-all duration-500 ease-out pointer-events-none ${
+                  imgZoomed ? 'opacity-90 translate-x-4' : 'opacity-0 translate-x-0'
+                }`}
               >
-                <defs>
-                  <clipPath id={`card-vinyl-label-${r.id}`}>
-                    <circle cx="50" cy="50" r="20" />
-                  </clipPath>
-                  <radialGradient id={`card-vinyl-sheen-${r.id}`} cx="35%" cy="35%" r="65%">
-                    <stop offset="0%" stopColor="rgba(255,255,255,0.06)" />
-                    <stop offset="100%" stopColor="rgba(255,255,255,0)" />
-                  </radialGradient>
-                </defs>
-                {/* Outer disc */}
-                <circle cx="50" cy="50" r="48" fill="#111" stroke="#222" strokeWidth="1" />
-                {/* Vinyl grooves */}
-                <circle cx="50" cy="50" r="46" fill="none" stroke="#1a1a1a" strokeWidth="0.3" />
-                <circle cx="50" cy="50" r="44" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
-                <circle cx="50" cy="50" r="42" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
-                <circle cx="50" cy="50" r="40" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
-                <circle cx="50" cy="50" r="38" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
-                <circle cx="50" cy="50" r="36" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
-                <circle cx="50" cy="50" r="34" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
-                <circle cx="50" cy="50" r="32" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
-                <circle cx="50" cy="50" r="30" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
-                <circle cx="50" cy="50" r="28" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
-                <circle cx="50" cy="50" r="26" fill="none" stroke="#1a1a1a" strokeWidth="0.4" />
-                <circle cx="50" cy="50" r="24" fill="none" stroke="#1c1c1c" strokeWidth="0.3" />
-                <circle cx="50" cy="50" r="22" fill="none" stroke="#1a1a1a" strokeWidth="0.3" />
-                {/* Label area background */}
-                <circle cx="50" cy="50" r="20" fill="#222" />
-                {/* Album art as center label */}
-                {vinylCoverUrl && (
-                  <image
-                    href={vinylCoverUrl}
-                    x="30" y="30" width="40" height="40"
-                    clipPath={`url(#card-vinyl-label-${r.id})`}
-                    preserveAspectRatio="xMidYMid slice"
-                  />
-                )}
-                {/* Label ring border */}
-                <circle cx="50" cy="50" r="20" fill="none" stroke="#333" strokeWidth="0.8" />
-                {/* Spindle hole */}
-                <circle cx="50" cy="50" r="2.5" fill="#0a0a0a" stroke="#333" strokeWidth="0.5" />
-                {/* Vinyl sheen overlay */}
-                <circle cx="50" cy="50" r="48" fill={`url(#card-vinyl-sheen-${r.id})`} />
-              </svg>
-            </div>
+                <svg
+                  width="60"
+                  height="60"
+                  viewBox="0 0 120 120"
+                  className={imgZoomed ? 'animate-spin-slow' : ''}
+                  style={{ filter: 'drop-shadow(-3px 1px 6px rgba(0,0,0,0.7))' }}
+                >
+                  <defs>
+                    {/* Vinyl surface gradient */}
+                    <radialGradient id={`${uid}-surf`} cx="50%" cy="50%" r="50%">
+                      <stop offset="0%" stopColor="#1a1a1a" />
+                      <stop offset="40%" stopColor="#111" />
+                      <stop offset="100%" stopColor="#0a0a0a" />
+                    </radialGradient>
+                    {/* Light reflection sweep */}
+                    <linearGradient id={`${uid}-sheen`} x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stopColor="rgba(255,255,255,0.08)" />
+                      <stop offset="30%" stopColor="rgba(255,255,255,0.02)" />
+                      <stop offset="50%" stopColor="rgba(255,255,255,0)" />
+                      <stop offset="70%" stopColor="rgba(255,255,255,0.03)" />
+                      <stop offset="100%" stopColor="rgba(255,255,255,0.06)" />
+                    </linearGradient>
+                    {/* Label background gradient per genre style */}
+                    <radialGradient id={`${uid}-label`} cx="50%" cy="40%" r="60%">
+                      <stop offset="0%" stopColor={labelStyle.bg} stopOpacity="1" />
+                      <stop offset="100%" stopColor={labelStyle.ring} stopOpacity="1" />
+                    </radialGradient>
+                    {/* Curved text paths */}
+                    <path id={`${uid}-artist-arc`} d="M 60 60 m -17, 0 a 17,17 0 1,1 34,0" fill="none" />
+                    <path id={`${uid}-album-arc`} d="M 60 60 m 17, 0 a 17,17 0 1,1 -34,0" fill="none" />
+                  </defs>
+
+                  {/* Outer disc body */}
+                  <circle cx="60" cy="60" r="58" fill={`url(#${uid}-surf)`} stroke="#222" strokeWidth="0.8" />
+
+                  {/* Outer rim bevel */}
+                  <circle cx="60" cy="60" r="57" fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="0.5" />
+
+                  {/* Realistic grooves — varying density and opacity */}
+                  {[56,54.5,53,51.5,50,48.5,47,45.5,44,42.5,41,39.5,38,36.5,35,33.5,32,30.5,29,27.5].map((rad, i) => (
+                    <circle key={i} cx="60" cy="60" r={rad} fill="none"
+                      stroke={i % 3 === 0 ? 'rgba(255,255,255,0.05)' : i % 2 === 0 ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.3)'}
+                      strokeWidth={i % 4 === 0 ? 0.4 : 0.25}
+                    />
+                  ))}
+
+                  {/* Dead wax / run-out area */}
+                  <circle cx="60" cy="60" r="25.5" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="0.6" />
+                  <circle cx="60" cy="60" r="25" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="0.3" />
+
+                  {/* Center label */}
+                  <circle cx="60" cy="60" r="24" fill={`url(#${uid}-label)`} />
+
+                  {/* Label ring / outer border */}
+                  <circle cx="60" cy="60" r="24" fill="none" stroke={labelStyle.accent} strokeWidth="0.6" strokeOpacity="0.5" />
+                  <circle cx="60" cy="60" r="23" fill="none" stroke={labelStyle.accent} strokeWidth="0.3" strokeOpacity="0.25" />
+
+                  {/* Genre-specific label decorations */}
+                  {labelStyle.style === 'blue-note' && (
+                    <>
+                      {/* Blue Note style horizontal lines */}
+                      <line x1="40" y1="53" x2="80" y2="53" stroke={labelStyle.fg} strokeWidth="0.3" strokeOpacity="0.3" />
+                      <line x1="42" y1="67" x2="78" y2="67" stroke={labelStyle.fg} strokeWidth="0.3" strokeOpacity="0.3" />
+                    </>
+                  )}
+                  {labelStyle.style === 'motown' && (
+                    <>
+                      {/* Motown style concentric label rings */}
+                      <circle cx="60" cy="60" r="21" fill="none" stroke={labelStyle.accent} strokeWidth="0.4" strokeOpacity="0.3" />
+                      <circle cx="60" cy="60" r="18" fill="none" stroke={labelStyle.accent} strokeWidth="0.3" strokeOpacity="0.2" />
+                    </>
+                  )}
+                  {labelStyle.style === 'warp' && (
+                    <>
+                      {/* Electronic / Warp style geometric accent */}
+                      <rect x="48" y="52" width="24" height="0.4" fill={labelStyle.accent} opacity="0.4" />
+                      <rect x="48" y="68" width="24" height="0.4" fill={labelStyle.accent} opacity="0.4" />
+                    </>
+                  )}
+                  {labelStyle.style === 'def-jam' && (
+                    <>
+                      {/* Def Jam style bold border */}
+                      <circle cx="60" cy="60" r="22" fill="none" stroke={labelStyle.fg} strokeWidth="0.8" strokeOpacity="0.4" />
+                    </>
+                  )}
+
+                  {/* Artist name — curved along top of label */}
+                  <text fill={labelStyle.fg} fontSize="4.2" fontWeight="700" letterSpacing="0.5" textAnchor="middle" opacity="0.9">
+                    <textPath href={`#${uid}-artist-arc`} startOffset="50%">
+                      {(r.artist || '').toUpperCase().slice(0, 18)}
+                    </textPath>
+                  </text>
+
+                  {/* Album name — curved along bottom of label */}
+                  <text fill={labelStyle.fg} fontSize="3.2" fontWeight="400" letterSpacing="0.3" textAnchor="middle" opacity="0.7">
+                    <textPath href={`#${uid}-album-arc`} startOffset="50%">
+                      {(r.album || '').slice(0, 22)}
+                    </textPath>
+                  </text>
+
+                  {/* RPM indicator */}
+                  <text x="60" y="58" fill={labelStyle.fg} fontSize="3.5" fontWeight="600" textAnchor="middle" opacity="0.8">
+                    {rpm} RPM
+                  </text>
+
+                  {/* Label name */}
+                  {r.label && (
+                    <text x="60" y="62.5" fill={labelStyle.accent} fontSize="2.8" fontWeight="700" textAnchor="middle" opacity="0.7" letterSpacing="0.8">
+                      {r.label.toUpperCase().slice(0, 14)}
+                    </text>
+                  )}
+
+                  {/* Catalog number */}
+                  {r.catalogNumber && (
+                    <text x="60" y="66" fill={labelStyle.fg} fontSize="2.2" fontWeight="400" textAnchor="middle" opacity="0.45" fontFamily="monospace">
+                      {r.catalogNumber}
+                    </text>
+                  )}
+
+                  {/* Spindle hole with metallic ring */}
+                  <circle cx="60" cy="60" r="3" fill="#050505" />
+                  <circle cx="60" cy="60" r="3" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="0.5" />
+                  <circle cx="60" cy="60" r="2.2" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="0.3" />
+
+                  {/* Vinyl sheen / light reflection overlay */}
+                  <circle cx="60" cy="60" r="58" fill={`url(#${uid}-sheen)`} />
+
+                  {/* Subtle highlight arc to simulate studio light */}
+                  <path d="M 30 25 Q 60 15, 90 30" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" strokeLinecap="round" />
+                </svg>
+              </div>
+              );
+            })()}
           </div>
           <div className="flex-1 min-w-0">
             <div className={`${sizeConfig.titleSize} font-bold text-gs-text tracking-tight leading-tight mb-1 flex items-center gap-1.5 truncate`}>

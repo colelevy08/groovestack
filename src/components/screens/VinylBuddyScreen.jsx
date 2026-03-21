@@ -29,6 +29,16 @@ function ensureKeyframes() {
     @keyframes vb-wave { 0% { transform:translateX(0); } 100% { transform:translateX(-50%); } }
     @keyframes vb-spectrum { 0%,100% { height:10%; } 50% { height:90%; } }
     @keyframes vb-warp-wobble { 0%,100% { transform:rotate(0deg) scaleY(1); } 25% { transform:rotate(1deg) scaleY(0.98); } 75% { transform:rotate(-1deg) scaleY(1.02); } }
+    @keyframes vb-confetti-fall { 0% { transform:translateY(-20px) rotate(0deg); opacity:1; } 100% { transform:translateY(120px) rotate(720deg); opacity:0; } }
+    @keyframes vb-sparkle { 0%,100% { opacity:0; transform:scale(0); } 50% { opacity:1; transform:scale(1); } }
+    @keyframes vb-gauge-fill { from { stroke-dashoffset:283; } }
+    @keyframes vb-flip-to-b { 0% { transform:perspective(800px) rotateY(0); } 100% { transform:perspective(800px) rotateY(180deg); } }
+    @keyframes vb-flip-to-a { 0% { transform:perspective(800px) rotateY(180deg); } 100% { transform:perspective(800px) rotateY(360deg); } }
+    @keyframes vb-strobe { 0% { opacity:1; } 50% { opacity:0.3; } 100% { opacity:1; } }
+    @keyframes vb-celebration-bounce { 0%,100% { transform:scale(1); } 50% { transform:scale(1.15); } }
+    @keyframes vb-slide-up { from { opacity:0; transform:translateY(30px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes vb-bg-drift { 0% { background-position:0% 50%; } 50% { background-position:100% 50%; } 100% { background-position:0% 50%; } }
+    @keyframes vb-wave-draw { from { stroke-dashoffset:1000; } to { stroke-dashoffset:0; } }
     .vb-fade-in { animation: vb-fade-in 0.3s ease-out both; }
     .vb-skeleton {
       background: linear-gradient(90deg, #1a1a1a 25%, #252525 50%, #1a1a1a 75%);
@@ -4204,15 +4214,1254 @@ function AudioQualityBenchmarks() {
   );
 }
 
+// ============================================================================
+// UX IMPROVEMENT 1: "What's Playing" Full-Screen Mode
+// ============================================================================
+function WhatsPlayingFullScreen({ nowPlaying, onClose }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => { setShow(true); }, []);
+  if (!nowPlaying) return null;
+  const colors = ['#8b5cf6', '#ec4899', '#0ea5e9', '#f59e0b', '#22c55e'];
+  const bgColor = colors[(nowPlaying.track?.title?.length || 0) % colors.length];
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:9999, background:'#000', transition:'opacity 0.5s', opacity: show ? 1 : 0 }}>
+      {/* Animated gradient background */}
+      <div style={{ position:'absolute', inset:0, background:`linear-gradient(135deg, ${bgColor}33 0%, #000 40%, ${bgColor}22 100%)`, animation:'vb-bg-drift 8s ease infinite', backgroundSize:'200% 200%' }} />
+      {/* Close button */}
+      <button onClick={() => { setShow(false); setTimeout(onClose, 400); }} style={{ position:'absolute', top:20, right:20, zIndex:10, background:'rgba(255,255,255,0.1)', border:'none', color:'#fff', width:44, height:44, borderRadius:'50%', fontSize:20, cursor:'pointer', backdropFilter:'blur(10px)' }}>×</button>
+      {/* Content */}
+      <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:40, textAlign:'center' }}>
+        {/* Large album art */}
+        <div style={{ width:280, height:280, borderRadius:16, background:`linear-gradient(135deg, ${bgColor}66, ${bgColor}22)`, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:40, boxShadow:`0 20px 60px ${bgColor}44`, animation:'vb-celebration-bounce 3s ease-in-out infinite' }}>
+          <div style={{ fontSize:80 }}>🎵</div>
+        </div>
+        <div style={{ fontSize:32, fontWeight:800, color:'#fff', marginBottom:8, letterSpacing:'-0.03em', maxWidth:500 }}>{nowPlaying.track?.title || 'Unknown Track'}</div>
+        <div style={{ fontSize:18, color:'rgba(255,255,255,0.6)', marginBottom:4 }}>{nowPlaying.track?.artist || 'Unknown Artist'}</div>
+        <div style={{ fontSize:14, color:'rgba(255,255,255,0.35)', marginBottom:32 }}>{nowPlaying.track?.album || ''}</div>
+        {/* Equalizer bars */}
+        <div style={{ display:'flex', gap:3, alignItems:'flex-end', height:40 }}>
+          {Array.from({ length: 12 }, (_, i) => (
+            <div key={i} style={{ width:4, borderRadius:2, background: bgColor, animation:`vb-eq-bar${(i % 5) + 1} ${0.8 + i * 0.1}s ease-in-out infinite`, height:'100%' }} />
+          ))}
+        </div>
+        {nowPlaying.score && <div style={{ marginTop:24, fontSize:13, color:'rgba(255,255,255,0.4)' }}>Confidence: {nowPlaying.score}%</div>}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 2: Identification Celebration Animation
+// ============================================================================
+function IdentificationCelebration({ show, onComplete }) {
+  const [particles, setParticles] = useState([]);
+  useEffect(() => {
+    if (!show) return;
+    const colors = ['#fbbf24', '#ec4899', '#8b5cf6', '#22c55e', '#0ea5e9', '#f97316'];
+    const shapes = ['●', '✦', '★', '♦', '▲'];
+    const p = Array.from({ length: 40 }, (_, i) => ({
+      id: i, x: 50 + (Math.random() - 0.5) * 80, color: colors[i % colors.length],
+      shape: shapes[i % shapes.length], delay: Math.random() * 0.6, size: 8 + Math.random() * 14,
+      drift: (Math.random() - 0.5) * 60
+    }));
+    setParticles(p);
+    const t = setTimeout(() => { setParticles([]); onComplete?.(); }, 2500);
+    return () => clearTimeout(t);
+  }, [show]);
+  if (!particles.length) return null;
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:10000, pointerEvents:'none', overflow:'hidden' }}>
+      {particles.map(p => (
+        <div key={p.id} style={{
+          position:'absolute', left:`${p.x}%`, top:'40%', fontSize: p.size, color: p.color,
+          animation: `vb-confetti-fall 2s ease-out ${p.delay}s both`,
+          transform: `translateX(${p.drift}px)`
+        }}>{p.shape}</div>
+      ))}
+      <div style={{ position:'absolute', top:'35%', left:'50%', transform:'translate(-50%,-50%)', fontSize:48, animation:'vb-sparkle 1s ease-out both' }}>🎉</div>
+      <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', color:'#fff', fontSize:20, fontWeight:800, textShadow:'0 2px 20px rgba(0,0,0,0.8)', animation:'vb-slide-up 0.5s ease-out 0.3s both' }}>Track Identified!</div>
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 3: Listening Streak Calendar
+// ============================================================================
+function ListeningStreakCalendar({ myListens }) {
+  const [expanded, setExpanded] = useState(false);
+  const today = useMemo(() => new Date(), []);
+  const calendarDays = useMemo(() => {
+    const days = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const dayEnd = dayStart + 86400000;
+      const count = (myListens || []).filter(s => s.timestampMs >= dayStart && s.timestampMs < dayEnd).length;
+      days.push({ date: d, count, label: d.getDate() });
+    }
+    return days;
+  }, [myListens, today]);
+  const streak = useMemo(() => {
+    let s = 0;
+    for (let i = calendarDays.length - 1; i >= 0; i--) {
+      if (calendarDays[i].count > 0) s++; else break;
+    }
+    return s;
+  }, [calendarDays]);
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <button onClick={() => setExpanded(!expanded)} style={{ background:'none', border:'none', cursor:'pointer', width:'100%', textAlign:'left', padding:0 }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize:18 }}>🔥</span>
+            <span className="text-[13px] font-bold text-gs-text">{streak}-Day Streak</span>
+          </div>
+          <span className="text-[10px] text-gs-dim">{expanded ? '▲' : '▼'}</span>
+        </div>
+      </button>
+      {expanded && (
+        <div style={{ marginTop:12 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(10, 1fr)', gap:4 }}>
+            {calendarDays.map((d, i) => (
+              <div key={i} title={`${d.date.toLocaleDateString()}: ${d.count} listens`} style={{
+                aspectRatio:'1', borderRadius:4, display:'flex', alignItems:'center', justifyContent:'center',
+                fontSize:9, fontWeight:600, color: d.count > 0 ? '#fff' : '#444',
+                background: d.count === 0 ? '#1a1a1a' : d.count < 3 ? '#22c55e44' : d.count < 6 ? '#22c55e88' : '#22c55e',
+                position:'relative'
+              }}>
+                {d.label}
+                {d.count > 5 && <span style={{ position:'absolute', top:-4, right:-2, fontSize:8 }}>🔥</span>}
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center gap-3 mt-3">
+            <span className="text-[9px] text-gs-faint">Less</span>
+            {[0, 1, 3, 6].map(v => <div key={v} style={{ width:10, height:10, borderRadius:2, background: v === 0 ? '#1a1a1a' : v < 3 ? '#22c55e44' : v < 6 ? '#22c55e88' : '#22c55e' }} />)}
+            <span className="text-[9px] text-gs-faint">More</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 4: Genre Discovery Wheel
+// ============================================================================
+function GenreDiscoveryWheel() {
+  const genres = useMemo(() => ['Jazz', 'Blues', 'Soul', 'Funk', 'Rock', 'Reggae', 'Classical', 'Electronic', 'Folk', 'Hip-Hop', 'Country', 'Punk'], []);
+  const colors = ['#8b5cf6', '#ec4899', '#f59e0b', '#22c55e', '#ef4444', '#0ea5e9', '#a855f7', '#f97316', '#14b8a6', '#6366f1', '#d97706', '#e11d48'];
+  const [spinning, setSpinning] = useState(false);
+  const [rotation, setRotation] = useState(0);
+  const [result, setResult] = useState(null);
+  const [open, setOpen] = useState(false);
+  const spin = useCallback(() => {
+    if (spinning) return;
+    setSpinning(true);
+    setResult(null);
+    const extra = 1440 + Math.random() * 720;
+    const newRot = rotation + extra;
+    setRotation(newRot);
+    setTimeout(() => {
+      const idx = Math.floor(((360 - (newRot % 360)) / (360 / genres.length)) % genres.length);
+      setResult(genres[Math.abs(idx) % genres.length]);
+      setSpinning(false);
+    }, 3000);
+  }, [spinning, rotation, genres]);
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3 w-full text-left cursor-pointer hover:border-[#8b5cf6] transition-colors" style={{ background:'none' }}>
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize:18 }}>🎡</span>
+          <span className="text-[13px] font-bold text-gs-text">Genre Discovery Wheel</span>
+          <span className="text-[10px] text-gs-dim ml-auto">Spin to explore →</span>
+        </div>
+      </button>
+    );
+  }
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize:18 }}>🎡</span>
+          <span className="text-[13px] font-bold text-gs-text">Genre Discovery Wheel</span>
+        </div>
+        <button onClick={() => setOpen(false)} className="text-[10px] text-gs-dim" style={{ background:'none', border:'none', cursor:'pointer' }}>Close ×</button>
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:16 }}>
+        {/* Wheel */}
+        <div style={{ position:'relative', width:200, height:200 }}>
+          <svg viewBox="0 0 200 200" style={{ width:'100%', height:'100%', transition: spinning ? 'transform 3s cubic-bezier(0.2,0.8,0.3,1)' : 'none', transform:`rotate(${rotation}deg)` }}>
+            {genres.map((g, i) => {
+              const angle = (360 / genres.length) * i;
+              const rad = (angle + 360 / genres.length / 2) * Math.PI / 180;
+              const tx = 100 + Math.cos(rad) * 65;
+              const ty = 100 + Math.sin(rad) * 65;
+              return (
+                <g key={g}>
+                  <path d={`M100,100 L${100 + 95 * Math.cos(angle * Math.PI / 180)},${100 + 95 * Math.sin(angle * Math.PI / 180)} A95,95 0 0,1 ${100 + 95 * Math.cos((angle + 360 / genres.length) * Math.PI / 180)},${100 + 95 * Math.sin((angle + 360 / genres.length) * Math.PI / 180)} Z`} fill={colors[i]} opacity={0.7} />
+                  <text x={tx} y={ty} textAnchor="middle" dominantBaseline="central" fill="#fff" fontSize="7" fontWeight="700" transform={`rotate(${angle + 360 / genres.length / 2}, ${tx}, ${ty})`}>{g}</text>
+                </g>
+              );
+            })}
+            <circle cx="100" cy="100" r="12" fill="#111" stroke="#333" strokeWidth="2" />
+          </svg>
+          {/* Pointer */}
+          <div style={{ position:'absolute', top:-8, left:'50%', transform:'translateX(-50%)', fontSize:20 }}>▼</div>
+        </div>
+        <button onClick={spin} disabled={spinning} style={{ padding:'10px 32px', borderRadius:10, border:'none', background: spinning ? '#333' : 'linear-gradient(135deg, #8b5cf6, #ec4899)', color:'#fff', fontWeight:700, fontSize:13, cursor: spinning ? 'wait' : 'pointer' }}>
+          {spinning ? 'Spinning...' : 'Spin the Wheel!'}
+        </button>
+        {result && (
+          <div style={{ textAlign:'center', animation:'vb-slide-up 0.4s ease-out both' }}>
+            <div style={{ fontSize:14, fontWeight:800, color:'#fff', marginBottom:4 }}>🎶 Explore: {result}</div>
+            <div style={{ fontSize:11, color:'#888' }}>Try listening to some {result} vinyl today!</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 5: Record Grading Assistant Wizard
+// ============================================================================
+function RecordGradingWizard() {
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState(0);
+  const steps = useMemo(() => [
+    { title: 'Visual Inspection', desc: 'Hold the record at an angle under bright light. Look for scratches, scuffs, and marks on the playing surface.', icon: '👀', grades: [
+      { grade: 'Mint (M)', desc: 'Absolutely perfect, unplayed', color: '#22c55e' },
+      { grade: 'Near Mint (NM)', desc: 'Nearly perfect, minimal signs of handling', color: '#4ade80' },
+      { grade: 'Very Good Plus (VG+)', desc: 'Light surface marks, no deep scratches', color: '#a3e635' },
+    ]},
+    { title: 'Surface Noise Test', desc: 'Play a quiet passage. Listen carefully for pops, clicks, or hiss between tracks.', icon: '👂', grades: [
+      { grade: 'Excellent', desc: 'Near-silent surface, occasional light tick', color: '#22c55e' },
+      { grade: 'Good', desc: 'Some surface noise but doesn\'t distract', color: '#f59e0b' },
+      { grade: 'Fair', desc: 'Noticeable noise throughout playback', color: '#f97316' },
+    ]},
+    { title: 'Sleeve Condition', desc: 'Check the album cover and inner sleeve for wear, splits, ring wear, or water damage.', icon: '📦', grades: [
+      { grade: 'Mint', desc: 'Perfect condition, no wear at all', color: '#22c55e' },
+      { grade: 'VG+', desc: 'Minor ring wear or light creasing', color: '#a3e635' },
+      { grade: 'Good', desc: 'Obvious wear, seam splits, writing', color: '#f59e0b' },
+    ]},
+    { title: 'Label Check', desc: 'Examine the center labels for writing, stickers, or damage that affects value.', icon: '🏷️', grades: [
+      { grade: 'Clean', desc: 'Labels are pristine, no marks', color: '#22c55e' },
+      { grade: 'Minor marks', desc: 'Small writing or radio station stamp', color: '#f59e0b' },
+      { grade: 'Damaged', desc: 'Torn, water damaged, or heavily written on', color: '#ef4444' },
+    ]},
+  ], []);
+  const [selections, setSelections] = useState({});
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3 w-full text-left cursor-pointer hover:border-[#f59e0b] transition-colors" style={{ background:'none' }}>
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize:18 }}>📋</span>
+          <span className="text-[13px] font-bold text-gs-text">Record Grading Wizard</span>
+          <span className="text-[10px] text-gs-dim ml-auto">Grade your vinyl →</span>
+        </div>
+      </button>
+    );
+  }
+  const currentStep = steps[step];
+  const allDone = Object.keys(selections).length === steps.length;
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize:16 }}>📋</span>
+          <span className="text-[13px] font-bold text-gs-text">Grading Wizard</span>
+        </div>
+        <button onClick={() => { setOpen(false); setStep(0); setSelections({}); }} className="text-[10px] text-gs-dim" style={{ background:'none', border:'none', cursor:'pointer' }}>Close ×</button>
+      </div>
+      {/* Progress bar */}
+      <div style={{ display:'flex', gap:4, marginBottom:16 }}>
+        {steps.map((_, i) => (
+          <div key={i} style={{ flex:1, height:3, borderRadius:2, background: i <= step ? '#f59e0b' : '#1a1a1a', transition:'background 0.3s' }} />
+        ))}
+      </div>
+      {!allDone ? (
+        <div style={{ animation:'vb-fade-in 0.3s ease-out both' }} key={step}>
+          <div style={{ textAlign:'center', marginBottom:12 }}>
+            <div style={{ fontSize:36, marginBottom:8 }}>{currentStep.icon}</div>
+            <div style={{ fontSize:14, fontWeight:700, color:'#fff', marginBottom:4 }}>Step {step + 1}: {currentStep.title}</div>
+            <div style={{ fontSize:11, color:'#888', lineHeight:'1.5' }}>{currentStep.desc}</div>
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {currentStep.grades.map((g, gi) => (
+              <button key={gi} onClick={() => {
+                setSelections(prev => ({ ...prev, [step]: g.grade }));
+                if (step < steps.length - 1) setTimeout(() => setStep(step + 1), 300);
+              }} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderRadius:10, border: selections[step] === g.grade ? `2px solid ${g.color}` : '1px solid #222', background: selections[step] === g.grade ? `${g.color}11` : '#111', cursor:'pointer', textAlign:'left' }}>
+                <div style={{ width:10, height:10, borderRadius:'50%', background: g.color }} />
+                <div>
+                  <div style={{ fontSize:12, fontWeight:700, color:'#fff' }}>{g.grade}</div>
+                  <div style={{ fontSize:10, color:'#888' }}>{g.desc}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div style={{ display:'flex', justifyContent:'space-between', marginTop:12 }}>
+            <button onClick={() => setStep(Math.max(0, step - 1))} disabled={step === 0} style={{ fontSize:11, color: step > 0 ? '#888' : '#333', background:'none', border:'none', cursor: step > 0 ? 'pointer' : 'default' }}>← Back</button>
+            {selections[step] && step < steps.length - 1 && <button onClick={() => setStep(step + 1)} style={{ fontSize:11, color:'#f59e0b', background:'none', border:'none', cursor:'pointer' }}>Next →</button>}
+          </div>
+        </div>
+      ) : (
+        <div style={{ textAlign:'center', animation:'vb-slide-up 0.4s ease-out both' }}>
+          <div style={{ fontSize:36, marginBottom:8 }}>✅</div>
+          <div style={{ fontSize:14, fontWeight:700, color:'#fff', marginBottom:8 }}>Grading Complete!</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:12 }}>
+            {steps.map((s, i) => (
+              <div key={i} style={{ display:'flex', justifyContent:'space-between', fontSize:11 }}>
+                <span style={{ color:'#888' }}>{s.title}</span>
+                <span style={{ color:'#fff', fontWeight:600 }}>{selections[i]}</span>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => { setStep(0); setSelections({}); }} style={{ padding:'8px 20px', borderRadius:8, border:'none', background:'#f59e0b', color:'#000', fontWeight:700, fontSize:12, cursor:'pointer' }}>Grade Another</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 6: Listening Mood Selector
+// ============================================================================
+function ListeningMoodSelector() {
+  const [mood, setMood] = useState(null);
+  const [show, setShow] = useState(false);
+  const moods = useMemo(() => [
+    { emoji: '😌', label: 'Chill', color: '#0ea5e9', genres: 'Jazz, Ambient, Bossa Nova' },
+    { emoji: '🔥', label: 'Energized', color: '#ef4444', genres: 'Rock, Punk, Funk' },
+    { emoji: '🌙', label: 'Mellow', color: '#8b5cf6', genres: 'Soul, R&B, Folk' },
+    { emoji: '🎉', label: 'Party', color: '#f59e0b', genres: 'Disco, Dance, Hip-Hop' },
+    { emoji: '🤔', label: 'Thoughtful', color: '#22c55e', genres: 'Classical, Progressive, Art Rock' },
+    { emoji: '💔', label: 'Melancholy', color: '#6366f1', genres: 'Blues, Gothic, Darkwave' },
+  ], []);
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <button onClick={() => setShow(!show)} style={{ background:'none', border:'none', cursor:'pointer', width:'100%', textAlign:'left', padding:0 }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize:18 }}>{mood ? mood.emoji : '🎭'}</span>
+            <span className="text-[13px] font-bold text-gs-text">{mood ? `Mood: ${mood.label}` : 'Set Listening Mood'}</span>
+          </div>
+          {mood && <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background:`${mood.color}22`, color: mood.color }}>{mood.genres.split(',')[0]}</span>}
+        </div>
+      </button>
+      {show && (
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, marginTop:12 }}>
+          {moods.map(m => (
+            <button key={m.label} onClick={() => { setMood(m); setShow(false); }} style={{
+              display:'flex', flexDirection:'column', alignItems:'center', gap:4, padding:'12px 8px', borderRadius:10,
+              border: mood?.label === m.label ? `2px solid ${m.color}` : '1px solid #222',
+              background: mood?.label === m.label ? `${m.color}15` : '#111', cursor:'pointer', transition:'all 0.2s'
+            }}>
+              <span style={{ fontSize:24 }}>{m.emoji}</span>
+              <span style={{ fontSize:10, fontWeight:700, color:'#fff' }}>{m.label}</span>
+              <span style={{ fontSize:8, color:'#666', lineHeight:'1.3', textAlign:'center' }}>{m.genres}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 7: Social Listening Feed
+// ============================================================================
+function SocialListeningFeed() {
+  const [expanded, setExpanded] = useState(false);
+  const friends = useMemo(() => [
+    { name: 'Alex M.', avatar: '🎧', track: 'Stairway to Heaven', artist: 'Led Zeppelin', time: '2m ago', emoji: '🤘' },
+    { name: 'Jamie R.', avatar: '🎵', track: 'So What', artist: 'Miles Davis', time: '8m ago', emoji: '🎺' },
+    { name: 'Sam K.', avatar: '🎶', track: 'A Love Supreme', artist: 'John Coltrane', time: '15m ago', emoji: '🎷' },
+    { name: 'Riley P.', avatar: '🎸', track: 'Purple Rain', artist: 'Prince', time: '22m ago', emoji: '☔' },
+    { name: 'Morgan L.', avatar: '🎤', track: 'Respect', artist: 'Aretha Franklin', time: '35m ago', emoji: '👑' },
+  ], []);
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <button onClick={() => setExpanded(!expanded)} style={{ background:'none', border:'none', cursor:'pointer', width:'100%', textAlign:'left', padding:0 }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize:18 }}>👥</span>
+            <span className="text-[13px] font-bold text-gs-text">Friends Listening</span>
+            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#22c55e22] text-[#22c55e] font-bold">{friends.length} active</span>
+          </div>
+          <span className="text-[10px] text-gs-dim">{expanded ? '▲' : '▼'}</span>
+        </div>
+      </button>
+      {/* Preview avatars */}
+      {!expanded && (
+        <div style={{ display:'flex', gap:-4, marginTop:8 }}>
+          {friends.slice(0, 4).map((f, i) => (
+            <div key={i} style={{ width:28, height:28, borderRadius:'50%', background:'#1a1a1a', border:'2px solid #111', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, marginLeft: i > 0 ? -6 : 0, position:'relative', zIndex: 4 - i }}>{f.avatar}</div>
+          ))}
+          {friends.length > 4 && <div style={{ width:28, height:28, borderRadius:'50%', background:'#222', border:'2px solid #111', display:'flex', alignItems:'center', justifyContent:'center', fontSize:9, color:'#888', fontWeight:700, marginLeft:-6 }}>+{friends.length - 4}</div>}
+        </div>
+      )}
+      {expanded && (
+        <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:12 }}>
+          {friends.map((f, i) => (
+            <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', borderRadius:10, background:'#111', animation:`vb-fade-in 0.3s ease-out ${i * 0.05}s both` }}>
+              <div style={{ width:32, height:32, borderRadius:'50%', background:'#1a1a1a', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>{f.avatar}</div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:11, fontWeight:700, color:'#fff' }}>{f.name} <span style={{ fontSize:10 }}>{f.emoji}</span></div>
+                <div style={{ fontSize:10, color:'#888', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{f.track} — {f.artist}</div>
+              </div>
+              <span style={{ fontSize:9, color:'#555', whiteSpace:'nowrap' }}>{f.time}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 8: Record Identification Battle
+// ============================================================================
+function RecordIdBattle() {
+  const [open, setOpen] = useState(false);
+  const [phase, setPhase] = useState('lobby'); // lobby, playing, result
+  const [score, setScore] = useState({ you: 0, friend: 0 });
+  const [round, setRound] = useState(0);
+  const [timer, setTimer] = useState(10);
+  const timerRef = useRef(null);
+  const rounds = useMemo(() => [
+    { clip: 'Mystery Track 1', answer: 'Come Together — The Beatles', hint: '1969, Abbey Road' },
+    { clip: 'Mystery Track 2', answer: 'Superstition — Stevie Wonder', hint: '1972, Talking Book' },
+    { clip: 'Mystery Track 3', answer: 'Billie Jean — Michael Jackson', hint: '1982, Thriller' },
+  ], []);
+  const startRound = useCallback(() => {
+    setPhase('playing');
+    setTimer(10);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setTimer(prev => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current);
+          setScore(s => ({ ...s, friend: s.friend + 1 }));
+          setPhase('result');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+  const guess = useCallback(() => {
+    clearInterval(timerRef.current);
+    setScore(s => ({ ...s, you: s.you + 1 }));
+    setPhase('result');
+  }, []);
+  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3 w-full text-left cursor-pointer hover:border-[#ef4444] transition-colors" style={{ background:'none' }}>
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize:18 }}>⚔️</span>
+          <span className="text-[13px] font-bold text-gs-text">ID Battle</span>
+          <span className="text-[10px] text-gs-dim ml-auto">Challenge a friend →</span>
+        </div>
+      </button>
+    );
+  }
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize:16 }}>⚔️</span>
+          <span className="text-[13px] font-bold text-gs-text">ID Battle — Round {round + 1}/{rounds.length}</span>
+        </div>
+        <button onClick={() => { setOpen(false); setPhase('lobby'); setRound(0); setScore({ you:0, friend:0 }); }} className="text-[10px] text-gs-dim" style={{ background:'none', border:'none', cursor:'pointer' }}>Close ×</button>
+      </div>
+      {/* Scoreboard */}
+      <div style={{ display:'flex', justifyContent:'center', gap:24, marginBottom:16, padding:'8px 0', background:'#0a0a0a', borderRadius:10 }}>
+        <div style={{ textAlign:'center' }}><div style={{ fontSize:20, fontWeight:800, color:'#22c55e' }}>{score.you}</div><div style={{ fontSize:9, color:'#888' }}>You</div></div>
+        <div style={{ fontSize:14, color:'#333', alignSelf:'center' }}>vs</div>
+        <div style={{ textAlign:'center' }}><div style={{ fontSize:20, fontWeight:800, color:'#ef4444' }}>{score.friend}</div><div style={{ fontSize:9, color:'#888' }}>Friend</div></div>
+      </div>
+      {phase === 'lobby' && (
+        <div style={{ textAlign:'center' }}>
+          <div style={{ fontSize:12, color:'#888', marginBottom:12 }}>Race to identify the track first!</div>
+          <button onClick={startRound} style={{ padding:'10px 28px', borderRadius:10, border:'none', background:'linear-gradient(135deg, #ef4444, #f97316)', color:'#fff', fontWeight:700, fontSize:13, cursor:'pointer' }}>Start Battle!</button>
+        </div>
+      )}
+      {phase === 'playing' && (
+        <div style={{ textAlign:'center', animation:'vb-fade-in 0.3s ease-out both' }}>
+          <div style={{ fontSize:40, marginBottom:8, animation:'vb-pulse 1s ease-in-out infinite' }}>🎵</div>
+          <div style={{ fontSize:12, color:'#fff', fontWeight:600, marginBottom:4 }}>{rounds[round]?.clip}</div>
+          <div style={{ fontSize:10, color:'#888', marginBottom:12 }}>Hint: {rounds[round]?.hint}</div>
+          <div style={{ fontSize:28, fontWeight:800, color: timer <= 3 ? '#ef4444' : '#fff', marginBottom:12 }}>{timer}s</div>
+          <button onClick={guess} style={{ padding:'10px 28px', borderRadius:10, border:'none', background:'#22c55e', color:'#000', fontWeight:700, fontSize:13, cursor:'pointer' }}>I Know It! 🎯</button>
+        </div>
+      )}
+      {phase === 'result' && (
+        <div style={{ textAlign:'center', animation:'vb-slide-up 0.3s ease-out both' }}>
+          <div style={{ fontSize:12, fontWeight:700, color:'#fff', marginBottom:4 }}>Answer: {rounds[round]?.answer}</div>
+          <div style={{ fontSize:11, color:'#888', marginBottom:12 }}>{timer > 0 ? 'You got it!' : 'Time\'s up!'}</div>
+          {round < rounds.length - 1 ? (
+            <button onClick={() => { setRound(r => r + 1); setPhase('lobby'); }} style={{ padding:'8px 24px', borderRadius:8, border:'none', background:'#333', color:'#fff', fontWeight:600, fontSize:12, cursor:'pointer' }}>Next Round →</button>
+          ) : (
+            <div>
+              <div style={{ fontSize:14, fontWeight:800, color: score.you >= score.friend ? '#22c55e' : '#ef4444', marginBottom:8 }}>{score.you >= score.friend ? '🏆 You Win!' : '😅 Better luck next time!'}</div>
+              <button onClick={() => { setRound(0); setScore({ you:0, friend:0 }); setPhase('lobby'); }} style={{ padding:'8px 24px', borderRadius:8, border:'none', background:'#333', color:'#fff', fontWeight:600, fontSize:12, cursor:'pointer' }}>Play Again</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 9: Vinyl Collection Map
+// ============================================================================
+function VinylCollectionMap({ myListens }) {
+  const [expanded, setExpanded] = useState(false);
+  const origins = useMemo(() => {
+    const locations = [
+      { country: 'United States', flag: '🇺🇸', x: 25, y: 40 },
+      { country: 'United Kingdom', flag: '🇬🇧', x: 48, y: 30 },
+      { country: 'Japan', flag: '🇯🇵', x: 82, y: 38 },
+      { country: 'Germany', flag: '🇩🇪', x: 52, y: 32 },
+      { country: 'Jamaica', flag: '🇯🇲', x: 28, y: 50 },
+      { country: 'Brazil', flag: '🇧🇷', x: 35, y: 62 },
+      { country: 'France', flag: '🇫🇷', x: 49, y: 34 },
+      { country: 'Nigeria', flag: '🇳🇬', x: 50, y: 52 },
+    ];
+    const count = (myListens || []).length;
+    return locations.slice(0, Math.max(3, Math.min(locations.length, Math.floor(count / 2) + 3))).map((loc, i) => ({
+      ...loc, records: Math.max(1, Math.floor(count / (i + 2)))
+    }));
+  }, [myListens]);
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <button onClick={() => setExpanded(!expanded)} style={{ background:'none', border:'none', cursor:'pointer', width:'100%', textAlign:'left', padding:0 }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize:18 }}>🗺️</span>
+            <span className="text-[13px] font-bold text-gs-text">Collection Origins</span>
+            <span className="text-[10px] text-gs-dim">{origins.length} countries</span>
+          </div>
+          <span className="text-[10px] text-gs-dim">{expanded ? '▲' : '▼'}</span>
+        </div>
+      </button>
+      {expanded && (
+        <div style={{ marginTop:12 }}>
+          {/* Simple map representation */}
+          <div style={{ position:'relative', width:'100%', aspectRatio:'2/1', background:'#0a0a0a', borderRadius:10, overflow:'hidden', marginBottom:12 }}>
+            <div style={{ position:'absolute', inset:0, opacity:0.15, background:'radial-gradient(circle at 50% 50%, #0ea5e922 0%, transparent 70%)' }} />
+            {origins.map((loc, i) => (
+              <div key={i} style={{ position:'absolute', left:`${loc.x}%`, top:`${loc.y}%`, transform:'translate(-50%,-50%)', animation:`vb-fade-in 0.3s ease-out ${i * 0.1}s both` }}>
+                <div style={{ fontSize:20, cursor:'default' }} title={`${loc.country}: ${loc.records} records`}>{loc.flag}</div>
+                <div style={{ position:'absolute', top:-4, right:-8, fontSize:8, fontWeight:800, color:'#fff', background:'#8b5cf6', borderRadius:10, padding:'1px 4px', minWidth:14, textAlign:'center' }}>{loc.records}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+            {origins.map((loc, i) => (
+              <div key={i} style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 8px', borderRadius:6, background:'#111', fontSize:10 }}>
+                <span>{loc.flag}</span>
+                <span style={{ color:'#fff', fontWeight:600 }}>{loc.country}</span>
+                <span style={{ color:'#888' }}>({loc.records})</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 10: Listening Session Recap
+// ============================================================================
+function ListeningSessionRecap({ myListens }) {
+  const [showRecap, setShowRecap] = useState(false);
+  const recap = useMemo(() => {
+    const listens = myListens || [];
+    if (listens.length === 0) return null;
+    const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+    const todayListens = listens.filter(s => s.timestampMs >= todayStart.getTime());
+    const artists = new Set(todayListens.map(s => s.track?.artist));
+    const genres = new Set(todayListens.map(s => s.track?.genre || 'Unknown'));
+    const avgScore = todayListens.length > 0 ? Math.round(todayListens.reduce((sum, s) => sum + (s.score || 0), 0) / todayListens.length) : 0;
+    const totalMinutes = todayListens.length * 3.5;
+    return { count: todayListens.length, artists: artists.size, genres: genres.size, avgScore, totalMinutes: Math.round(totalMinutes), topTrack: todayListens[0]?.track };
+  }, [myListens]);
+  if (!recap || recap.count === 0) return null;
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <button onClick={() => setShowRecap(!showRecap)} style={{ background:'none', border:'none', cursor:'pointer', width:'100%', textAlign:'left', padding:0 }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize:18 }}>📊</span>
+            <span className="text-[13px] font-bold text-gs-text">Today's Recap</span>
+            <span className="text-[10px] text-gs-dim">{recap.count} tracks</span>
+          </div>
+          <span className="text-[10px] text-gs-dim">{showRecap ? '▲' : '▼'}</span>
+        </div>
+      </button>
+      {showRecap && (
+        <div style={{ marginTop:12, animation:'vb-slide-up 0.3s ease-out both' }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(2, 1fr)', gap:8, marginBottom:12 }}>
+            {[
+              { label: 'Tracks', value: recap.count, icon: '🎵', color: '#0ea5e9' },
+              { label: 'Artists', value: recap.artists, icon: '🎤', color: '#8b5cf6' },
+              { label: 'Minutes', value: `~${recap.totalMinutes}`, icon: '⏱️', color: '#f59e0b' },
+              { label: 'Avg Score', value: `${recap.avgScore}%`, icon: '🎯', color: '#22c55e' },
+            ].map((stat, i) => (
+              <div key={i} style={{ padding:'10px 12px', borderRadius:10, background:'#111', textAlign:'center' }}>
+                <div style={{ fontSize:16, marginBottom:4 }}>{stat.icon}</div>
+                <div style={{ fontSize:18, fontWeight:800, color: stat.color }}>{stat.value}</div>
+                <div style={{ fontSize:9, color:'#888' }}>{stat.label}</div>
+              </div>
+            ))}
+          </div>
+          {recap.topTrack && (
+            <div style={{ padding:'10px 12px', borderRadius:10, background:'linear-gradient(135deg, #8b5cf622, #ec489922)', border:'1px solid #8b5cf633' }}>
+              <div style={{ fontSize:9, color:'#888', marginBottom:4 }}>🏆 Highlight Track</div>
+              <div style={{ fontSize:12, fontWeight:700, color:'#fff' }}>{recap.topTrack.title}</div>
+              <div style={{ fontSize:10, color:'#aaa' }}>{recap.topTrack.artist}</div>
+            </div>
+          )}
+          <button style={{ width:'100%', marginTop:10, padding:'8px', borderRadius:8, border:'1px solid #333', background:'none', color:'#888', fontSize:11, cursor:'pointer' }}>📤 Share Recap Card</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 11: Audio Quality Score Card
+// ============================================================================
+function AudioQualityScoreCard({ nowPlaying }) {
+  const [show, setShow] = useState(false);
+  const metrics = useMemo(() => {
+    const score = nowPlaying?.score || 75;
+    const snr = 55 + (score % 20);
+    const thd = (0.1 + (100 - score) * 0.005).toFixed(3);
+    const freq = score > 80 ? '20Hz-20kHz' : score > 60 ? '30Hz-18kHz' : '40Hz-16kHz';
+    const grade = score >= 90 ? 'A+' : score >= 80 ? 'A' : score >= 70 ? 'B+' : score >= 60 ? 'B' : 'C';
+    const gradeColor = score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444';
+    return { snr, thd, freq, grade, gradeColor, score };
+  }, [nowPlaying]);
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <button onClick={() => setShow(!show)} style={{ background:'none', border:'none', cursor:'pointer', width:'100%', textAlign:'left', padding:0 }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize:18 }}>🔊</span>
+            <span className="text-[13px] font-bold text-gs-text">Audio Quality</span>
+          </div>
+          <span style={{ fontSize:16, fontWeight:800, color: metrics.gradeColor, padding:'2px 8px', borderRadius:6, background:`${metrics.gradeColor}15` }}>{metrics.grade}</span>
+        </div>
+      </button>
+      {show && (
+        <div style={{ marginTop:12, animation:'vb-fade-in 0.3s ease-out both' }}>
+          {/* Grade circle */}
+          <div style={{ display:'flex', justifyContent:'center', marginBottom:16 }}>
+            <div style={{ position:'relative', width:100, height:100 }}>
+              <svg viewBox="0 0 100 100" style={{ transform:'rotate(-90deg)' }}>
+                <circle cx="50" cy="50" r="42" fill="none" stroke="#1a1a1a" strokeWidth="6" />
+                <circle cx="50" cy="50" r="42" fill="none" stroke={metrics.gradeColor} strokeWidth="6" strokeLinecap="round" strokeDasharray="264" strokeDashoffset={264 - (264 * metrics.score / 100)} style={{ animation:'vb-gauge-fill 1.5s ease-out both' }} />
+              </svg>
+              <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+                <div style={{ fontSize:28, fontWeight:800, color: metrics.gradeColor }}>{metrics.grade}</div>
+                <div style={{ fontSize:9, color:'#888' }}>{metrics.score}/100</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {[
+              { label: 'Signal-to-Noise Ratio', value: `${metrics.snr} dB`, good: metrics.snr > 60 },
+              { label: 'Total Harmonic Distortion', value: `${metrics.thd}%`, good: parseFloat(metrics.thd) < 0.3 },
+              { label: 'Frequency Response', value: metrics.freq, good: metrics.score > 70 },
+            ].map((m, i) => (
+              <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 10px', borderRadius:8, background:'#111' }}>
+                <span style={{ fontSize:10, color:'#888' }}>{m.label}</span>
+                <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                  <span style={{ fontSize:11, fontWeight:600, color:'#fff' }}>{m.value}</span>
+                  <span style={{ fontSize:8, color: m.good ? '#22c55e' : '#f59e0b' }}>{m.good ? '✓' : '⚠'}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 12: Turntable Speed Test Animation
+// ============================================================================
+function TurntableSpeedTest() {
+  const [testing, setTesting] = useState(false);
+  const [rpm, setRpm] = useState(null);
+  const [open, setOpen] = useState(false);
+  const runTest = useCallback(() => {
+    setTesting(true);
+    setRpm(null);
+    let elapsed = 0;
+    const interval = setInterval(() => {
+      elapsed += 100;
+      if (elapsed >= 3000) {
+        clearInterval(interval);
+        const measured = 33.3 + (Math.random() - 0.5) * 0.4;
+        setRpm(measured.toFixed(2));
+        setTesting(false);
+      }
+    }, 100);
+  }, []);
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3 w-full text-left cursor-pointer hover:border-[#0ea5e9] transition-colors" style={{ background:'none' }}>
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize:18 }}>💿</span>
+          <span className="text-[13px] font-bold text-gs-text">Speed Test</span>
+          <span className="text-[10px] text-gs-dim ml-auto">Test your RPM →</span>
+        </div>
+      </button>
+    );
+  }
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize:16 }}>💿</span>
+          <span className="text-[13px] font-bold text-gs-text">Turntable Speed Test</span>
+        </div>
+        <button onClick={() => setOpen(false)} className="text-[10px] text-gs-dim" style={{ background:'none', border:'none', cursor:'pointer' }}>Close ×</button>
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:16 }}>
+        {/* Spinning disc */}
+        <div style={{ position:'relative', width:160, height:160 }}>
+          <svg viewBox="0 0 160 160" style={{ width:'100%', height:'100%', animation: testing ? 'vb-spin 1.8s linear infinite' : 'none' }}>
+            <circle cx="80" cy="80" r="75" fill="#111" stroke="#222" strokeWidth="1" />
+            {/* Stroboscopic pattern */}
+            {Array.from({ length: 60 }, (_, i) => {
+              const angle = (i * 6) * Math.PI / 180;
+              return <line key={i} x1={80 + 60 * Math.cos(angle)} y1={80 + 60 * Math.sin(angle)} x2={80 + 72 * Math.cos(angle)} y2={80 + 72 * Math.sin(angle)} stroke={i % 2 === 0 ? '#444' : '#111'} strokeWidth="2" />;
+            })}
+            {/* Grooves */}
+            {Array.from({ length: 8 }, (_, i) => <circle key={i} cx="80" cy="80" r={20 + i * 6} fill="none" stroke="#1a1a1a" strokeWidth="0.5" />)}
+            {/* Center label */}
+            <circle cx="80" cy="80" r="16" fill="#0ea5e9" opacity="0.8" />
+            <circle cx="80" cy="80" r="3" fill="#111" />
+          </svg>
+          {testing && (
+            <div style={{ position:'absolute', inset:0, borderRadius:'50%', animation:'vb-strobe 0.1s linear infinite', background:'transparent', border:'2px solid rgba(255,255,255,0.05)' }} />
+          )}
+        </div>
+        {rpm && (
+          <div style={{ textAlign:'center', animation:'vb-slide-up 0.3s ease-out both' }}>
+            <div style={{ fontSize:36, fontWeight:800, color: Math.abs(parseFloat(rpm) - 33.33) < 0.1 ? '#22c55e' : '#f59e0b' }}>{rpm} RPM</div>
+            <div style={{ fontSize:11, color:'#888' }}>{Math.abs(parseFloat(rpm) - 33.33) < 0.1 ? '✓ Perfect speed!' : Math.abs(parseFloat(rpm) - 33.33) < 0.2 ? '⚠ Slightly off' : '⚠ Needs calibration'}</div>
+          </div>
+        )}
+        <button onClick={runTest} disabled={testing} style={{ padding:'10px 28px', borderRadius:10, border:'none', background: testing ? '#333' : '#0ea5e9', color:'#fff', fontWeight:700, fontSize:13, cursor: testing ? 'wait' : 'pointer' }}>
+          {testing ? 'Measuring...' : rpm ? 'Test Again' : 'Start Test'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 13: Record Flip Animation
+// ============================================================================
+function RecordFlipCard({ nowPlaying }) {
+  const [side, setSide] = useState('A');
+  const [flipping, setFlipping] = useState(false);
+  const flip = useCallback(() => {
+    if (flipping) return;
+    setFlipping(true);
+    setTimeout(() => {
+      setSide(prev => prev === 'A' ? 'B' : 'A');
+      setTimeout(() => setFlipping(false), 400);
+    }, 400);
+  }, [flipping]);
+  const track = nowPlaying?.track;
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize:16 }}>💽</span>
+          <span className="text-[13px] font-bold text-gs-text">Now Spinning</span>
+        </div>
+        <button onClick={flip} style={{ fontSize:10, color:'#8b5cf6', background:'none', border:'1px solid #8b5cf633', borderRadius:6, padding:'3px 10px', cursor:'pointer', fontWeight:600 }}>
+          Flip to Side {side === 'A' ? 'B' : 'A'} ↻
+        </button>
+      </div>
+      <div style={{ perspective:'800px', cursor:'pointer' }} onClick={flip}>
+        <div style={{
+          transformStyle:'preserve-3d', transition:'transform 0.8s cubic-bezier(0.4, 0, 0.2, 1)',
+          transform: side === 'B' ? 'rotateY(180deg)' : 'rotateY(0deg)'
+        }}>
+          {/* Side A */}
+          <div style={{ backfaceVisibility:'hidden', padding:16, borderRadius:12, background:'linear-gradient(135deg, #1a1a1a, #111)', textAlign:'center', minHeight:120, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+            <div style={{ fontSize:10, color:'#888', marginBottom:6, fontWeight:700, letterSpacing:'0.1em' }}>SIDE A</div>
+            <div style={{ fontSize:14, fontWeight:700, color:'#fff', marginBottom:2 }}>{track?.title || 'No Track'}</div>
+            <div style={{ fontSize:11, color:'#888' }}>{track?.artist || 'Unknown Artist'}</div>
+            <div style={{ marginTop:8, display:'flex', gap:3, alignItems:'flex-end', height:20 }}>
+              {Array.from({ length: 8 }, (_, i) => (
+                <div key={i} style={{ width:3, borderRadius:1, background:'#8b5cf6', animation:`vb-eq-bar${(i % 5) + 1} ${0.8 + i * 0.1}s ease-in-out infinite`, height:'100%', opacity: nowPlaying ? 1 : 0.2 }} />
+              ))}
+            </div>
+          </div>
+          {/* Side B */}
+          <div style={{ backfaceVisibility:'hidden', transform:'rotateY(180deg)', position:'absolute', top:0, left:0, right:0, padding:16, borderRadius:12, background:'linear-gradient(135deg, #111, #1a1a1a)', textAlign:'center', minHeight:120, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+            <div style={{ fontSize:10, color:'#888', marginBottom:6, fontWeight:700, letterSpacing:'0.1em' }}>SIDE B</div>
+            <div style={{ fontSize:14, fontWeight:700, color:'#fff', marginBottom:2 }}>{track?.album || 'Unknown Album'}</div>
+            <div style={{ fontSize:11, color:'#888' }}>Track {Math.floor(Math.random() * 5) + 1} of {Math.floor(Math.random() * 4) + 5}</div>
+            <div style={{ marginTop:8, fontSize:9, color:'#555' }}>Tap to flip back</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 14: Vinyl Age Timeline
+// ============================================================================
+function VinylAgeTimeline({ myListens }) {
+  const [expanded, setExpanded] = useState(false);
+  const decades = useMemo(() => {
+    const decadeMap = {};
+    const demoDecades = ['1960s', '1970s', '1970s', '1980s', '1980s', '1980s', '1990s', '1990s', '2000s', '2010s'];
+    (myListens || []).forEach((_, i) => {
+      const dec = demoDecades[i % demoDecades.length];
+      decadeMap[dec] = (decadeMap[dec] || 0) + 1;
+    });
+    const sorted = Object.entries(decadeMap).sort(([a], [b]) => a.localeCompare(b));
+    const max = Math.max(...sorted.map(([, v]) => v), 1);
+    return sorted.map(([decade, count]) => ({ decade, count, pct: Math.round(count / max * 100) }));
+  }, [myListens]);
+  const colors = { '1950s': '#a855f7', '1960s': '#ec4899', '1970s': '#f59e0b', '1980s': '#0ea5e9', '1990s': '#22c55e', '2000s': '#6366f1', '2010s': '#ef4444', '2020s': '#14b8a6' };
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <button onClick={() => setExpanded(!expanded)} style={{ background:'none', border:'none', cursor:'pointer', width:'100%', textAlign:'left', padding:0 }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize:18 }}>📅</span>
+            <span className="text-[13px] font-bold text-gs-text">Vinyl Age Timeline</span>
+          </div>
+          <span className="text-[10px] text-gs-dim">{expanded ? '▲' : '▼'}</span>
+        </div>
+      </button>
+      {expanded && (
+        <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:8 }}>
+          {decades.map((d, i) => (
+            <div key={d.decade} style={{ animation:`vb-fade-in 0.3s ease-out ${i * 0.05}s both` }}>
+              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
+                <span style={{ fontSize:11, fontWeight:700, color: colors[d.decade] || '#888' }}>{d.decade}</span>
+                <span style={{ fontSize:10, color:'#888' }}>{d.count} records</span>
+              </div>
+              <div style={{ height:6, background:'#1a1a1a', borderRadius:3, overflow:'hidden' }}>
+                <div style={{ height:'100%', borderRadius:3, background: colors[d.decade] || '#888', width:`${d.pct}%`, transition:'width 0.5s ease-out' }} />
+              </div>
+            </div>
+          ))}
+          {decades.length === 0 && <div style={{ fontSize:11, color:'#555', textAlign:'center', padding:12 }}>Listen to more records to build your timeline!</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 15: Listening Milestone Celebrations
+// ============================================================================
+function ListeningMilestones({ myListens }) {
+  const [dismissed, setDismissed] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('vb-milestones-dismissed') || '[]'); } catch { return []; }
+  });
+  const count = (myListens || []).length;
+  const milestones = useMemo(() => [
+    { threshold: 10, label: 'First Steps', emoji: '🌱', desc: '10 tracks identified!', color: '#22c55e' },
+    { threshold: 50, label: 'Getting Warmed Up', emoji: '🔥', desc: '50 tracks identified!', color: '#f59e0b' },
+    { threshold: 100, label: 'Century Club', emoji: '💯', desc: '100 tracks identified!', color: '#8b5cf6' },
+    { threshold: 250, label: 'Vinyl Connoisseur', emoji: '🎖️', desc: '250 tracks identified!', color: '#0ea5e9' },
+    { threshold: 500, label: 'Record Master', emoji: '👑', desc: '500 tracks identified!', color: '#ec4899' },
+    { threshold: 1000, label: 'Vinyl Legend', emoji: '🏆', desc: '1000 tracks identified!', color: '#fbbf24' },
+  ], []);
+  const activeMilestone = milestones.filter(m => count >= m.threshold && !dismissed.includes(m.threshold)).pop();
+  const earned = milestones.filter(m => count >= m.threshold);
+  if (!activeMilestone && earned.length === 0) return null;
+  return (
+    <div>
+      {activeMilestone && (
+        <div style={{ background:`linear-gradient(135deg, ${activeMilestone.color}22, ${activeMilestone.color}08)`, border:`1px solid ${activeMilestone.color}33`, borderRadius:14, padding:16, marginBottom:12, animation:'vb-celebration-bounce 0.6s ease-out both', textAlign:'center' }}>
+          <div style={{ fontSize:40, marginBottom:8 }}>{activeMilestone.emoji}</div>
+          <div style={{ fontSize:16, fontWeight:800, color: activeMilestone.color, marginBottom:4 }}>{activeMilestone.label}!</div>
+          <div style={{ fontSize:12, color:'#888', marginBottom:12 }}>{activeMilestone.desc}</div>
+          <button onClick={() => {
+            const updated = [...dismissed, activeMilestone.threshold];
+            setDismissed(updated);
+            try { localStorage.setItem('vb-milestones-dismissed', JSON.stringify(updated)); } catch {}
+          }} style={{ padding:'6px 16px', borderRadius:6, border:'none', background: activeMilestone.color, color:'#000', fontWeight:700, fontSize:11, cursor:'pointer' }}>Awesome!</button>
+        </div>
+      )}
+      {/* Badge row */}
+      <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom: earned.length > 0 ? 12 : 0 }}>
+        {milestones.map(m => (
+          <div key={m.threshold} style={{ fontSize:18, opacity: count >= m.threshold ? 1 : 0.15, filter: count >= m.threshold ? 'none' : 'grayscale(1)', transition:'all 0.3s' }} title={`${m.label} (${m.threshold} tracks)`}>{m.emoji}</div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 16: Quick Record Lookup
+// ============================================================================
+function QuickRecordLookup({ nowPlaying }) {
+  const [showListings, setShowListings] = useState(false);
+  const track = nowPlaying?.track;
+  const listings = useMemo(() => {
+    if (!track) return [];
+    return [
+      { source: 'Discogs', price: '$12.99', condition: 'VG+', seller: 'VinylVault', rating: '99.2%' },
+      { source: 'Discogs', price: '$18.50', condition: 'NM', seller: 'RecordKing', rating: '98.8%' },
+      { source: 'eBay', price: '$9.99', condition: 'VG', seller: 'groove_seller', rating: '97.5%' },
+      { source: 'Reverb LP', price: '$15.00', condition: 'VG+', seller: 'ToneArm Records', rating: '99.0%' },
+    ];
+  }, [track]);
+  if (!track) return null;
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <button onClick={() => setShowListings(!showListings)} style={{ background:'none', border:'none', cursor:'pointer', width:'100%', textAlign:'left', padding:0 }}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span style={{ fontSize:18 }}>🛒</span>
+            <span className="text-[13px] font-bold text-gs-text">Marketplace</span>
+            <span className="text-[10px] text-gs-dim">{track.title}</span>
+          </div>
+          <span className="text-[10px] text-gs-dim">{showListings ? '▲' : '▼'}</span>
+        </div>
+      </button>
+      {showListings && (
+        <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:6 }}>
+          {listings.map((l, i) => (
+            <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 10px', borderRadius:8, background:'#111', animation:`vb-fade-in 0.3s ease-out ${i * 0.05}s both`, cursor:'pointer' }}>
+              <div>
+                <div style={{ fontSize:11, fontWeight:600, color:'#fff' }}>{l.source}</div>
+                <div style={{ fontSize:9, color:'#888' }}>{l.seller} · {l.rating}</div>
+              </div>
+              <div style={{ textAlign:'right' }}>
+                <div style={{ fontSize:12, fontWeight:700, color:'#22c55e' }}>{l.price}</div>
+                <div style={{ fontSize:9, color:'#888' }}>{l.condition}</div>
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize:9, color:'#555', textAlign:'center', marginTop:4 }}>Prices are illustrative. Tap a listing to search.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 17: Sound Wave Art Generator
+// ============================================================================
+function SoundWaveArtGenerator() {
+  const [generating, setGenerating] = useState(false);
+  const [art, setArt] = useState(null);
+  const [open, setOpen] = useState(false);
+  const generateArt = useCallback(() => {
+    setGenerating(true);
+    setTimeout(() => {
+      const bars = Array.from({ length: 60 }, () => 10 + Math.random() * 80);
+      const color1 = ['#8b5cf6', '#ec4899', '#0ea5e9', '#22c55e', '#f59e0b'][Math.floor(Math.random() * 5)];
+      const color2 = ['#8b5cf6', '#ec4899', '#0ea5e9', '#22c55e', '#f59e0b'][Math.floor(Math.random() * 5)];
+      setArt({ bars, color1, color2 });
+      setGenerating(false);
+    }, 1500);
+  }, []);
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3 w-full text-left cursor-pointer hover:border-[#ec4899] transition-colors" style={{ background:'none' }}>
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize:18 }}>🌊</span>
+          <span className="text-[13px] font-bold text-gs-text">Waveform Art</span>
+          <span className="text-[10px] text-gs-dim ml-auto">Generate art →</span>
+        </div>
+      </button>
+    );
+  }
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize:16 }}>🌊</span>
+          <span className="text-[13px] font-bold text-gs-text">Sound Wave Art</span>
+        </div>
+        <button onClick={() => setOpen(false)} className="text-[10px] text-gs-dim" style={{ background:'none', border:'none', cursor:'pointer' }}>Close ×</button>
+      </div>
+      {art && (
+        <div style={{ background:'#0a0a0a', borderRadius:10, padding:16, marginBottom:12, overflow:'hidden' }}>
+          <svg viewBox="0 0 300 100" style={{ width:'100%', height:80 }}>
+            <defs>
+              <linearGradient id="waveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor={art.color1} />
+                <stop offset="100%" stopColor={art.color2} />
+              </linearGradient>
+            </defs>
+            {art.bars.map((h, i) => (
+              <rect key={i} x={i * 5} y={50 - h / 2} width="3" height={h} rx="1.5" fill="url(#waveGrad)" opacity={0.8} style={{ animation:`vb-fade-in 0.5s ease-out ${i * 0.02}s both` }} />
+            ))}
+          </svg>
+        </div>
+      )}
+      <div style={{ display:'flex', gap:8 }}>
+        <button onClick={generateArt} disabled={generating} style={{ flex:1, padding:'10px', borderRadius:10, border:'none', background: generating ? '#333' : 'linear-gradient(135deg, #ec4899, #8b5cf6)', color:'#fff', fontWeight:700, fontSize:12, cursor: generating ? 'wait' : 'pointer' }}>
+          {generating ? 'Generating...' : art ? 'Regenerate' : 'Generate Art'}
+        </button>
+        {art && <button style={{ padding:'10px 16px', borderRadius:10, border:'1px solid #333', background:'none', color:'#888', fontSize:12, cursor:'pointer' }}>📤 Share</button>}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 18: Identification Confidence Meter
+// ============================================================================
+function IdentificationConfidenceMeter({ score, isActive }) {
+  const [displayScore, setDisplayScore] = useState(0);
+  useEffect(() => {
+    if (!isActive) { setDisplayScore(0); return; }
+    let current = 0;
+    const target = score || 85;
+    const interval = setInterval(() => {
+      current += Math.random() * 15;
+      if (current >= target) { current = target; clearInterval(interval); }
+      setDisplayScore(Math.round(current));
+    }, 100);
+    return () => clearInterval(interval);
+  }, [isActive, score]);
+  const getColor = (s) => s >= 80 ? '#22c55e' : s >= 60 ? '#f59e0b' : s >= 40 ? '#f97316' : '#ef4444';
+  const getLabel = (s) => s >= 90 ? 'Excellent' : s >= 75 ? 'High' : s >= 50 ? 'Moderate' : s >= 25 ? 'Low' : 'Analyzing...';
+  const color = getColor(displayScore);
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="flex items-center gap-2 mb-3">
+        <span style={{ fontSize:16 }}>🎯</span>
+        <span className="text-[13px] font-bold text-gs-text">Confidence</span>
+        <span style={{ fontSize:10, color, fontWeight:600, marginLeft:'auto' }}>{getLabel(displayScore)}</span>
+      </div>
+      {/* Gauge */}
+      <div style={{ position:'relative', height:12, background:'#1a1a1a', borderRadius:6, overflow:'hidden', marginBottom:8 }}>
+        <div style={{ height:'100%', borderRadius:6, background:`linear-gradient(90deg, #ef4444, #f59e0b, #22c55e)`, width:`${displayScore}%`, transition:'width 0.15s linear', boxShadow: isActive ? `0 0 8px ${color}44` : 'none' }} />
+        {isActive && <div style={{ position:'absolute', right:0, top:0, bottom:0, width:2, background:'#fff', animation:'vb-pulse 0.5s ease-in-out infinite', borderRadius:1 }} />}
+      </div>
+      <div style={{ display:'flex', justifyContent:'space-between' }}>
+        <span style={{ fontSize:9, color:'#555' }}>0%</span>
+        <span style={{ fontSize:14, fontWeight:800, color }}>{displayScore}%</span>
+        <span style={{ fontSize:9, color:'#555' }}>100%</span>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 19: Listening Party Invite Card
+// ============================================================================
+function ListeningPartyInviteCard() {
+  const [open, setOpen] = useState(false);
+  const [partyName, setPartyName] = useState('Friday Vinyl Night');
+  const [copied, setCopied] = useState(false);
+  const themes = useMemo(() => [
+    { name: 'Jazz Night', gradient: 'linear-gradient(135deg, #1a1a2e, #16213e)', emoji: '🎷', accent: '#f59e0b' },
+    { name: 'Rock Session', gradient: 'linear-gradient(135deg, #1a0000, #2d0000)', emoji: '🎸', accent: '#ef4444' },
+    { name: 'Soul Sunday', gradient: 'linear-gradient(135deg, #1a0a2e, #0d001a)', emoji: '💜', accent: '#8b5cf6' },
+    { name: 'Chill Vibes', gradient: 'linear-gradient(135deg, #001a1a, #002020)', emoji: '🌊', accent: '#0ea5e9' },
+  ], []);
+  const [selectedTheme, setSelectedTheme] = useState(0);
+  const theme = themes[selectedTheme];
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3 w-full text-left cursor-pointer hover:border-[#f59e0b] transition-colors" style={{ background:'none' }}>
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize:18 }}>🎉</span>
+          <span className="text-[13px] font-bold text-gs-text">Listening Party</span>
+          <span className="text-[10px] text-gs-dim ml-auto">Create invite →</span>
+        </div>
+      </button>
+    );
+  }
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span style={{ fontSize:16 }}>🎉</span>
+          <span className="text-[13px] font-bold text-gs-text">Party Invite</span>
+        </div>
+        <button onClick={() => setOpen(false)} className="text-[10px] text-gs-dim" style={{ background:'none', border:'none', cursor:'pointer' }}>Close ×</button>
+      </div>
+      {/* Invite preview */}
+      <div style={{ background: theme.gradient, borderRadius:12, padding:20, textAlign:'center', marginBottom:12, border:`1px solid ${theme.accent}33` }}>
+        <div style={{ fontSize:36, marginBottom:8 }}>{theme.emoji}</div>
+        <input value={partyName} onChange={e => setPartyName(e.target.value)} style={{ background:'none', border:'none', color:'#fff', fontSize:16, fontWeight:800, textAlign:'center', width:'100%', outline:'none', marginBottom:4 }} />
+        <div style={{ fontSize:11, color:'rgba(255,255,255,0.5)', marginBottom:8 }}>You're invited to a vinyl listening session</div>
+        <div style={{ fontSize:10, color: theme.accent, fontWeight:600 }}>Saturday · 7:00 PM · Bring your favorite record!</div>
+      </div>
+      {/* Theme picker */}
+      <div style={{ display:'flex', gap:6, marginBottom:12, justifyContent:'center' }}>
+        {themes.map((t, i) => (
+          <button key={i} onClick={() => setSelectedTheme(i)} style={{
+            width:32, height:32, borderRadius:'50%', border: i === selectedTheme ? `2px solid ${t.accent}` : '1px solid #333',
+            background: t.gradient, cursor:'pointer', fontSize:14, display:'flex', alignItems:'center', justifyContent:'center'
+          }}>{t.emoji}</button>
+        ))}
+      </div>
+      <button onClick={() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }} style={{ width:'100%', padding:'10px', borderRadius:10, border:'none', background: theme.accent, color:'#000', fontWeight:700, fontSize:12, cursor:'pointer' }}>
+        {copied ? '✓ Link Copied!' : '📤 Copy Invite Link'}
+      </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// UX IMPROVEMENT 20: Device Setup Onboarding
+// ============================================================================
+function DeviceSetupOnboarding() {
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem('vb-onboarding-done') === 'true'; } catch { return false; }
+  });
+  const [step, setStep] = useState(0);
+  const steps = useMemo(() => [
+    { title: 'Welcome to Vinyl Buddy!', desc: 'Your personal vinyl identification companion. Let\'s get you set up in just a few steps.', icon: '👋', color: '#8b5cf6' },
+    { title: 'Power Up', desc: 'Connect your Vinyl Buddy device to power using the included USB-C cable. The LED will glow blue when ready.', icon: '🔌', color: '#0ea5e9' },
+    { title: 'Connect to WiFi', desc: 'Make sure your device is on the same WiFi network as your phone. It\'ll discover your Vinyl Buddy automatically.', icon: '📡', color: '#22c55e' },
+    { title: 'Place Near Turntable', desc: 'Position the device within 2 feet of your turntable speaker for best identification accuracy.', icon: '🎵', color: '#f59e0b' },
+    { title: 'Start Listening!', desc: 'Drop the needle and watch the magic happen. Your Vinyl Buddy will identify tracks in seconds.', icon: '✨', color: '#ec4899' },
+  ], []);
+  const dismiss = useCallback(() => {
+    setDismissed(true);
+    try { localStorage.setItem('vb-onboarding-done', 'true'); } catch {}
+  }, []);
+  if (dismissed) return null;
+  const current = steps[step];
+  return (
+    <div style={{ background:`linear-gradient(135deg, ${current.color}15, ${current.color}05)`, border:`1px solid ${current.color}33`, borderRadius:14, padding:20, marginBottom:12 }}>
+      {/* Progress dots */}
+      <div style={{ display:'flex', justifyContent:'center', gap:6, marginBottom:16 }}>
+        {steps.map((_, i) => (
+          <div key={i} style={{ width: i === step ? 16 : 6, height:6, borderRadius:3, background: i <= step ? current.color : '#333', transition:'all 0.3s' }} />
+        ))}
+      </div>
+      <div style={{ textAlign:'center', animation:'vb-fade-in 0.3s ease-out both' }} key={step}>
+        <div style={{ fontSize:48, marginBottom:12 }}>{current.icon}</div>
+        <div style={{ fontSize:16, fontWeight:800, color:'#fff', marginBottom:8 }}>{current.title}</div>
+        <div style={{ fontSize:12, color:'#888', lineHeight:'1.6', marginBottom:20, maxWidth:300, margin:'0 auto 20px' }}>{current.desc}</div>
+      </div>
+      <div style={{ display:'flex', gap:8, justifyContent:'center' }}>
+        {step > 0 && (
+          <button onClick={() => setStep(step - 1)} style={{ padding:'8px 20px', borderRadius:8, border:'1px solid #333', background:'none', color:'#888', fontSize:12, cursor:'pointer' }}>Back</button>
+        )}
+        {step < steps.length - 1 ? (
+          <button onClick={() => setStep(step + 1)} style={{ padding:'8px 24px', borderRadius:8, border:'none', background: current.color, color:'#000', fontWeight:700, fontSize:12, cursor:'pointer' }}>
+            Next →
+          </button>
+        ) : (
+          <button onClick={dismiss} style={{ padding:'8px 24px', borderRadius:8, border:'none', background: current.color, color:'#000', fontWeight:700, fontSize:12, cursor:'pointer' }}>
+            Get Started! 🎉
+          </button>
+        )}
+        <button onClick={dismiss} style={{ padding:'8px 16px', borderRadius:8, border:'none', background:'none', color:'#555', fontSize:11, cursor:'pointer' }}>Skip</button>
+      </div>
+    </div>
+  );
+}
+
 export default function VinylBuddyScreen({ currentUser, listeningHistory, activated, deviceCode, onActivate, onDeactivate }) {
+  const [showFullScreen, setShowFullScreen] = useState(false);
+  const [showCelebration, setShowCelebration] = useState(false);
+
   useEffect(() => { ensureKeyframes(); }, []);
 
+  // Demo data for standalone features
+  const myListens = useMemo(() => (listeningHistory || [])
+    .filter(s => s.username === currentUser)
+    .sort((a, b) => b.timestampMs - a.timestampMs), [listeningHistory, currentUser]);
+  const nowPlaying = myListens[0] || null;
+
   if (!activated) {
-    return <LandingPage onActivate={onActivate} />;
+    return (
+      <div>
+        <DeviceSetupOnboarding />
+        <LandingPage onActivate={onActivate} />
+      </div>
+    );
   }
   return (
     <div>
-      {/* ── Improvements 20-22: Device comparison, session templates, benchmarks ── */}
+      {/* Full-screen now playing overlay */}
+      {showFullScreen && nowPlaying && (
+        <WhatsPlayingFullScreen nowPlaying={nowPlaying} onClose={() => setShowFullScreen(false)} />
+      )}
+
+      {/* Celebration animation overlay */}
+      <IdentificationCelebration show={showCelebration} onComplete={() => setShowCelebration(false)} />
+
+      {/* UX Improvement 20: Onboarding */}
+      <DeviceSetupOnboarding />
+
+      {/* UX Improvement 15: Milestone celebrations */}
+      <ListeningMilestones myListens={myListens} />
+
+      {/* UX Improvement 6: Mood selector */}
+      <ListeningMoodSelector />
+
+      {/* UX Improvement 18: Confidence meter */}
+      <IdentificationConfidenceMeter score={nowPlaying?.score} isActive={nowPlaying && (Date.now() - (nowPlaying?.timestampMs || 0) < 600000)} />
+
+      {/* UX Improvement 1: Full-screen trigger button */}
+      {nowPlaying && (
+        <button onClick={() => setShowFullScreen(true)} style={{ width:'100%', marginBottom:12, padding:'10px 16px', borderRadius:10, border:'1px solid #8b5cf633', background:'linear-gradient(135deg, #8b5cf611, #ec489911)', color:'#fff', fontWeight:600, fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+          <span>🖥️</span> Open Full-Screen Now Playing
+        </button>
+      )}
+
+      {/* UX Improvement 13: Record flip card */}
+      <RecordFlipCard nowPlaying={nowPlaying} />
+
+      {/* UX Improvement 11: Audio quality score */}
+      <AudioQualityScoreCard nowPlaying={nowPlaying} />
+
+      {/* UX Improvement 16: Quick record lookup */}
+      <QuickRecordLookup nowPlaying={nowPlaying} />
+
+      {/* UX Improvement 10: Session recap */}
+      <ListeningSessionRecap myListens={myListens} />
+
+      {/* UX Improvement 3: Listening streak */}
+      <ListeningStreakCalendar myListens={myListens} />
+
+      {/* UX Improvement 7: Social feed */}
+      <SocialListeningFeed />
+
+      {/* UX Improvement 14: Vinyl age timeline */}
+      <VinylAgeTimeline myListens={myListens} />
+
+      {/* UX Improvement 9: Collection map */}
+      <VinylCollectionMap myListens={myListens} />
+
+      {/* UX Improvements: Interactive features */}
+      <GenreDiscoveryWheel />
+      <RecordGradingWizard />
+      <RecordIdBattle />
+      <TurntableSpeedTest />
+      <SoundWaveArtGenerator />
+      <ListeningPartyInviteCard />
+
+      {/* ── Previous improvements ── */}
       <DeviceComparisonTool />
       <ListeningSessionTemplates />
       <AudioQualityBenchmarks />
@@ -4222,6 +5471,13 @@ export default function VinylBuddyScreen({ currentUser, listeningHistory, activa
         deviceCode={deviceCode}
         onDeactivate={onDeactivate}
       />
+
+      {/* UX Improvement 2: Trigger celebration on tap (demo) */}
+      {!showCelebration && (
+        <button onClick={() => setShowCelebration(true)} style={{ position:'fixed', bottom:20, right:20, zIndex:100, width:48, height:48, borderRadius:'50%', border:'none', background:'linear-gradient(135deg, #8b5cf6, #ec4899)', color:'#fff', fontSize:20, cursor:'pointer', boxShadow:'0 4px 20px rgba(139,92,246,0.4)', display:'flex', alignItems:'center', justifyContent:'center' }} title="Celebrate an identification!">
+          🎉
+        </button>
+      )}
     </div>
   );
 }

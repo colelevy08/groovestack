@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vinyl Buddy Build Guide — GrooveStack</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface2: #1e1e1e;
+      --border: #2a2a2a;
+      --text: #e4e4e4;
+      --text-muted: #888;
+      --accent: #8b5cf6;
+      --accent-dim: #6d28d9;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --red: #ef4444;
+      --blue: #3b82f6;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      padding: 0 1rem;
+    }
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 2rem 0 4rem;
+    }
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+    h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-top: 2.5rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--accent);
+    }
+    h3 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-top: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+    p { margin-bottom: 1rem; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 1.05rem;
+      margin-bottom: 2rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1.5rem;
+      font-size: 0.92rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid var(--border);
+    }
+    th {
+      background: var(--surface2);
+      font-weight: 600;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    td { background: var(--surface); }
+    code {
+      background: var(--surface2);
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+      font-size: 0.88em;
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+    }
+    pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin-bottom: 1.5rem;
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+    pre code { background: none; padding: 0; }
+    ul, ol {
+      margin-bottom: 1rem;
+      padding-left: 1.5rem;
+    }
+    li { margin-bottom: 0.35rem; }
+    .badge {
+      display: inline-block;
+      padding: 0.15em 0.5em;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+    .badge-yellow { background: rgba(234,179,8,0.15); color: var(--yellow); }
+    .badge-blue { background: rgba(59,130,246,0.15); color: var(--blue); }
+    .badge-red { background: rgba(239,68,68,0.15); color: var(--red); }
+    .note {
+      background: var(--surface);
+      border-left: 3px solid var(--accent);
+      padding: 0.75rem 1rem;
+      margin-bottom: 1.5rem;
+      border-radius: 0 6px 6px 0;
+    }
+    .note strong { color: var(--accent); }
+    .toc {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .toc ul { list-style: none; padding-left: 0; margin-bottom: 0; }
+    .toc li { margin-bottom: 0.25rem; }
+    .toc a { color: var(--text); }
+    .toc a:hover { color: var(--accent); }
+    .method {
+      display: inline-block;
+      min-width: 50px;
+      font-weight: 700;
+      font-size: 0.78rem;
+      text-align: center;
+    }
+    .method-get { color: var(--green); }
+    .method-post { color: var(--blue); }
+    .method-put { color: var(--yellow); }
+    .method-delete { color: var(--red); }
+    @media (max-width: 600px) {
+      h1 { font-size: 1.6rem; }
+      table { font-size: 0.82rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+<h1>Vinyl Buddy Build Guide</h1>
+<p class="subtitle">Complete hardware build, firmware reference, and software integration guide for the GrooveStack ESP32 vinyl identification device.</p>
+
+<div class="toc">
+  <strong>Contents</strong>
+  <ul>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#parts-list">Parts List</a></li>
+    <li><a href="#wiring">Wiring Diagram</a></li>
+    <li><a href="#firmware-flash">Firmware Flashing</a></li>
+    <li><a href="#firmware-features">Firmware Features (64 Sections)</a></li>
+    <li><a href="#api-endpoints">API Endpoints (15+ VinylBuddy-Specific)</a></li>
+    <li><a href="#software-features">Software Features (25 Hardware UI Components)</a></li>
+    <li><a href="#setup">Device Setup &amp; Pairing</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+  </ul>
+</div>
+
+<!-- ── Overview ──────────────────────────────────────────────────────────── -->
+<h2 id="overview">Overview</h2>
+
+<p>The Vinyl Buddy is an ESP32-based hardware device that sits near your turntable and automatically identifies the record you are playing. It captures a 2-second audio sample via an INMP441 MEMS microphone, sends the raw PCM data to the GrooveStack server over Wi-Fi, and the server queries the AudD audio fingerprinting API to identify the track. The result appears in your GrooveStack listening history within seconds.</p>
+
+<p>The device supports BLE pairing, an SSD1306 OLED display, SD card offline caching, gesture control, mesh networking, MQTT telemetry, capacitive touch inputs, an LED strip for ambient visualization, accelerometer-based motion detection, a real-time clock for accurate timestamps, and a full power-on self-test at startup.</p>
+
+<!-- ── Parts List ────────────────────────────────────────────────────────── -->
+<h2 id="parts-list">Parts List</h2>
+
+<table>
+  <thead>
+    <tr><th>Part</th><th>Purpose</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>ESP32-DevKitC V4</td><td>Main microcontroller with Wi-Fi + BLE</td><td>240 MHz dual-core, 520 KB SRAM</td></tr>
+    <tr><td>INMP441 MEMS Microphone</td><td>I2S digital audio capture</td><td>16 kHz sample rate, mono left channel</td></tr>
+    <tr><td>SSD1306 OLED Display (128x64)</td><td>Device status, track info, and animations</td><td>I2C address 0x3C; SDA=GPIO 21, SCL=GPIO 22</td></tr>
+    <tr><td>MicroSD Card Module</td><td>Offline session caching and logging</td><td>SPI: CS=GPIO 5, SCK=GPIO 18, MOSI=GPIO 23, MISO=GPIO 19</td></tr>
+    <tr><td>APDS-9960 Gesture Sensor</td><td>Wave and swipe gesture control</td><td>I2C address 0x39 (shared bus with OLED)</td></tr>
+    <tr><td>MPU6050 Accelerometer/Gyro</td><td>Motion detection, orientation, tap-to-wake</td><td>I2C address 0x68</td></tr>
+    <tr><td>DS3231 Real-Time Clock</td><td>Accurate timestamps independent of network</td><td>I2C address 0x68 (alt 0x57 for EEPROM)</td></tr>
+    <tr><td>WS2812 LED Strip (NeoPixel)</td><td>Ambient visualizations and status feedback</td><td>Data pin configurable; 5V power recommended</td></tr>
+    <tr><td>MAX17048 Fuel Gauge (optional)</td><td>Coulomb-counting battery level estimation</td><td>I2C; pairs with Li-Po battery</td></tr>
+    <tr><td>Capacitive Touch Pads (x3)</td><td>Play/pause, skip, volume touch controls</td><td>Uses ESP32 built-in touch GPIOs</td></tr>
+    <tr><td>Passive Buzzer</td><td>Audible feedback for events</td><td>PWM-driven</td></tr>
+    <tr><td>Ambient Light Sensor (LDR or BH1750)</td><td>Auto-brightness for OLED</td><td>ADC or I2C depending on module</td></tr>
+    <tr><td>RGB LED (common cathode)</td><td>WiFi, BLE, and listening state indicators</td><td>R=GPIO 16, G=GPIO 17, B=GPIO 18</td></tr>
+    <tr><td>Push Button</td><td>Manual trigger and factory reset (5s hold)</td><td>GPIO 0 (boot button), active LOW</td></tr>
+    <tr><td>Li-Po Battery 3.7V (optional)</td><td>Portable operation</td><td>Voltage divider on GPIO 34 for monitoring</td></tr>
+    <tr><td>Micro-USB / USB-C Cable</td><td>Power and firmware flashing</td><td>Depends on DevKit variant</td></tr>
+    <tr><td>Breadboard + Jumper Wires</td><td>Prototyping</td><td>For initial build; PCB recommended for final</td></tr>
+  </tbody>
+</table>
+
+<!-- ── Wiring ────────────────────────────────────────────────────────────── -->
+<h2 id="wiring">Wiring Diagram</h2>
+
+<h3>INMP441 Microphone (I2S Bus)</h3>
+<table>
+  <thead><tr><th>INMP441 Pin</th><th>ESP32 Pin</th></tr></thead>
+  <tbody>
+    <tr><td>SCK (Serial Clock)</td><td>GPIO 26</td></tr>
+    <tr><td>WS (Word Select)</td><td>GPIO 25</td></tr>
+    <tr><td>SD (Serial Data)</td><td>GPIO 33</td></tr>
+    <tr><td>VDD</td><td>3.3V</td></tr>
+    <tr><td>GND</td><td>GND</td></tr>
+    <tr><td>L/R</td><td>GND (left channel select)</td></tr>
+  </tbody>
+</table>
+
+<h3>SSD1306 OLED Display (I2C)</h3>
+<table>
+  <thead><tr><th>OLED Pin</th><th>ESP32 Pin</th></tr></thead>
+  <tbody>
+    <tr><td>SDA</td><td>GPIO 21</td></tr>
+    <tr><td>SCL</td><td>GPIO 22</td></tr>
+    <tr><td>VCC</td><td>3.3V</td></tr>
+    <tr><td>GND</td><td>GND</td></tr>
+  </tbody>
+</table>
+
+<h3>MicroSD Card Module (SPI)</h3>
+<table>
+  <thead><tr><th>SD Pin</th><th>ESP32 Pin</th></tr></thead>
+  <tbody>
+    <tr><td>CS</td><td>GPIO 5</td></tr>
+    <tr><td>SCK</td><td>GPIO 18</td></tr>
+    <tr><td>MOSI</td><td>GPIO 23</td></tr>
+    <tr><td>MISO</td><td>GPIO 19</td></tr>
+    <tr><td>VCC</td><td>3.3V</td></tr>
+    <tr><td>GND</td><td>GND</td></tr>
+  </tbody>
+</table>
+
+<h3>Additional Connections</h3>
+<table>
+  <thead><tr><th>Component</th><th>ESP32 Pin(s)</th></tr></thead>
+  <tbody>
+    <tr><td>APDS-9960 Gesture Sensor</td><td>I2C shared bus (GPIO 21/22), address 0x39</td></tr>
+    <tr><td>MPU6050 Accelerometer</td><td>I2C shared bus (GPIO 21/22), address 0x68</td></tr>
+    <tr><td>DS3231 RTC</td><td>I2C shared bus (GPIO 21/22)</td></tr>
+    <tr><td>RGB LED (R/G/B)</td><td>GPIO 16 / GPIO 17 / GPIO 18</td></tr>
+    <tr><td>Push Button</td><td>GPIO 0 (active LOW, internal pull-up)</td></tr>
+    <tr><td>Battery Voltage Divider</td><td>GPIO 34 (ADC)</td></tr>
+    <tr><td>Temperature Sensor</td><td>GPIO 35 (ADC)</td></tr>
+    <tr><td>Second Microphone (optional)</td><td>SCK=GPIO 14, WS=GPIO 12, SD=GPIO 27</td></tr>
+  </tbody>
+</table>
+
+<!-- ── Firmware Flashing ─────────────────────────────────────────────────── -->
+<h2 id="firmware-flash">Firmware Flashing</h2>
+
+<ol>
+  <li>Install the <a href="https://www.arduino.cc/en/software">Arduino IDE</a> and add the ESP32 board package (version 2.x+).</li>
+  <li>Install the required library: <strong>ArduinoJson 7.x</strong> (via Library Manager). The ESP32 core provides WiFi, I2S, BLE, SD, SPI, Wire, EEPROM, Preferences, and OTA libraries.</li>
+  <li>Open <code>firmware/vinyl_buddy.ino</code> in the Arduino IDE.</li>
+  <li>Select <strong>ESP32 Dev Module</strong> as the board and the correct USB port.</li>
+  <li>Click Upload. The firmware is a single-file sketch with 64 sections.</li>
+  <li>On first boot, the device enters AP mode (<code>VinylBuddy-Setup</code> / <code>groovestack</code>) for WiFi configuration via captive portal.</li>
+</ol>
+
+<div class="note">
+  <strong>OTA Updates:</strong> After initial flash, subsequent firmware updates can be applied over-the-air from the GrooveStack app. The firmware also supports automatic rollback if a new version fails to boot.
+</div>
+
+<!-- ── Firmware Features ─────────────────────────────────────────────────── -->
+<h2 id="firmware-features">Firmware Features (64 Sections)</h2>
+
+<p>The <code>vinyl_buddy.ino</code> firmware contains 64 distinct sections covering every hardware subsystem. Each section is self-contained and documented inline.</p>
+
+<table>
+  <thead><tr><th>#</th><th>Section</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Constants &amp; Pin Definitions</td><td>All GPIO assignments, timing constants, buffer sizes, and thresholds</td></tr>
+    <tr><td>2</td><td>Data Structures</td><td>Structs for device state, sessions, identifications, calibration, and error logs</td></tr>
+    <tr><td>3</td><td>Global Variables</td><td>Runtime state, buffers, flags, and configuration objects</td></tr>
+    <tr><td>4</td><td>Forward Declarations</td><td>Function prototypes for all major routines</td></tr>
+    <tr><td>5</td><td>Serial Debug Logging</td><td>Level-based serial output with timestamps for development and diagnostics</td></tr>
+    <tr><td>6</td><td>Configuration Storage (NVS)</td><td>Persistent key-value storage via ESP32 Preferences (WiFi creds, gain, thresholds)</td></tr>
+    <tr><td>7</td><td>LED Status Indicators</td><td>RGB LED control for WiFi (blue), BLE (cyan), listening (green), error (red) states</td></tr>
+    <tr><td>8</td><td>Button Handling</td><td>Debounced press detection, long-press factory reset (5 seconds on GPIO 0)</td></tr>
+    <tr><td>9</td><td>I2S Microphone Init</td><td>I2S peripheral configuration for INMP441 at 16 kHz mono</td></tr>
+    <tr><td>10</td><td>Circular Audio Buffer</td><td>32 KB ring buffer for continuous 2-second audio capture</td></tr>
+    <tr><td>11</td><td>Silence Detection</td><td>RMS-based silence detection to avoid sending empty audio</td></tr>
+    <tr><td>12</td><td>Automatic Recording Trigger</td><td>Threshold-based auto-start when audio level exceeds silence floor</td></tr>
+    <tr><td>13</td><td>Noise Floor Calibration</td><td>1-second sampling routine to establish ambient noise baseline</td></tr>
+    <tr><td>14</td><td>FFT Fingerprint Generation</td><td>1024-point FFT with Hanning window for audio fingerprint extraction</td></tr>
+    <tr><td>15</td><td>Audio Quality Assessment</td><td>Pre-send quality check: minimum RMS, clipping detection, noise ratio</td></tr>
+    <tr><td>16</td><td>WiFi Connection Manager</td><td>Multi-network support with auto-reconnect and exponential backoff</td></tr>
+    <tr><td>17</td><td>Captive Portal / Web Server</td><td>AP-mode configuration portal for WiFi credentials and device settings</td></tr>
+    <tr><td>18</td><td>mDNS Device Discovery</td><td>Advertise device on local network as <code>vinylbuddy.local</code></td></tr>
+    <tr><td>19</td><td>API Communication</td><td>HTTP POST to GrooveStack server with PCM audio, JSON response parsing</td></tr>
+    <tr><td>20</td><td>Heartbeat Ping</td><td>30-second interval health report with uptime, free heap, and battery level</td></tr>
+    <tr><td>21</td><td>OTA Firmware Update</td><td>Over-the-air update via HTTP download with progress reporting</td></tr>
+    <tr><td>22</td><td>Device Pairing (OTP)</td><td>6-digit activation code generation and server-side verification</td></tr>
+    <tr><td>23</td><td>Battery Level Monitoring</td><td>ADC reading with voltage divider for Li-Po charge estimation</td></tr>
+    <tr><td>24</td><td>Temperature Monitoring</td><td>ADC-based temperature reading with calibration offset</td></tr>
+    <tr><td>25</td><td>Deep Sleep / Power Saving</td><td>5-minute idle timeout triggers deep sleep; wake on sound or button</td></tr>
+    <tr><td>26</td><td>Device Info Endpoint</td><td>Local HTTP endpoint returning firmware version, uptime, and hardware state</td></tr>
+    <tr><td>27</td><td>Audio Gain Control</td><td>Software gain adjustment (0.2x to 8x) for microphone sensitivity</td></tr>
+    <tr><td>28</td><td>BLE Support</td><td>Bluetooth Low Energy service for pairing, status, and command characteristics</td></tr>
+    <tr><td>29</td><td>SD Card Logging</td><td>CSV session logging to MicroSD; auto-upload when WiFi reconnects</td></tr>
+    <tr><td>30</td><td>OLED Display (SSD1306)</td><td>128x64 display driver: track info, status icons, pairing code, animations</td></tr>
+    <tr><td>31</td><td>Multiple Microphone Support</td><td>Second I2S port for optional dual-mic setup (stereo or noise reference)</td></tr>
+    <tr><td>32</td><td>Audio Gain Auto-Calibration</td><td>Periodic auto-adjustment targeting 3000 RMS with +/-500 tolerance</td></tr>
+    <tr><td>33</td><td>Power Management Optimization</td><td>CPU frequency scaling (80/240 MHz), eco mode, low-battery threshold</td></tr>
+    <tr><td>34</td><td>Watchdog Timer</td><td>30-second WDT with automatic reset on hang; FreeRTOS task monitoring</td></tr>
+    <tr><td>35</td><td>Error Recovery System</td><td>Consecutive error tracking with cooldown; auto-restart after 5 failures</td></tr>
+    <tr><td>36</td><td>Performance Profiling</td><td>Rolling 60-sample timing metrics for audio capture, FFT, and network calls</td></tr>
+    <tr><td>37</td><td>Configuration Validation</td><td>Startup validation of all config values with safe defaults for invalid entries</td></tr>
+    <tr><td>38</td><td>setup() Main Init</td><td>Master initialization: serial, NVS, I2S, WiFi, BLE, OLED, SD, sensors, WDT</td></tr>
+    <tr><td>39</td><td>loop() Main Event Loop</td><td>FreeRTOS-aware main loop: sample audio, detect sound, identify, heartbeat, sleep</td></tr>
+    <tr><td>40</td><td>Audio Streaming to Server</td><td>Chunked PCM streaming for longer audio segments beyond 2-second snapshots</td></tr>
+    <tr><td>41</td><td>Real-time Audio Level Meter</td><td>WebSocket-based live audio level broadcasting for the web interface</td></tr>
+    <tr><td>42</td><td>ESP-NOW Device Communication</td><td>Peer-to-peer mesh networking for multi-room listening sync</td></tr>
+    <tr><td>43</td><td>Audio Recording to SPIFFS</td><td>Record audio clips to on-device flash storage for later playback or upload</td></tr>
+    <tr><td>44</td><td>Voice Command Recognition</td><td>Stub for keyword-triggered voice commands (identify, skip, status)</td></tr>
+    <tr><td>45</td><td>Gesture Sensor (APDS-9960)</td><td>Wave-to-identify, swipe-left/right for skip, swipe-up/down for volume</td></tr>
+    <tr><td>46</td><td>Environmental Noise Cancellation</td><td>Spectral subtraction using calibrated noise floor profile</td></tr>
+    <tr><td>47</td><td>Audio Fingerprint Caching</td><td>Local fingerprint cache to skip re-identification of recently played tracks</td></tr>
+    <tr><td>48</td><td>Sleep/Wake Scheduling</td><td>Configurable quiet hours with automatic deep sleep and scheduled wake</td></tr>
+    <tr><td>49</td><td>Remote Configuration Updates</td><td>Pull updated config values from server on heartbeat response</td></tr>
+    <tr><td>50</td><td>MQTT Support</td><td>Publish telemetry (battery, audio level, state) and subscribe to commands via MQTT broker</td></tr>
+    <tr><td>51</td><td>FFT Peak Detection</td><td>Dominant frequency extraction from FFT bins for real-time spectrum analysis</td></tr>
+    <tr><td>52</td><td>Battery Fuel Gauge</td><td>Coulomb-counting algorithm for accurate charge estimation beyond simple ADC voltage</td></tr>
+    <tr><td>53</td><td>Capacitive Touch Sensors</td><td>Three touch inputs using ESP32 built-in touch GPIOs for play/pause, skip, volume</td></tr>
+    <tr><td>54</td><td>WS2812 LED Strip (NeoPixel)</td><td>Addressable RGB LED strip for ambient audio visualizations, VU meter, and status modes</td></tr>
+    <tr><td>55</td><td>Buzzer / Haptic Feedback</td><td>PWM-driven passive buzzer for audible event notifications and confirmations</td></tr>
+    <tr><td>56</td><td>Ambient Light Sensor</td><td>Auto-brightness for OLED display based on room lighting conditions</td></tr>
+    <tr><td>57</td><td>Accelerometer (MPU6050)</td><td>Motion detection, device orientation, tap-to-wake, and vibration monitoring</td></tr>
+    <tr><td>58</td><td>Real-Time Clock (DS3231)</td><td>Battery-backed RTC for accurate timestamps independent of NTP/network</td></tr>
+    <tr><td>59</td><td>Audio AGC</td><td>Automatic gain control using signal envelope follower with configurable attack/release</td></tr>
+    <tr><td>60</td><td>Spectral Centroid</td><td>Frequency-weighted mean calculation for audio brightness and genre estimation</td></tr>
+    <tr><td>61</td><td>Zero-Crossing Rate (ZCR)</td><td>Time-domain feature for percussiveness detection and speech/music classification</td></tr>
+    <tr><td>62</td><td>SPIFFS Web Interface</td><td>On-device HTML/CSS/JS configuration UI served from flash storage</td></tr>
+    <tr><td>63</td><td>Firmware Rollback</td><td>Automatic rollback to previous firmware partition on consecutive boot failures</td></tr>
+    <tr><td>64</td><td>Power-On Self-Test (POST)</td><td>Startup hardware validation: I2S, WiFi, I2C bus scan, SPI/SD, ADC, and GPIO checks</td></tr>
+  </tbody>
+</table>
+
+<!-- ── API Endpoints ─────────────────────────────────────────────────────── -->
+<h2 id="api-endpoints">API Endpoints (15+ VinylBuddy-Specific)</h2>
+
+<p>In addition to the 12 core VinylBuddy endpoints and 8 mesh/hardware endpoints, Wave 28 added 15 extended endpoints for device management, identification tracking, social features, and firmware control.</p>
+
+<h3>Core Endpoints (12)</h3>
+
+<table>
+  <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/identify</code></td><td>Submit audio for identification</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/heartbeat</code></td><td>Device heartbeat</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/pair</code></td><td>Pair a new device</td></tr>
+    <tr><td><span class="method method-delete">DELETE</span></td><td><code>/api/vinyl-buddy/unpair/:deviceId</code></td><td>Unpair a device</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/calibrate</code></td><td>Calibrate audio capture</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/calibration/:deviceId</code></td><td>Get calibration data</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/firmware-check</code></td><td>Check for firmware updates</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/history/:username</code></td><td>Listening history</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/stats/:username</code></td><td>Listening statistics</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/devices/:username</code></td><td>List paired devices</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/recent/:username</code></td><td>Recent identifications</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/debug/last-identify</code></td><td>Debug last identification</td></tr>
+  </tbody>
+</table>
+
+<h3>Mesh &amp; Hardware Endpoints (8)</h3>
+
+<table>
+  <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/mesh/register</code></td><td>Register device in mesh network</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/mesh/peers/:deviceId</code></td><td>List mesh peers</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/mesh/sync</code></td><td>Sync listening session across mesh</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/sd/sessions/:deviceId</code></td><td>Get offline-cached sessions from SD</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/sd/upload/:deviceId</code></td><td>Upload cached sessions from SD card</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/gesture/configure</code></td><td>Configure gesture sensor mappings</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/gesture/:deviceId</code></td><td>Get gesture configuration</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/noise-cancel/calibrate</code></td><td>Calibrate noise cancellation</td></tr>
+  </tbody>
+</table>
+
+<h3>Extended Endpoints (15) <span class="badge badge-green">Wave 28</span></h3>
+
+<table>
+  <thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/stream</code></td><td>Stream raw audio chunks for server-side processing</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/devices/:userId</code></td><td>List all paired devices for a user (extended view with telemetry)</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/devices/:deviceId/command</code></td><td>Send command to device (identify, calibrate, reset, update)</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/devices/:deviceId/telemetry</code></td><td>Device telemetry history (battery, temperature, signal, uptime)</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/devices/:deviceId/name</code></td><td>Rename a paired device</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/identification-history/:userId</code></td><td>Paginated identification history with correction status</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/identification/:id/correct</code></td><td>Submit correction for a misidentified track</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/leaderboard</code></td><td>Global identification leaderboard (all time, weekly, monthly)</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/listening-party</code></td><td>Create a listening party room</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/listening-party/:id/join</code></td><td>Join an active listening party</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/listening-party/:id</code></td><td>Get party status and participants</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/devices/:deviceId/diagnostics</code></td><td>Request a device diagnostic report</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/firmware/versions</code></td><td>List all available firmware versions</td></tr>
+    <tr><td><span class="method method-post">POST</span></td><td><code>/api/vinyl-buddy/firmware/rollback/:deviceId</code></td><td>Rollback device to a previous firmware version</td></tr>
+    <tr><td><span class="method method-get">GET</span></td><td><code>/api/vinyl-buddy/analytics/:userId</code></td><td>Detailed per-user listening analytics</td></tr>
+  </tbody>
+</table>
+
+<!-- ── Software Features ─────────────────────────────────────────────────── -->
+<h2 id="software-features">Software Features (25 Hardware UI Components)</h2>
+
+<p>The GrooveStack web interface includes 25 dedicated hardware UI components in the Vinyl Buddy dashboard (<code>VinylBuddyScreen.jsx</code>). These components provide deep visibility into device internals, diagnostics, and real-time hardware state.</p>
+
+<table>
+  <thead><tr><th>#</th><th>Component</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>HW-1</td><td>Device Pairing Animation</td><td>Animated pairing flow with progress indicator and code display</td></tr>
+    <tr><td>HW-2</td><td>Hardware Status Dashboard</td><td>Real-time overview of all hardware subsystems: WiFi, BLE, I2S, battery, temperature</td></tr>
+    <tr><td>HW-3</td><td>I2S Audio Pipeline Visualizer</td><td>Visual representation of the audio data flow from microphone through DMA to buffer</td></tr>
+    <tr><td>HW-4</td><td>Microphone Polar Pattern Display</td><td>Polar plot showing microphone sensitivity pattern and optimal placement guidance</td></tr>
+    <tr><td>HW-5</td><td>GPIO Pin Status Monitor</td><td>Live view of all configured GPIO pins with current state (HIGH/LOW/PWM/ADC)</td></tr>
+    <tr><td>HW-6</td><td>Power Consumption Graph</td><td>Real-time and historical power draw with breakdown by subsystem</td></tr>
+    <tr><td>HW-7</td><td>WiFi Channel Scanner</td><td>Scan and display nearby WiFi networks with signal strength and channel congestion</td></tr>
+    <tr><td>HW-8</td><td>Audio Buffer Status</td><td>Ring buffer fill level, overflow/underflow counters, and DMA status</td></tr>
+    <tr><td>HW-9</td><td>Firmware Flash Progress</td><td>OTA update progress bar with partition info, checksum verification, and rollback option</td></tr>
+    <tr><td>HW-10</td><td>Hardware Error Log Viewer</td><td>Scrollable log of hardware errors, watchdog resets, and crash reports</td></tr>
+    <tr><td>HW-11</td><td>Device Factory Reset Confirmation</td><td>Multi-step factory reset flow with NVS wipe, calibration clear, and re-pairing</td></tr>
+    <tr><td>HW-12</td><td>USB Serial Monitor</td><td>Web-based serial console for viewing device debug output over USB</td></tr>
+    <tr><td>HW-13</td><td>Antenna Signal Pattern</td><td>WiFi antenna radiation pattern visualization with signal strength overlay</td></tr>
+    <tr><td>HW-14</td><td>Voltage Regulator Status</td><td>Input voltage, regulated output, dropout margin, and thermal status</td></tr>
+    <tr><td>HW-15</td><td>I2C Bus Scanner</td><td>Scan I2C bus and display detected devices with addresses and identified components</td></tr>
+    <tr><td>HW-16</td><td>SPI Bus Monitor</td><td>SPI transaction log with clock speed, mode, and data transfer statistics</td></tr>
+    <tr><td>HW-17</td><td>DMA Channel Status</td><td>DMA descriptor chain status, transfer counts, and error flags</td></tr>
+    <tr><td>HW-18</td><td>Interrupt Handler Monitor</td><td>Active interrupt sources, handler execution times, and priority levels</td></tr>
+    <tr><td>HW-19</td><td>FreeRTOS Task Scheduler View</td><td>Running tasks with stack usage, priority, CPU time, and state (ready/blocked/suspended)</td></tr>
+    <tr><td>HW-20</td><td>Heap Fragmentation Visualizer</td><td>Memory map showing free/allocated blocks, largest free block, and fragmentation ratio</td></tr>
+    <tr><td>HW-21</td><td>NVS Storage Browser</td><td>Browse and edit non-volatile storage entries (WiFi credentials, calibration, preferences)</td></tr>
+    <tr><td>HW-22</td><td>Partition Table Viewer</td><td>Flash partition layout with sizes, types, and OTA slot information</td></tr>
+    <tr><td>HW-23</td><td>Boot Log Viewer</td><td>Complete boot sequence log with timing for each initialization step</td></tr>
+    <tr><td>HW-24</td><td>Watchdog Timer Status</td><td>WDT configuration, last reset cause, and monitored task list with feed status</td></tr>
+    <tr><td>HW-25</td><td>Hardware Self-Test Panel</td><td>Run on-demand POST (I2S, WiFi, I2C, SPI, ADC, GPIO) with pass/fail results</td></tr>
+  </tbody>
+</table>
+
+<!-- ── Setup ──────────────────────────────────────────────────────────────── -->
+<h2 id="setup">Device Setup &amp; Pairing</h2>
+
+<ol>
+  <li>Flash the firmware from the <code>firmware/</code> directory to the ESP32.</li>
+  <li>On first boot, the device starts in AP mode. Connect to the <code>VinylBuddy-Setup</code> WiFi network (password: <code>groovestack</code>) and enter your home WiFi credentials via the captive portal.</li>
+  <li>The device reboots, connects to WiFi, and displays a 12-character device code on the OLED screen.</li>
+  <li>In GrooveStack, navigate to the <strong>Vinyl Buddy</strong> tab and enter the device code to pair.</li>
+  <li>The device sends heartbeats every 30 seconds to confirm connectivity.</li>
+  <li>Place the device near your turntable speaker and start playing a record. The POST routine validates all hardware at startup.</li>
+</ol>
+
+<!-- ── Troubleshooting ───────────────────────────────────────────────────── -->
+<h2 id="troubleshooting">Troubleshooting</h2>
+
+<h3>Device not pairing</h3>
+<ul>
+  <li>Ensure the device is powered on and displaying a code on the OLED screen.</li>
+  <li>Verify the device is connected to a WiFi network with internet access.</li>
+  <li>Check that the backend URL in the firmware (<code>API_BASE_URL</code>) matches your GrooveStack server.</li>
+  <li>Try power-cycling the device and waiting 30 seconds for the code to regenerate.</li>
+</ul>
+
+<h3>Audio not identifying</h3>
+<ul>
+  <li>Run the calibration routine from the app to adjust for your room acoustics.</li>
+  <li>Move the device closer to the turntable speaker.</li>
+  <li>Check the Audio Quality indicator in the web dashboard &mdash; minimum RMS of 200 is required.</li>
+  <li>Verify your <code>AUDD_API_TOKEN</code> is valid and has remaining credits.</li>
+</ul>
+
+<h3>Firmware update fails</h3>
+<ul>
+  <li>Ensure stable WiFi connection during the update process.</li>
+  <li>Use the <code>/api/vinyl-buddy/firmware/versions</code> endpoint to verify the target version exists.</li>
+  <li>If a bad firmware is flashed, the automatic rollback (Section 63) will revert to the previous version after 3 consecutive boot failures.</li>
+  <li>As a last resort, reflash via USB using the Arduino IDE.</li>
+</ul>
+
+<h3>I2C devices not detected</h3>
+<ul>
+  <li>Use the I2C Bus Scanner (HW-15) in the web interface to check for detected addresses.</li>
+  <li>Verify wiring: SDA to GPIO 21, SCL to GPIO 22, with appropriate pull-up resistors.</li>
+  <li>Check for I2C address conflicts (MPU6050 and DS3231 both use 0x68 by default).</li>
+</ul>
+
+<p style="margin-top:3rem; color:var(--text-muted); font-size:0.85rem; text-align:center;">
+  Vinyl Buddy Build Guide &mdash; GrooveStack &mdash; <a href="/">Back to App</a>
+</p>
+
+</div>
+</body>
+</html>
