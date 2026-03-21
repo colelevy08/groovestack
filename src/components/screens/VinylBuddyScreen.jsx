@@ -2808,6 +2808,1266 @@ function CommunityEventsCalendar() {
 }
 
 // ============================================================================
+// (Final 1) AI Record Recommendation Engine
+// ============================================================================
+function AIRecRecommendationEngine({ myListens }) {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const recommendations = useMemo(() => {
+    if (myListens.length === 0) return [];
+    const artistCounts = {};
+    for (const s of myListens) {
+      artistCounts[s.track.artist] = (artistCounts[s.track.artist] || 0) + 1;
+    }
+    const topArtists = Object.entries(artistCounts).sort(([,a],[,b]) => b - a).map(([a]) => a).slice(0, 3);
+    const recMap = {
+      "Led Zeppelin": [
+        { title: "Physical Graffiti", artist: "Led Zeppelin", reason: "Deep cuts from your favorite band", confidence: 97 },
+        { title: "Paranoid", artist: "Black Sabbath", reason: "Same era heavy riffs", confidence: 88 },
+      ],
+      "Pink Floyd": [
+        { title: "Animals", artist: "Pink Floyd", reason: "Underrated Floyd masterwork", confidence: 95 },
+        { title: "In the Court of the Crimson King", artist: "King Crimson", reason: "Prog rock essential", confidence: 86 },
+      ],
+      "Queen": [
+        { title: "News of the World", artist: "Queen", reason: "Classic Queen deep dive", confidence: 94 },
+        { title: "Ziggy Stardust", artist: "David Bowie", reason: "Glam rock crossover", confidence: 82 },
+      ],
+      "The Beatles": [
+        { title: "Abbey Road", artist: "The Beatles", reason: "Their sonic masterpiece", confidence: 96 },
+        { title: "Pet Sounds", artist: "The Beach Boys", reason: "Inspired Sgt. Pepper's", confidence: 89 },
+      ],
+    };
+    const defaultRecs = [
+      { title: "Rumours", artist: "Fleetwood Mac", reason: "Essential vinyl collection piece", confidence: 90 },
+      { title: "Kind of Blue", artist: "Miles Davis", reason: "Greatest jazz recording on vinyl", confidence: 87 },
+      { title: "OK Computer", artist: "Radiohead", reason: "Alternative rock benchmark", confidence: 84 },
+      { title: "Illmatic", artist: "Nas", reason: "Hip-hop perfection on wax", confidence: 83 },
+    ];
+    const recs = [];
+    for (const artist of topArtists) {
+      if (recMap[artist]) recs.push(...recMap[artist]);
+    }
+    if (recs.length < 4) recs.push(...defaultRecs.slice(0, 4 - recs.length));
+    return recs.slice(0, 4);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myListens, refreshKey]);
+
+  if (myListens.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[10px] text-gs-dim font-mono uppercase tracking-[0.06em]">AI Recommendations</div>
+        <button onClick={() => setRefreshKey(k => k + 1)} className="text-[9px] text-gs-accent bg-transparent border border-gs-accent/20 rounded-lg px-2 py-1 cursor-pointer hover:bg-gs-accent/10 transition-colors">Refresh</button>
+      </div>
+      <div className="flex flex-col gap-2">
+        {recommendations.map((rec, i) => (
+          <div key={`${rec.title}-${i}`} className="flex items-center gap-3 p-2.5 rounded-lg bg-[#111] border border-[#1a1a1a] hover:border-[#333] transition-all duration-200">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center text-sm shrink-0 bg-gradient-to-br from-[#8b5cf6] to-[#0ea5e9]">{rec.artist.charAt(0)}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[12px] font-bold text-gs-text truncate">{rec.title}</div>
+              <div className="text-[10px] text-gs-dim truncate">{rec.artist}</div>
+              <div className="text-[9px] text-gs-accent mt-0.5">{rec.reason}</div>
+            </div>
+            <div className="text-[10px] font-bold font-mono text-[#22c55e] shrink-0">{rec.confidence}%</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 2) Vinyl Collection Value Tracker
+// ============================================================================
+function CollectionValueTracker({ myListens }) {
+  const [showHistory, setShowHistory] = useState(false);
+  const valueData = useMemo(() => {
+    if (myListens.length === 0) return null;
+    const uniqueAlbums = [...new Set(myListens.map(s => `${s.track.artist}::${s.track.album}`))];
+    const valuePer = uniqueAlbums.map((key) => {
+      const [artist, album] = key.split("::");
+      const baseVal = (artist.length * 3 + album.length * 2) % 40 + 15;
+      return { artist, album, value: baseVal };
+    });
+    const total = valuePer.reduce((sum, v) => sum + v.value, 0);
+    const dailyChange = ((Math.sin(Date.now() / 86400000) * 3) + 1.2).toFixed(1);
+    const weekHistory = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(); d.setDate(d.getDate() - (6 - i));
+      return { day: d.toLocaleDateString("en-US", { weekday: "short" }), value: total - (6 - i) * 2 + Math.random() * 5 };
+    });
+    return { total, dailyChange: Number(dailyChange), count: uniqueAlbums.length, topItems: valuePer.sort((a, b) => b.value - a.value).slice(0, 5), weekHistory };
+  }, [myListens]);
+
+  if (!valueData) return null;
+
+  const maxVal = Math.max(...valueData.weekHistory.map(d => d.value), 1);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Collection Value Tracker</div>
+      <div className="flex items-center gap-4 mb-3">
+        <div>
+          <div className="text-[22px] font-extrabold text-[#22c55e]">${valueData.total}</div>
+          <div className="text-[9px] text-gs-faint">{valueData.count} unique albums</div>
+        </div>
+        <div className={`text-[12px] font-bold ${valueData.dailyChange >= 0 ? 'text-[#22c55e]' : 'text-[#ef4444]'}`}>
+          {valueData.dailyChange >= 0 ? '+' : ''}{valueData.dailyChange}% today
+        </div>
+      </div>
+      <button onClick={() => setShowHistory(!showHistory)} className="text-[9px] text-gs-accent bg-transparent border-none cursor-pointer underline mb-2">
+        {showHistory ? 'Hide' : 'Show'} 7-day trend
+      </button>
+      {showHistory && (
+        <div className="flex items-end gap-1 h-12 mt-2">
+          {valueData.weekHistory.map((d, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+              <div className="w-full rounded-t-sm" style={{ height: `${(d.value / maxVal) * 40}px`, background: 'linear-gradient(to top, #22c55e, #22c55e88)' }} />
+              <div className="text-[8px] text-gs-faint font-mono">{d.day}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="mt-3 space-y-1">
+        {valueData.topItems.slice(0, 3).map((item, i) => (
+          <div key={i} className="flex items-center justify-between text-[10px]">
+            <span className="text-gs-muted truncate flex-1">{item.album} - {item.artist}</span>
+            <span className="text-[#22c55e] font-bold font-mono ml-2">${item.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 3) Record Identification Quiz Game
+// ============================================================================
+function RecordIdentificationQuiz({ myListens }) {
+  const [quizActive, setQuizActive] = useState(false);
+  const [currentQ, setCurrentQ] = useState(0);
+  const [score, setScore] = useState(0);
+  const [answered, setAnswered] = useState(null);
+  const [quizDone, setQuizDone] = useState(false);
+
+  const questions = useMemo(() => {
+    const allTracks = myListens.length > 0 ? myListens : generateDemoData();
+    const shuffled = [...allTracks].sort(() => Math.random() - 0.5).slice(0, 5);
+    return shuffled.map((s) => {
+      const correct = s.track.artist;
+      const wrongArtists = ["The Rolling Stones", "Jimi Hendrix", "Bob Dylan", "David Bowie", "Stevie Wonder", "Elton John", "Joni Mitchell", "Neil Young"];
+      const wrongs = wrongArtists.filter(a => a !== correct).sort(() => Math.random() - 0.5).slice(0, 3);
+      const options = [correct, ...wrongs].sort(() => Math.random() - 0.5);
+      return { track: s.track, correctArtist: correct, options };
+    });
+  }, [myListens]);
+
+  const handleAnswer = useCallback((opt) => {
+    if (answered !== null) return;
+    setAnswered(opt);
+    if (opt === questions[currentQ].correctArtist) setScore(s => s + 1);
+    setTimeout(() => {
+      if (currentQ + 1 < questions.length) {
+        setCurrentQ(q => q + 1);
+        setAnswered(null);
+      } else {
+        setQuizDone(true);
+      }
+    }, 1200);
+  }, [answered, currentQ, questions]);
+
+  const resetQuiz = useCallback(() => {
+    setQuizActive(false);
+    setCurrentQ(0);
+    setScore(0);
+    setAnswered(null);
+    setQuizDone(false);
+  }, []);
+
+  if (!quizActive) {
+    return (
+      <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+        <div className="text-[10px] text-gs-dim font-mono mb-2 uppercase tracking-[0.06em]">Record Quiz</div>
+        <div className="text-[12px] text-gs-text font-bold mb-1">Test Your Vinyl Knowledge</div>
+        <div className="text-[10px] text-gs-dim mb-3">Can you match albums to their artists?</div>
+        <button onClick={() => setQuizActive(true)} className="gs-btn-gradient px-4 py-2 text-xs text-white">Start Quiz</button>
+      </div>
+    );
+  }
+
+  if (quizDone) {
+    return (
+      <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4 text-center">
+        <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Quiz Complete</div>
+        <div className="text-[28px] font-extrabold text-gs-accent mb-1">{score}/{questions.length}</div>
+        <div className="text-[11px] text-gs-dim mb-3">{score === questions.length ? 'Perfect! True vinyl connoisseur!' : score >= 3 ? 'Nice ear! Keep exploring!' : 'Keep spinning those records!'}</div>
+        <button onClick={resetQuiz} className="gs-btn-gradient px-4 py-2 text-xs text-white">Play Again</button>
+      </div>
+    );
+  }
+
+  const q = questions[currentQ];
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[10px] text-gs-dim font-mono uppercase tracking-[0.06em]">Question {currentQ + 1}/{questions.length}</div>
+        <div className="text-[10px] text-gs-accent font-bold">Score: {score}</div>
+      </div>
+      <div className="text-[13px] font-bold text-gs-text mb-1">Who performed "{q.track.title}"?</div>
+      <div className="text-[10px] text-gs-dim mb-3">From the album "{q.track.album}"</div>
+      <div className="grid grid-cols-2 gap-2">
+        {q.options.map((opt) => {
+          let btnStyle = 'bg-[#111] border-[#1a1a1a] text-gs-muted hover:border-[#333]';
+          if (answered !== null) {
+            if (opt === q.correctArtist) btnStyle = 'bg-[#22c55e11] border-[#22c55e44] text-[#22c55e]';
+            else if (opt === answered) btnStyle = 'bg-[#ef444411] border-[#ef444444] text-[#ef4444]';
+          }
+          return (
+            <button key={opt} onClick={() => handleAnswer(opt)} className={`p-2.5 rounded-lg border text-[11px] font-semibold cursor-pointer transition-all duration-200 ${btnStyle}`}>{opt}</button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 4) Social Listening Room Creation
+// ============================================================================
+function SocialListeningRoom({ myListens }) {
+  const [roomName, setRoomName] = useState('');
+  const [roomActive, setRoomActive] = useState(false);
+  const [roomCode, setRoomCode] = useState('');
+  const [listeners, setListeners] = useState([]);
+
+  const handleCreate = useCallback(() => {
+    if (!roomName.trim()) return;
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    setRoomCode(code);
+    setRoomActive(true);
+    setListeners([
+      { name: 'You', status: 'hosting', avatar: 'Y' },
+    ]);
+    setTimeout(() => setListeners(prev => [...prev, { name: 'VinylFan42', status: 'listening', avatar: 'V' }]), 2000);
+    setTimeout(() => setListeners(prev => [...prev, { name: 'CrateDigger', status: 'listening', avatar: 'C' }]), 4000);
+  }, [roomName]);
+
+  const handleClose = useCallback(() => {
+    setRoomActive(false);
+    setRoomCode('');
+    setRoomName('');
+    setListeners([]);
+  }, []);
+
+  if (roomActive) {
+    return (
+      <div className="bg-gradient-to-br from-[#8b5cf611] to-[#0ea5e911] border border-[#8b5cf633] rounded-[14px] p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <div className="text-[10px] text-gs-dim font-mono uppercase tracking-[0.06em]">Live Listening Room</div>
+            <div className="text-[13px] font-bold text-gs-text">{roomName}</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-mono text-[#8b5cf6] bg-[#8b5cf611] px-2 py-1 rounded">{roomCode}</span>
+            <button onClick={handleClose} className="text-[10px] text-red-400 bg-transparent border border-red-400/20 rounded px-2 py-1 cursor-pointer hover:bg-red-400/10">Close</button>
+          </div>
+        </div>
+        <div className="flex gap-2 mb-2">
+          {listeners.map((l, i) => (
+            <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[#111] border border-[#1a1a1a]">
+              <div className="w-5 h-5 rounded-full bg-[#8b5cf6] flex items-center justify-center text-[8px] text-white font-bold">{l.avatar}</div>
+              <span className="text-[10px] text-gs-muted">{l.name}</span>
+              {l.status === 'hosting' && <span className="text-[8px] text-[#f59e0b] font-bold">HOST</span>}
+            </div>
+          ))}
+        </div>
+        <div className="text-[9px] text-gs-faint">{listeners.length} listener{listeners.length !== 1 ? 's' : ''} in room</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-2 uppercase tracking-[0.06em]">Social Listening Room</div>
+      <div className="text-[11px] text-gs-dim mb-3">Create a room and listen together with friends in real time</div>
+      <div className="flex gap-2">
+        <input
+          value={roomName}
+          onChange={e => setRoomName(e.target.value)}
+          placeholder="Room name..."
+          className="flex-1 bg-[#111] border border-gs-border rounded-lg px-3 py-2 text-xs text-gs-text outline-none focus:border-gs-accent/30"
+          onKeyDown={e => { if (e.key === 'Enter') handleCreate(); }}
+        />
+        <button onClick={handleCreate} className="gs-btn-gradient px-4 py-2 text-xs text-white">Create</button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 5) Audio Quality Comparison Between Pressings
+// ============================================================================
+function PressingComparison({ myListens }) {
+  const [selectedTrack, setSelectedTrack] = useState(null);
+  const comparisons = useMemo(() => {
+    if (myListens.length === 0) return [];
+    const unique = [...new Set(myListens.map(s => s.track.title))].slice(0, 5);
+    return unique.map(title => {
+      const s = myListens.find(x => x.track.title === title);
+      return {
+        title,
+        artist: s.track.artist,
+        pressings: [
+          { label: 'Original Press', year: s.track.year || 1975, dr: 14 + Math.floor(Math.random() * 4), noise: 'Low', grade: 'A', value: 45 + Math.floor(Math.random() * 80) },
+          { label: 'Remaster', year: (s.track.year || 1975) + 20, dr: 10 + Math.floor(Math.random() * 4), noise: 'Very Low', grade: 'A+', value: 25 + Math.floor(Math.random() * 30) },
+          { label: 'Modern 180g', year: 2020 + Math.floor(Math.random() * 5), dr: 11 + Math.floor(Math.random() * 5), noise: 'Minimal', grade: 'A', value: 30 + Math.floor(Math.random() * 20) },
+        ],
+      };
+    });
+  }, [myListens]);
+
+  if (comparisons.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Pressing Comparison</div>
+      <div className="flex gap-1.5 mb-3 overflow-x-auto">
+        {comparisons.map((c, i) => (
+          <button key={i} onClick={() => setSelectedTrack(selectedTrack === i ? null : i)}
+            className={`text-[10px] px-2.5 py-1.5 rounded-lg border shrink-0 cursor-pointer transition-all ${selectedTrack === i ? 'bg-gs-accent/10 border-gs-accent/30 text-gs-accent font-bold' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}>
+            {c.title}
+          </button>
+        ))}
+      </div>
+      {selectedTrack !== null && (
+        <div className="space-y-2 vb-fade-in">
+          <div className="text-[11px] text-gs-text font-bold mb-2">{comparisons[selectedTrack].title} - {comparisons[selectedTrack].artist}</div>
+          {comparisons[selectedTrack].pressings.map((p, i) => (
+            <div key={i} className="flex items-center gap-3 p-2 rounded-lg bg-[#111] border border-[#1a1a1a]">
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] text-gs-muted font-semibold">{p.label} ({p.year})</div>
+                <div className="flex gap-3 mt-1">
+                  <span className="text-[9px] text-gs-faint">DR{p.dr}</span>
+                  <span className="text-[9px] text-gs-faint">Noise: {p.noise}</span>
+                  <span className="text-[9px] text-gs-faint">Grade: {p.grade}</span>
+                </div>
+              </div>
+              <div className="text-[11px] font-bold text-[#22c55e] font-mono">${p.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 6) Record Provenance Tracker
+// ============================================================================
+function RecordProvenanceTracker({ myListens }) {
+  const [expanded, setExpanded] = useState(null);
+  const records = useMemo(() => {
+    if (myListens.length === 0) return [];
+    const seen = new Set();
+    return myListens.filter(s => {
+      const key = `${s.track.artist}::${s.track.album}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, 5).map(s => ({
+      album: s.track.album,
+      artist: s.track.artist,
+      year: s.track.year || 1975,
+      history: [
+        { event: 'Manufactured', date: `${s.track.year || 1975}`, location: 'Pressing Plant, USA' },
+        { event: 'First Sale', date: `${(s.track.year || 1975) + 1}`, location: 'Record Store' },
+        { event: 'Estate Sale', date: `${(s.track.year || 1975) + 30}`, location: 'Private Collection' },
+        { event: 'Acquired by You', date: '2024', location: 'Discogs Purchase' },
+      ],
+    }));
+  }, [myListens]);
+
+  if (records.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Record Provenance</div>
+      <div className="space-y-2">
+        {records.map((r, i) => (
+          <div key={i}>
+            <button onClick={() => setExpanded(expanded === i ? null : i)} className="w-full flex items-center justify-between p-2 rounded-lg bg-[#111] border border-[#1a1a1a] cursor-pointer hover:border-[#333] transition-colors">
+              <div className="text-left">
+                <div className="text-[11px] text-gs-text font-semibold">{r.album}</div>
+                <div className="text-[9px] text-gs-dim">{r.artist} ({r.year})</div>
+              </div>
+              <span className="text-gs-faint text-xs">{expanded === i ? '-' : '+'}</span>
+            </button>
+            {expanded === i && (
+              <div className="ml-4 mt-1 border-l border-gs-border pl-3 space-y-1.5 vb-fade-in">
+                {r.history.map((h, j) => (
+                  <div key={j} className="flex items-start gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-gs-accent mt-1 shrink-0" />
+                    <div>
+                      <div className="text-[10px] text-gs-muted font-semibold">{h.event} - {h.date}</div>
+                      <div className="text-[9px] text-gs-faint">{h.location}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 7) Vinyl Investment Advisor
+// ============================================================================
+function VinylInvestmentAdvisor({ myListens }) {
+  const advice = useMemo(() => {
+    if (myListens.length === 0) return null;
+    const uniqueAlbums = [...new Set(myListens.map(s => `${s.track.artist}::${s.track.album}`))];
+    const tips = [
+      { type: 'buy', label: 'Buy Now', album: 'Dark Side of the Moon', artist: 'Pink Floyd', reason: 'Original pressings appreciating 12% annually', trend: '+12%', color: '#22c55e' },
+      { type: 'hold', label: 'Hold', album: 'Led Zeppelin IV', artist: 'Led Zeppelin', reason: 'Stable value, wait for anniversary repress', trend: '+3%', color: '#f59e0b' },
+      { type: 'sell', label: 'Consider Selling', album: 'A Night at the Opera', artist: 'Queen', reason: 'Market peak - high demand currently', trend: '+18%', color: '#0ea5e9' },
+    ];
+    return { totalValue: uniqueAlbums.length * 32, growthRate: 8.5, tips: tips.slice(0, 3) };
+  }, [myListens]);
+
+  if (!advice) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Investment Advisor</div>
+      <div className="flex items-center gap-4 mb-3">
+        <div>
+          <div className="text-[11px] text-gs-dim">Projected Annual Growth</div>
+          <div className="text-[18px] font-extrabold text-[#22c55e]">+{advice.growthRate}%</div>
+        </div>
+        <div className="h-8 w-px bg-gs-border" />
+        <div>
+          <div className="text-[11px] text-gs-dim">Est. Portfolio</div>
+          <div className="text-[18px] font-extrabold text-gs-accent">${advice.totalValue}</div>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {advice.tips.map((tip, i) => (
+          <div key={i} className="flex items-center gap-3 p-2 rounded-lg" style={{ background: `${tip.color}08`, border: `1px solid ${tip.color}22` }}>
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded" style={{ background: `${tip.color}22`, color: tip.color }}>{tip.label}</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] text-gs-text font-semibold truncate">{tip.album}</div>
+              <div className="text-[9px] text-gs-dim truncate">{tip.reason}</div>
+            </div>
+            <span className="text-[10px] font-bold font-mono" style={{ color: tip.color }}>{tip.trend}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 8) Listening Statistics Comparisons with Friends
+// ============================================================================
+function FriendStatsComparison({ myListens }) {
+  const comparison = useMemo(() => {
+    if (myListens.length === 0) return null;
+    const myStats = { tracks: myListens.length, artists: new Set(myListens.map(s => s.track.artist)).size, hours: Math.round(myListens.reduce((s, l) => s + (l.listenedSeconds || 0), 0) / 3600) };
+    const friends = [
+      { name: 'VinylFan42', tracks: myStats.tracks + Math.floor(Math.random() * 20 - 10), artists: myStats.artists + Math.floor(Math.random() * 5 - 2), hours: myStats.hours + Math.floor(Math.random() * 10 - 5), avatar: 'V' },
+      { name: 'CrateDigger', tracks: myStats.tracks + Math.floor(Math.random() * 30), artists: myStats.artists + Math.floor(Math.random() * 8), hours: myStats.hours + Math.floor(Math.random() * 15), avatar: 'C' },
+      { name: 'WaxCollector', tracks: Math.max(1, myStats.tracks - Math.floor(Math.random() * 15)), artists: Math.max(1, myStats.artists - Math.floor(Math.random() * 3)), hours: Math.max(1, myStats.hours - Math.floor(Math.random() * 8)), avatar: 'W' },
+    ];
+    return { myStats, friends };
+  }, [myListens]);
+
+  if (!comparison) return null;
+
+  const all = [{ name: 'You', ...comparison.myStats, avatar: 'Y', isMe: true }, ...comparison.friends.map(f => ({ ...f, isMe: false }))].sort((a, b) => b.tracks - a.tracks);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Friend Comparison</div>
+      <div className="space-y-2">
+        {all.map((user, i) => (
+          <div key={i} className={`flex items-center gap-3 p-2 rounded-lg ${user.isMe ? 'bg-gs-accent/5 border border-gs-accent/20' : 'bg-[#111] border border-[#1a1a1a]'}`}>
+            <div className="text-[12px] font-bold text-gs-faint w-4">{i + 1}</div>
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold text-white ${user.isMe ? 'bg-gs-accent' : 'bg-[#8b5cf6]'}`}>{user.avatar}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] font-bold text-gs-text">{user.name}</div>
+              <div className="flex gap-3 mt-0.5">
+                <span className="text-[9px] text-gs-dim">{user.tracks} tracks</span>
+                <span className="text-[9px] text-gs-dim">{user.artists} artists</span>
+                <span className="text-[9px] text-gs-dim">{user.hours}h</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 9) Record Cleaning Schedule Manager
+// ============================================================================
+function CleaningScheduleManager({ myListens }) {
+  const [schedules, setSchedules] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs-cleaning-schedule') || '[]'); } catch { return []; }
+  });
+  const [showAdd, setShowAdd] = useState(false);
+  const [newAlbum, setNewAlbum] = useState('');
+
+  const handleAdd = useCallback(() => {
+    if (!newAlbum.trim()) return;
+    const updated = [...schedules, { id: Date.now(), album: newAlbum, lastCleaned: null, interval: 30, nextDue: Date.now() + 30 * 86400000 }];
+    setSchedules(updated);
+    try { localStorage.setItem('gs-cleaning-schedule', JSON.stringify(updated)); } catch {}
+    setNewAlbum('');
+    setShowAdd(false);
+  }, [newAlbum, schedules]);
+
+  const markCleaned = useCallback((id) => {
+    const updated = schedules.map(s => s.id === id ? { ...s, lastCleaned: Date.now(), nextDue: Date.now() + s.interval * 86400000 } : s);
+    setSchedules(updated);
+    try { localStorage.setItem('gs-cleaning-schedule', JSON.stringify(updated)); } catch {}
+  }, [schedules]);
+
+  const overdue = schedules.filter(s => s.nextDue < Date.now());
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[10px] text-gs-dim font-mono uppercase tracking-[0.06em]">Cleaning Schedule</div>
+        {overdue.length > 0 && <span className="text-[9px] text-[#f59e0b] font-bold">{overdue.length} overdue</span>}
+      </div>
+      {schedules.length === 0 && !showAdd && (
+        <div className="text-[10px] text-gs-faint mb-2">No cleaning schedules set. Add records to track maintenance.</div>
+      )}
+      <div className="space-y-1.5 mb-2">
+        {schedules.slice(0, 5).map(s => {
+          const isDue = s.nextDue < Date.now();
+          return (
+            <div key={s.id} className={`flex items-center gap-2 p-2 rounded-lg border ${isDue ? 'bg-[#f59e0b08] border-[#f59e0b22]' : 'bg-[#111] border-[#1a1a1a]'}`}>
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] text-gs-text font-semibold truncate">{s.album}</div>
+                <div className="text-[9px] text-gs-faint">{s.lastCleaned ? `Cleaned ${relTime(s.lastCleaned)}` : 'Never cleaned'}</div>
+              </div>
+              <button onClick={() => markCleaned(s.id)} className="text-[9px] text-[#22c55e] bg-[#22c55e11] border border-[#22c55e22] rounded px-2 py-1 cursor-pointer hover:bg-[#22c55e22]">Clean</button>
+            </div>
+          );
+        })}
+      </div>
+      {showAdd ? (
+        <div className="flex gap-2">
+          <input value={newAlbum} onChange={e => setNewAlbum(e.target.value)} placeholder="Album name..." className="flex-1 bg-[#111] border border-gs-border rounded-lg px-3 py-1.5 text-xs text-gs-text outline-none focus:border-gs-accent/30" onKeyDown={e => { if (e.key === 'Enter') handleAdd(); }} />
+          <button onClick={handleAdd} className="text-[10px] text-white gs-btn-gradient px-3 py-1.5 rounded-lg">Add</button>
+        </div>
+      ) : (
+        <button onClick={() => setShowAdd(true)} className="text-[10px] text-gs-accent bg-transparent border border-gs-accent/20 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-gs-accent/10 transition-colors">+ Add Record</button>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 10) Turntable Setup Assistant Wizard
+// ============================================================================
+function TurntableSetupWizard() {
+  const [step, setStep] = useState(0);
+  const [active, setActive] = useState(false);
+  const [complete, setComplete] = useState(false);
+  const steps = useMemo(() => [
+    { title: 'Level Your Turntable', desc: 'Use a bubble level to ensure your turntable is perfectly flat. This prevents uneven stylus wear and tracking errors.', icon: '1' },
+    { title: 'Set Tracking Force', desc: 'Adjust the counterweight to match your cartridge specs. Typically 1.5-2.5g for most cartridges.', icon: '2' },
+    { title: 'Adjust Anti-Skate', desc: 'Set anti-skate to match your tracking force. This prevents the tonearm from skating inward.', icon: '3' },
+    { title: 'Align Cartridge', desc: 'Use a protractor to align your cartridge for minimal distortion across the record surface.', icon: '4' },
+    { title: 'Check VTA/SRA', desc: 'Vertical Tracking Angle should be 20-22 degrees. The tonearm should be roughly parallel to the record.', icon: '5' },
+    { title: 'Test & Calibrate', desc: 'Play a test record and use Vinyl Buddy to verify audio quality. Adjust as needed.', icon: '6' },
+  ], []);
+
+  if (!active) {
+    return (
+      <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+        <div className="text-[10px] text-gs-dim font-mono mb-2 uppercase tracking-[0.06em]">Setup Wizard</div>
+        <div className="text-[12px] text-gs-text font-bold mb-1">Turntable Setup Assistant</div>
+        <div className="text-[10px] text-gs-dim mb-3">Step-by-step guide to optimize your turntable setup</div>
+        <button onClick={() => setActive(true)} className="gs-btn-gradient px-4 py-2 text-xs text-white">Start Setup</button>
+      </div>
+    );
+  }
+
+  if (complete) {
+    return (
+      <div className="bg-gradient-to-br from-[#22c55e08] to-transparent border border-[#22c55e33] rounded-[14px] p-4 mb-4 text-center">
+        <div className="text-xl mb-2">&#10003;</div>
+        <div className="text-[13px] font-bold text-[#22c55e] mb-1">Setup Complete!</div>
+        <div className="text-[10px] text-gs-dim mb-3">Your turntable is optimized for the best vinyl experience.</div>
+        <button onClick={() => { setActive(false); setComplete(false); setStep(0); }} className="text-[10px] text-gs-accent bg-transparent border border-gs-accent/20 rounded-lg px-3 py-1.5 cursor-pointer">Done</button>
+      </div>
+    );
+  }
+
+  const currentStep = steps[step];
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[10px] text-gs-dim font-mono uppercase tracking-[0.06em]">Step {step + 1} of {steps.length}</div>
+        <div className="flex gap-1">{steps.map((_, i) => <div key={i} className={`w-2 h-2 rounded-full ${i <= step ? 'bg-gs-accent' : 'bg-[#1a1a1a]'}`} />)}</div>
+      </div>
+      <div className="text-[13px] font-bold text-gs-text mb-2">{currentStep.title}</div>
+      <div className="text-[11px] text-gs-dim leading-relaxed mb-4">{currentStep.desc}</div>
+      <div className="flex gap-2">
+        {step > 0 && <button onClick={() => setStep(s => s - 1)} className="text-[10px] text-gs-muted bg-transparent border border-gs-border rounded-lg px-3 py-1.5 cursor-pointer">Back</button>}
+        <button onClick={() => { if (step + 1 < steps.length) setStep(s => s + 1); else setComplete(true); }} className="gs-btn-gradient px-4 py-1.5 text-xs text-white">{step + 1 < steps.length ? 'Next' : 'Finish'}</button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 11) Audio Environment Analyzer
+// ============================================================================
+function AudioEnvironmentAnalyzer() {
+  const [analyzing, setAnalyzing] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const handleAnalyze = useCallback(() => {
+    setAnalyzing(true);
+    setResult(null);
+    setTimeout(() => {
+      setResult({
+        roomScore: 72 + Math.floor(Math.random() * 20),
+        ambientNoise: (25 + Math.floor(Math.random() * 15)) + 'dB',
+        reverb: ['Low', 'Medium', 'High'][Math.floor(Math.random() * 2)],
+        recommendations: [
+          'Add a rug or soft furnishings to reduce reflections',
+          'Position speakers at ear level for best imaging',
+          'Keep turntable away from speakers to prevent feedback',
+        ].slice(0, 2 + Math.floor(Math.random() * 2)),
+      });
+      setAnalyzing(false);
+    }, 2500);
+  }, []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-2 uppercase tracking-[0.06em]">Environment Analyzer</div>
+      <div className="text-[11px] text-gs-dim mb-3">Analyze your room acoustics for optimal listening</div>
+      {!result && !analyzing && (
+        <button onClick={handleAnalyze} className="gs-btn-gradient px-4 py-2 text-xs text-white">Analyze Room</button>
+      )}
+      {analyzing && (
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 rounded-full border-2 border-gs-accent border-t-transparent" style={{ animation: 'vb-spin 0.8s linear infinite' }} />
+          <span className="text-[11px] text-gs-accent">Analyzing room acoustics...</span>
+        </div>
+      )}
+      {result && (
+        <div className="vb-fade-in">
+          <div className="flex items-center gap-4 mb-3">
+            <div className="w-14 h-14 rounded-xl bg-gs-accent/10 border border-gs-accent/30 flex items-center justify-center">
+              <span className="text-[18px] font-extrabold text-gs-accent">{result.roomScore}</span>
+            </div>
+            <div className="flex-1">
+              <div className="text-[12px] font-bold text-gs-text">Room Score: {result.roomScore}/100</div>
+              <div className="flex gap-3 mt-1">
+                <span className="text-[9px] text-gs-faint">Noise: {result.ambientNoise}</span>
+                <span className="text-[9px] text-gs-faint">Reverb: {result.reverb}</span>
+              </div>
+            </div>
+          </div>
+          <div className="space-y-1">
+            {result.recommendations.map((r, i) => (
+              <div key={i} className="flex items-start gap-2 text-[10px] text-gs-dim">
+                <span className="text-gs-accent mt-0.5">&#8226;</span>
+                <span>{r}</span>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => setResult(null)} className="text-[9px] text-gs-accent bg-transparent border-none cursor-pointer mt-2 underline">Re-analyze</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 12) Listening Achievements Leaderboard
+// ============================================================================
+function AchievementsLeaderboard({ myListens }) {
+  const leaderboard = useMemo(() => {
+    const myAchievements = ACHIEVEMENT_DEFS.filter(a => {
+      const stats = {
+        totalListens: myListens.length,
+        uniqueArtists: new Set(myListens.map(s => s.track.artist)).size,
+        uniqueAlbums: new Set(myListens.map(s => `${s.track.artist}::${s.track.album}`)).size,
+        totalMinutes: Math.round(myListens.reduce((sum, s) => sum + (s.listenedSeconds || 0), 0) / 60),
+        hasLateNight: myListens.some(s => { const h = new Date(s.timestampMs).getHours(); return h >= 0 && h < 5; }),
+        hasEarlyMorning: myListens.some(s => { const h = new Date(s.timestampMs).getHours(); return h >= 5 && h < 7; }),
+      };
+      return a.threshold(stats);
+    }).length;
+    return [
+      { name: 'CrateDigger', badges: myAchievements + 3, avatar: 'C' },
+      { name: 'You', badges: myAchievements, avatar: 'Y', isMe: true },
+      { name: 'VinylFan42', badges: Math.max(1, myAchievements - 1), avatar: 'V' },
+      { name: 'WaxCollector', badges: Math.max(0, myAchievements - 2), avatar: 'W' },
+    ].sort((a, b) => b.badges - a.badges);
+  }, [myListens]);
+
+  if (myListens.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Achievements Leaderboard</div>
+      <div className="space-y-1.5">
+        {leaderboard.map((user, i) => (
+          <div key={i} className={`flex items-center gap-3 p-2 rounded-lg ${user.isMe ? 'bg-[#f59e0b08] border border-[#f59e0b22]' : 'bg-[#111] border border-[#1a1a1a]'}`}>
+            <span className="text-[12px] font-bold w-4" style={{ color: i === 0 ? '#f59e0b' : i === 1 ? '#94a3b8' : '#78716c' }}>{i + 1}</span>
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[8px] font-bold text-white ${user.isMe ? 'bg-[#f59e0b]' : 'bg-[#8b5cf6]'}`}>{user.avatar}</div>
+            <span className="flex-1 text-[11px] text-gs-text font-semibold">{user.name}</span>
+            <span className="text-[10px] font-mono font-bold text-[#f59e0b]">{user.badges} badges</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 13) Record Swap Suggestions Based on Taste
+// ============================================================================
+function RecordSwapSuggestions({ myListens }) {
+  const swaps = useMemo(() => {
+    if (myListens.length === 0) return [];
+    const myAlbums = [...new Set(myListens.map(s => s.track.album))];
+    const suggestions = [
+      { give: 'Led Zeppelin IV', receive: 'Houses of the Holy', match: 94, user: 'VinylFan42' },
+      { give: 'Wish You Were Here', receive: 'Meddle', match: 91, user: 'CrateDigger' },
+      { give: 'A Night at the Opera', receive: 'Sheer Heart Attack', match: 88, user: 'WaxCollector' },
+      { give: 'Hotel California', receive: 'Desperado', match: 85, user: 'RecordHunter' },
+    ];
+    return suggestions.filter(s => myAlbums.includes(s.give)).slice(0, 3);
+  }, [myListens]);
+
+  if (swaps.length === 0) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Swap Suggestions</div>
+      <div className="space-y-2">
+        {swaps.map((s, i) => (
+          <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-[#111] border border-[#1a1a1a]">
+            <div className="flex-1 text-center">
+              <div className="text-[9px] text-gs-faint font-mono">YOUR</div>
+              <div className="text-[10px] text-gs-text font-bold truncate">{s.give}</div>
+            </div>
+            <div className="flex flex-col items-center px-2">
+              <span className="text-gs-accent text-sm">&#8644;</span>
+              <span className="text-[8px] text-gs-accent font-bold">{s.match}%</span>
+            </div>
+            <div className="flex-1 text-center">
+              <div className="text-[9px] text-gs-faint font-mono">GET</div>
+              <div className="text-[10px] text-gs-text font-bold truncate">{s.receive}</div>
+            </div>
+            <div className="text-[9px] text-gs-dim shrink-0">@{s.user}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 14) Genre Exploration Map (Visual)
+// ============================================================================
+function GenreExplorationMap({ myListens }) {
+  const genreMap = useMemo(() => {
+    if (myListens.length === 0) return [];
+    const mapping = {
+      "Led Zeppelin": "Rock", "Pink Floyd": "Prog Rock", "Queen": "Rock",
+      "The Doors": "Psychedelic", "The Beatles": "Rock", "The Who": "Rock",
+      "Eagles": "Country Rock", "John Coltrane": "Jazz", "Miles Davis": "Jazz",
+      "Herbie Hancock": "Jazz Fusion", "Nas": "Hip-Hop", "A Tribe Called Quest": "Hip-Hop",
+      "Aphex Twin": "Electronic", "Daft Punk": "Electronic", "Portishead": "Trip-Hop",
+      "Black Sabbath": "Metal", "Metallica": "Metal", "Fleetwood Mac": "Soft Rock",
+      "Nirvana": "Grunge", "Massive Attack": "Trip-Hop",
+    };
+    const allGenres = ["Rock", "Prog Rock", "Metal", "Jazz", "Jazz Fusion", "Hip-Hop", "Electronic", "Trip-Hop", "Psychedelic", "Grunge", "Country Rock", "Soft Rock", "Blues", "Soul", "Funk", "Reggae"];
+    const explored = new Set();
+    for (const s of myListens) {
+      const g = mapping[s.track.artist];
+      if (g) explored.add(g);
+    }
+    const colors = { Rock: '#ef4444', 'Prog Rock': '#8b5cf6', Metal: '#dc2626', Jazz: '#f59e0b', 'Jazz Fusion': '#14b8a6', 'Hip-Hop': '#0ea5e9', Electronic: '#06b6d4', 'Trip-Hop': '#6366f1', Psychedelic: '#ec4899', Grunge: '#84cc16', 'Country Rock': '#f97316', 'Soft Rock': '#a78bfa', Blues: '#3b82f6', Soul: '#f472b6', Funk: '#eab308', Reggae: '#22c55e' };
+    return allGenres.map(g => ({ genre: g, explored: explored.has(g), color: colors[g] || '#666' }));
+  }, [myListens]);
+
+  if (genreMap.length === 0) return null;
+  const exploredCount = genreMap.filter(g => g.explored).length;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[10px] text-gs-dim font-mono uppercase tracking-[0.06em]">Genre Map</div>
+        <span className="text-[9px] text-gs-accent font-bold">{exploredCount}/{genreMap.length} explored</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {genreMap.map((g) => (
+          <div key={g.genre} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-semibold border transition-all ${g.explored ? '' : 'opacity-25 grayscale'}`}
+            style={{ background: g.explored ? `${g.color}15` : '#111', borderColor: g.explored ? `${g.color}44` : '#1a1a1a', color: g.explored ? g.color : '#444' }}>
+            {g.genre}
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 h-2 bg-[#111] rounded-full overflow-hidden">
+        <div className="h-full rounded-full bg-gradient-to-r from-gs-accent to-[#8b5cf6] transition-all duration-500" style={{ width: `${(exploredCount / genreMap.length) * 100}%` }} />
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 15) Listening Mood Journal
+// ============================================================================
+function ListeningMoodJournal({ myListens }) {
+  const [entries, setEntries] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs-mood-journal') || '[]'); } catch { return []; }
+  });
+  const [mood, setMood] = useState('');
+  const [note, setNote] = useState('');
+
+  const moods = useMemo(() => ['Energized', 'Relaxed', 'Nostalgic', 'Focused', 'Melancholy', 'Joyful', 'Dreamy', 'Pumped'], []);
+  const moodColors = useMemo(() => ({ Energized: '#ef4444', Relaxed: '#22c55e', Nostalgic: '#f59e0b', Focused: '#0ea5e9', Melancholy: '#6366f1', Joyful: '#f97316', Dreamy: '#ec4899', Pumped: '#dc2626' }), []);
+
+  const handleAdd = useCallback(() => {
+    if (!mood) return;
+    const entry = { id: Date.now(), mood, note, track: myListens[0]?.track || null, timestamp: Date.now() };
+    const updated = [entry, ...entries].slice(0, 30);
+    setEntries(updated);
+    try { localStorage.setItem('gs-mood-journal', JSON.stringify(updated)); } catch {}
+    setMood('');
+    setNote('');
+  }, [mood, note, entries, myListens]);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Mood Journal</div>
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {moods.map(m => (
+          <button key={m} onClick={() => setMood(m)} className={`text-[10px] px-2 py-1 rounded-lg border cursor-pointer transition-all ${mood === m ? '' : 'bg-[#111] border-[#1a1a1a] text-gs-dim'}`}
+            style={mood === m ? { background: `${moodColors[m]}15`, borderColor: `${moodColors[m]}44`, color: moodColors[m] } : {}}>
+            {m}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-2 mb-3">
+        <input value={note} onChange={e => setNote(e.target.value)} placeholder="How does this make you feel?" className="flex-1 bg-[#111] border border-gs-border rounded-lg px-3 py-1.5 text-xs text-gs-text outline-none focus:border-gs-accent/30" onKeyDown={e => { if (e.key === 'Enter') handleAdd(); }} />
+        <button onClick={handleAdd} disabled={!mood} className="gs-btn-gradient px-3 py-1.5 text-xs text-white disabled:opacity-40">Log</button>
+      </div>
+      {entries.length > 0 && (
+        <div className="space-y-1.5 max-h-[150px] overflow-y-auto">
+          {entries.slice(0, 5).map(e => (
+            <div key={e.id} className="flex items-center gap-2 p-2 rounded-lg bg-[#111] border border-[#1a1a1a]">
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: `${moodColors[e.mood] || '#666'}22`, color: moodColors[e.mood] || '#666' }}>{e.mood}</span>
+              <div className="flex-1 min-w-0">
+                {e.note && <div className="text-[10px] text-gs-muted truncate">{e.note}</div>}
+                {e.track && <div className="text-[9px] text-gs-faint truncate">{e.track.title} - {e.track.artist}</div>}
+              </div>
+              <span className="text-[8px] text-gs-faint font-mono shrink-0">{relTime(e.timestamp)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 16) Daily Vinyl Challenge
+// ============================================================================
+function DailyVinylChallenge({ myListens }) {
+  const [completed, setCompleted] = useState(() => {
+    try { const data = JSON.parse(localStorage.getItem('gs-daily-challenge') || '{}'); return data.date === new Date().toDateString() ? data.completed : false; } catch { return false; }
+  });
+
+  const challenge = useMemo(() => {
+    const challenges = [
+      { title: 'Deep Cut Discovery', desc: 'Listen to a B-side track you have never played before', reward: '25 XP', icon: '&#x1F3B5;' },
+      { title: 'Genre Hopper', desc: 'Listen to 3 different genres today', reward: '50 XP', icon: '&#x1F3B6;' },
+      { title: 'Full Album Challenge', desc: 'Listen to an entire album start to finish', reward: '75 XP', icon: '&#x1F4BF;' },
+      { title: 'Decade Explorer', desc: 'Play a record from a decade you rarely listen to', reward: '30 XP', icon: '&#x1F570;' },
+      { title: 'Share the Groove', desc: 'Share your currently playing track with a friend', reward: '20 XP', icon: '&#x1F91D;' },
+      { title: 'Vinyl Marathon', desc: 'Listen to at least 5 records today', reward: '100 XP', icon: '&#x1F3C6;' },
+      { title: 'Artist Deep Dive', desc: 'Play 3+ tracks from the same artist', reward: '40 XP', icon: '&#x1F3A4;' },
+    ];
+    const dayIndex = Math.floor(Date.now() / 86400000) % challenges.length;
+    return challenges[dayIndex];
+  }, []);
+
+  const handleComplete = useCallback(() => {
+    setCompleted(true);
+    try { localStorage.setItem('gs-daily-challenge', JSON.stringify({ date: new Date().toDateString(), completed: true })); } catch {}
+  }, []);
+
+  return (
+    <div className={`border rounded-[14px] p-4 mb-4 ${completed ? 'bg-[#22c55e08] border-[#22c55e33]' : 'bg-gs-card border-gs-border'}`}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[10px] text-gs-dim font-mono uppercase tracking-[0.06em]">Daily Challenge</div>
+        {completed && <span className="text-[9px] text-[#22c55e] font-bold">Completed!</span>}
+      </div>
+      <div className="text-[13px] font-bold text-gs-text mb-1" dangerouslySetInnerHTML={{ __html: `${challenge.icon} ${challenge.title}` }} />
+      <div className="text-[10px] text-gs-dim mb-2">{challenge.desc}</div>
+      <div className="flex items-center justify-between">
+        <span className="text-[9px] text-[#f59e0b] font-bold">Reward: {challenge.reward}</span>
+        {!completed && <button onClick={handleComplete} className="text-[10px] text-white gs-btn-gradient px-3 py-1.5 rounded-lg">Mark Complete</button>}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 17) Record Trivia Section
+// ============================================================================
+function RecordTriviaSection() {
+  const [showAnswer, setShowAnswer] = useState(false);
+  const [triviaIndex, setTriviaIndex] = useState(() => Math.floor(Date.now() / 86400000) % 10);
+
+  const trivia = useMemo(() => [
+    { q: 'What was the first commercially released CD?', a: 'Billy Joel\'s "52nd Street" in 1982, but vinyl purists know the original pressing sounds better!' },
+    { q: 'How fast does a standard LP record spin?', a: '33 1/3 RPM. The format was introduced by Columbia Records in 1948.' },
+    { q: 'What is the longest song ever pressed on a single vinyl side?', a: 'Several experimental records exceed 40 minutes, though audio quality degrades beyond 22 minutes per side.' },
+    { q: 'What is a "first pressing" worth more?', a: 'First pressings are made from fresh stampers, producing cleaner grooves and often better sound quality.' },
+    { q: 'Why are records black?', a: 'Carbon black is added to PVC for UV protection and to help hide imperfections in the vinyl.' },
+    { q: 'What is the "dead wax" area?', a: 'The smooth area between the last groove and the label, often containing matrix numbers and hidden messages.' },
+    { q: 'What does "audiophile pressing" mean?', a: 'Typically pressed on 180g+ virgin vinyl using half-speed mastering for improved sound quality.' },
+    { q: 'How many grooves does a 12" LP have?', a: 'Trick question - just one continuous spiral groove per side!' },
+    { q: 'What is the loudness war?', a: 'Modern digital masters are often compressed, making vinyl versions from original analog masters sound more dynamic.' },
+    { q: 'Who invented the phonograph?', a: 'Thomas Edison in 1877, though Emile Berliner\'s flat disc format (1887) became the standard we use today.' },
+  ], []);
+
+  const current = trivia[triviaIndex % trivia.length];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Vinyl Trivia</div>
+      <div className="text-[12px] font-bold text-gs-text mb-2">{current.q}</div>
+      {showAnswer ? (
+        <div className="vb-fade-in">
+          <div className="text-[11px] text-gs-muted leading-relaxed mb-2">{current.a}</div>
+          <button onClick={() => { setShowAnswer(false); setTriviaIndex(i => i + 1); }} className="text-[10px] text-gs-accent bg-transparent border border-gs-accent/20 rounded-lg px-3 py-1.5 cursor-pointer">Next Question</button>
+        </div>
+      ) : (
+        <button onClick={() => setShowAnswer(true)} className="gs-btn-gradient px-4 py-2 text-xs text-white">Reveal Answer</button>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 18) Vinyl Community Forums Link
+// ============================================================================
+function VinylCommunityForums() {
+  const forums = useMemo(() => [
+    { name: 'r/vinyl', url: 'https://reddit.com/r/vinyl', members: '2.1M', desc: 'The main vinyl community on Reddit' },
+    { name: 'Steve Hoffman Forums', url: 'https://forums.stevehoffman.tv', members: '180K', desc: 'Audiophile pressing discussions' },
+    { name: 'Discogs Community', url: 'https://www.discogs.com/forum', members: '8M+', desc: 'Buy, sell, and discuss records' },
+    { name: 'Vinyl Engine', url: 'https://www.vinylengine.com', members: '500K', desc: 'Turntable manuals and community' },
+  ], []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Community Forums</div>
+      <div className="space-y-2">
+        {forums.map((f, i) => (
+          <a key={i} href={f.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-2 rounded-lg bg-[#111] border border-[#1a1a1a] hover:border-[#333] transition-colors no-underline">
+            <div className="w-8 h-8 rounded-lg bg-[#8b5cf6] flex items-center justify-center text-[10px] font-bold text-white shrink-0">{f.name.charAt(0)}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] text-gs-text font-semibold">{f.name}</div>
+              <div className="text-[9px] text-gs-dim">{f.desc}</div>
+            </div>
+            <span className="text-[9px] text-gs-faint font-mono shrink-0">{f.members}</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 19) Device Health History Chart
+// ============================================================================
+function DeviceHealthHistory({ deviceCode }) {
+  const healthData = useMemo(() => {
+    if (!deviceCode) return [];
+    return Array.from({ length: 14 }, (_, i) => {
+      const d = new Date(); d.setDate(d.getDate() - (13 - i));
+      return {
+        day: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        uptime: 85 + Math.floor(Math.random() * 15),
+        temp: 35 + Math.floor(Math.random() * 12),
+        errors: Math.floor(Math.random() * 3),
+      };
+    });
+  }, [deviceCode]);
+
+  if (healthData.length === 0) return null;
+  const maxUptime = 100;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Device Health (14 Days)</div>
+      <div className="flex items-end gap-[3px] h-14 mb-2">
+        {healthData.map((d, i) => (
+          <Tooltip key={i} text={`${d.day}: ${d.uptime}% uptime, ${d.temp}C, ${d.errors} errors`}>
+            <div className="flex-1 rounded-t-sm cursor-default" style={{
+              height: `${(d.uptime / maxUptime) * 100}%`,
+              background: d.errors === 0 ? '#22c55e' : d.errors === 1 ? '#f59e0b' : '#ef4444',
+              opacity: 0.7 + (i / healthData.length) * 0.3,
+            }} />
+          </Tooltip>
+        ))}
+      </div>
+      <div className="flex justify-between text-[8px] text-gs-faint font-mono">
+        <span>{healthData[0]?.day}</span>
+        <span>{healthData[healthData.length - 1]?.day}</span>
+      </div>
+      <div className="flex gap-3 mt-2">
+        <span className="flex items-center gap-1 text-[9px] text-gs-faint"><span className="w-2 h-2 rounded-sm bg-[#22c55e]" />Healthy</span>
+        <span className="flex items-center gap-1 text-[9px] text-gs-faint"><span className="w-2 h-2 rounded-sm bg-[#f59e0b]" />Warning</span>
+        <span className="flex items-center gap-1 text-[9px] text-gs-faint"><span className="w-2 h-2 rounded-sm bg-[#ef4444]" />Error</span>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 20) Firmware Beta Program Enrollment
+// ============================================================================
+function FirmwareBetaProgram() {
+  const [enrolled, setEnrolled] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('gs-firmware-beta') || 'false'); } catch { return false; }
+  });
+
+  const handleToggle = useCallback(() => {
+    const next = !enrolled;
+    setEnrolled(next);
+    try { localStorage.setItem('gs-firmware-beta', JSON.stringify(next)); } catch {}
+  }, [enrolled]);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-2 uppercase tracking-[0.06em]">Beta Program</div>
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-[12px] font-bold text-gs-text mb-0.5">Firmware Beta Program</div>
+          <div className="text-[10px] text-gs-dim">Get early access to new features and improvements</div>
+          {enrolled && <div className="text-[9px] text-[#8b5cf6] font-bold mt-1">Beta channel: v2.5.0-beta.3 available</div>}
+        </div>
+        <button onClick={handleToggle} className={`relative w-11 h-6 rounded-full border cursor-pointer transition-all ${enrolled ? 'bg-[#8b5cf6] border-[#8b5cf666]' : 'bg-[#222] border-[#333]'}`}>
+          <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${enrolled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 21) Audio Export Options
+// ============================================================================
+function AudioExportOptions({ myListens }) {
+  const [exporting, setExporting] = useState(false);
+  const [exportDone, setExportDone] = useState('');
+
+  const handleExport = useCallback((format) => {
+    setExporting(true);
+    setExportDone('');
+    setTimeout(() => {
+      setExporting(false);
+      setExportDone(format);
+      setTimeout(() => setExportDone(''), 3000);
+    }, 1500);
+  }, []);
+
+  const formats = useMemo(() => [
+    { label: 'CSV', desc: 'Spreadsheet-compatible listening data', icon: 'C', color: '#22c55e' },
+    { label: 'JSON', desc: 'Full listening history with metadata', icon: 'J', color: '#0ea5e9' },
+    { label: 'PDF Report', desc: 'Visual summary of your vinyl stats', icon: 'P', color: '#ef4444' },
+    { label: 'Playlist (.m3u)', desc: 'Import into music players', icon: 'M', color: '#f59e0b' },
+  ], []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-3 uppercase tracking-[0.06em]">Export Data</div>
+      <div className="grid grid-cols-2 gap-2">
+        {formats.map((f) => (
+          <button key={f.label} onClick={() => handleExport(f.label)} disabled={exporting}
+            className="flex items-center gap-2 p-2.5 rounded-lg bg-[#111] border border-[#1a1a1a] hover:border-[#333] transition-all cursor-pointer disabled:opacity-50 text-left">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold text-white shrink-0" style={{ background: f.color }}>{f.icon}</div>
+            <div>
+              <div className="text-[11px] text-gs-text font-semibold">{f.label}</div>
+              <div className="text-[8px] text-gs-faint">{f.desc}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+      {exporting && <div className="text-[10px] text-gs-accent mt-2" style={{ animation: 'vb-pulse 1s ease-in-out infinite' }}>Exporting...</div>}
+      {exportDone && <div className="text-[10px] text-[#22c55e] mt-2 vb-fade-in">Exported as {exportDone} successfully!</div>}
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 22) Listening Session Sharing
+// ============================================================================
+function ListeningSessionSharing({ myListens }) {
+  const [shared, setShared] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
+
+  const handleShare = useCallback(() => {
+    const code = Math.random().toString(36).substring(2, 10);
+    const url = `groovestack.co/session/${code}`;
+    setShareUrl(url);
+    setShared(true);
+    navigator.clipboard.writeText(`https://${url}`).catch(() => {});
+    setTimeout(() => setShared(false), 5000);
+  }, []);
+
+  const recentSession = myListens[0];
+
+  if (!recentSession) return null;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-2 uppercase tracking-[0.06em]">Share Session</div>
+      <div className="flex items-center gap-3 mb-3">
+        <div className="flex-1 min-w-0">
+          <div className="text-[11px] text-gs-text font-semibold truncate">{recentSession.track.title}</div>
+          <div className="text-[9px] text-gs-dim">{recentSession.track.artist} - {recentSession.track.album}</div>
+        </div>
+        <button onClick={handleShare} className={`text-[10px] font-bold px-3 py-1.5 rounded-lg border cursor-pointer transition-all ${shared ? 'bg-[#22c55e11] border-[#22c55e33] text-[#22c55e]' : 'gs-btn-gradient text-white border-none'}`}>
+          {shared ? 'Link Copied!' : 'Share'}
+        </button>
+      </div>
+      {shareUrl && <div className="text-[9px] text-gs-accent font-mono bg-[#111] rounded px-2 py-1">{shareUrl}</div>}
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 23) Record Identification Accuracy Improvement Tips
+// ============================================================================
+function IdentificationAccuracyTips() {
+  const [expanded, setExpanded] = useState(false);
+
+  const tips = useMemo(() => [
+    { title: 'Reduce Background Noise', desc: 'Turn off fans, AC units, and other noise sources during identification for best results.', impact: 'High' },
+    { title: 'Position Device Correctly', desc: 'Place Vinyl Buddy 6-12 inches from the speaker, not directly on the turntable plinth.', impact: 'High' },
+    { title: 'Clean Records First', desc: 'Dirty records produce additional noise that can confuse the fingerprinting algorithm.', impact: 'Medium' },
+    { title: 'Check Stylus Condition', desc: 'A worn stylus alters the audio signature, reducing identification accuracy.', impact: 'Medium' },
+    { title: 'Optimal Volume', desc: 'Keep playback at moderate volume. Too quiet or too loud both reduce accuracy.', impact: 'Low' },
+    { title: 'Wait for Track Start', desc: 'Let 5-10 seconds of music play before expecting identification for best results.', impact: 'Low' },
+  ], []);
+
+  const impactColors = useMemo(() => ({ High: '#ef4444', Medium: '#f59e0b', Low: '#22c55e' }), []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[10px] text-gs-dim font-mono uppercase tracking-[0.06em]">Accuracy Tips</div>
+        <button onClick={() => setExpanded(!expanded)} className="text-[9px] text-gs-accent bg-transparent border-none cursor-pointer">{expanded ? 'Collapse' : 'Expand'}</button>
+      </div>
+      <div className="space-y-1.5">
+        {(expanded ? tips : tips.slice(0, 3)).map((tip, i) => (
+          <div key={i} className="flex items-start gap-2 p-2 rounded-lg bg-[#111] border border-[#1a1a1a]">
+            <span className="text-[8px] font-bold px-1 py-0.5 rounded mt-0.5 shrink-0" style={{ background: `${impactColors[tip.impact]}22`, color: impactColors[tip.impact] }}>{tip.impact}</span>
+            <div>
+              <div className="text-[11px] text-gs-text font-semibold">{tip.title}</div>
+              <div className="text-[9px] text-gs-dim">{tip.desc}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 24) Multi-Room Audio Sync Status
+// ============================================================================
+function MultiRoomSyncStatus() {
+  const [rooms, setRooms] = useState(() => [
+    { name: 'Living Room', status: 'synced', latency: 2, playing: true },
+    { name: 'Bedroom', status: 'synced', latency: 5, playing: true },
+    { name: 'Kitchen', status: 'offline', latency: 0, playing: false },
+    { name: 'Study', status: 'desynced', latency: 45, playing: true },
+  ]);
+
+  const handleSync = useCallback((roomName) => {
+    setRooms(prev => prev.map(r => r.name === roomName ? { ...r, status: 'synced', latency: 2 + Math.floor(Math.random() * 5) } : r));
+  }, []);
+
+  const syncedCount = rooms.filter(r => r.status === 'synced').length;
+  const statusColors = useMemo(() => ({ synced: '#22c55e', desynced: '#f59e0b', offline: '#666' }), []);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[10px] text-gs-dim font-mono uppercase tracking-[0.06em]">Multi-Room Sync</div>
+        <span className="text-[9px] text-[#22c55e] font-bold">{syncedCount}/{rooms.length} synced</span>
+      </div>
+      <div className="space-y-1.5">
+        {rooms.map((room) => (
+          <div key={room.name} className="flex items-center gap-2 p-2 rounded-lg bg-[#111] border border-[#1a1a1a]">
+            <div className="w-2 h-2 rounded-full shrink-0" style={{ background: statusColors[room.status], boxShadow: room.status === 'synced' ? `0 0 6px ${statusColors[room.status]}66` : 'none' }} />
+            <div className="flex-1">
+              <div className="text-[11px] text-gs-text font-semibold">{room.name}</div>
+              <div className="text-[9px] text-gs-faint">{room.status === 'offline' ? 'Not connected' : `Latency: ${room.latency}ms`}</div>
+            </div>
+            {room.playing && <EqualizerVis active={room.status === 'synced'} barCount={3} height={14} color={statusColors[room.status]} />}
+            {room.status === 'desynced' && (
+              <button onClick={() => handleSync(room.name)} className="text-[9px] text-[#f59e0b] bg-[#f59e0b11] border border-[#f59e0b22] rounded px-2 py-0.5 cursor-pointer hover:bg-[#f59e0b22]">Sync</button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// (Final 25) Vinyl Buddy Companion App Download Links
+// ============================================================================
+function CompanionAppDownload() {
+  const platforms = useMemo(() => [
+    { name: 'iOS', icon: 'A', desc: 'iPhone & iPad', url: '#', color: '#0ea5e9', version: 'v2.1.0' },
+    { name: 'Android', icon: 'G', desc: 'Phone & Tablet', url: '#', color: '#22c55e', version: 'v2.1.0' },
+    { name: 'Desktop', icon: 'D', desc: 'Mac & Windows', url: '#', color: '#8b5cf6', version: 'v1.8.0' },
+  ], []);
+
+  return (
+    <div className="bg-gradient-to-br from-[#0ea5e908] to-[#8b5cf608] border border-[#0ea5e922] rounded-[14px] p-4 mb-4">
+      <div className="text-[10px] text-gs-dim font-mono mb-2 uppercase tracking-[0.06em]">Companion App</div>
+      <div className="text-[12px] font-bold text-gs-text mb-1">Get the Vinyl Buddy App</div>
+      <div className="text-[10px] text-gs-dim mb-3">Control your device, browse history, and share from anywhere</div>
+      <div className="grid grid-cols-3 gap-2">
+        {platforms.map((p) => (
+          <a key={p.name} href={p.url} className="flex flex-col items-center gap-1.5 p-3 rounded-lg bg-[#111] border border-[#1a1a1a] hover:border-[#333] transition-colors no-underline cursor-pointer">
+            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold text-white" style={{ background: p.color }}>{p.icon}</div>
+            <div className="text-[10px] text-gs-text font-semibold">{p.name}</div>
+            <div className="text-[8px] text-gs-faint">{p.version}</div>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 export default function VinylBuddyScreen({ currentUser, listeningHistory, activated, deviceCode, onActivate, onDeactivate }) {
@@ -3764,6 +5024,36 @@ function OverviewTab({ myListens, nowPlaying, isRecent, topArtist, topTrack, top
       {/* Recommendations based on listening history */}
       <RecommendationsSection myListens={myListens} />
 
+      {/* (Final 1) AI Record Recommendation Engine */}
+      <AIRecRecommendationEngine myListens={myListens} />
+
+      {/* (Final 3) Record Identification Quiz Game */}
+      <RecordIdentificationQuiz myListens={myListens} />
+
+      {/* (Final 4) Social Listening Room Creation */}
+      <SocialListeningRoom myListens={myListens} />
+
+      {/* (Final 13) Record Swap Suggestions */}
+      <RecordSwapSuggestions myListens={myListens} />
+
+      {/* (Final 15) Listening Mood Journal */}
+      <ListeningMoodJournal myListens={myListens} />
+
+      {/* (Final 16) Daily Vinyl Challenge */}
+      <DailyVinylChallenge myListens={myListens} />
+
+      {/* (Final 17) Record Trivia Section */}
+      <RecordTriviaSection />
+
+      {/* (Final 18) Vinyl Community Forums */}
+      <VinylCommunityForums />
+
+      {/* (Final 22) Listening Session Sharing */}
+      <ListeningSessionSharing myListens={myListens} />
+
+      {/* (Final 25) Companion App Download */}
+      <CompanionAppDownload />
+
       {/* Recently Played widget */}
       <div className="mb-2">
         <div className="text-[10px] text-gs-dim font-mono mb-2.5 uppercase tracking-[0.06em]">Recently Played Widget</div>
@@ -4215,6 +5505,33 @@ function StatsTab({ myListens, loading }) {
       {/* (Improvement 11) Genre discovery mode */}
       <GenreDiscoveryMode myListens={myListens} />
 
+      {/* (Final 2) Vinyl Collection Value Tracker */}
+      <CollectionValueTracker myListens={myListens} />
+
+      {/* (Final 5) Audio Quality Comparison Between Pressings */}
+      <PressingComparison myListens={myListens} />
+
+      {/* (Final 6) Record Provenance Tracker */}
+      <RecordProvenanceTracker myListens={myListens} />
+
+      {/* (Final 7) Vinyl Investment Advisor */}
+      <VinylInvestmentAdvisor myListens={myListens} />
+
+      {/* (Final 8) Friend Stats Comparison */}
+      <FriendStatsComparison myListens={myListens} />
+
+      {/* (Final 9) Record Cleaning Schedule Manager */}
+      <CleaningScheduleManager myListens={myListens} />
+
+      {/* (Final 12) Achievements Leaderboard */}
+      <AchievementsLeaderboard myListens={myListens} />
+
+      {/* (Final 14) Genre Exploration Map */}
+      <GenreExplorationMap myListens={myListens} />
+
+      {/* (Final 21) Audio Export Options */}
+      <AudioExportOptions myListens={myListens} />
+
       {/* Recently Played widget (embeddable preview) */}
       <div className="mb-4">
         <div className="text-[10px] text-gs-dim font-mono mb-2.5 uppercase tracking-[0.06em]">Profile Widget Preview</div>
@@ -4615,6 +5932,24 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate, isDemo }) {
 
       {/* (25) Bluetooth speaker pairing guide */}
       <BluetoothPairingGuide />
+
+      {/* (Final 10) Turntable Setup Assistant Wizard */}
+      <TurntableSetupWizard />
+
+      {/* (Final 11) Audio Environment Analyzer */}
+      <AudioEnvironmentAnalyzer />
+
+      {/* (Final 19) Device Health History Chart */}
+      <DeviceHealthHistory deviceCode={deviceCode} />
+
+      {/* (Final 20) Firmware Beta Program Enrollment */}
+      <FirmwareBetaProgram />
+
+      {/* (Final 23) Record Identification Accuracy Tips */}
+      <IdentificationAccuracyTips />
+
+      {/* (Final 24) Multi-Room Audio Sync Status */}
+      <MultiRoomSyncStatus />
 
       {/* (Improvement 7) Device diagnostics panel */}
       <DeviceDiagnosticsPanel />

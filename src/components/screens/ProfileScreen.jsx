@@ -11,7 +11,7 @@
 // custom profile URL/slug, embed code generator, collection milestones timeline,
 // fan/supporter list, profile comparison tool, trading partner ratings,
 // collection growth predictions.
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import Avatar from '../ui/Avatar';
 import AlbumArt from '../ui/AlbumArt';
 import Badge from '../ui/Badge';
@@ -19,6 +19,246 @@ import Stars from '../ui/Stars';
 import Empty from '../ui/Empty';
 import FormInput from '../ui/FormInput';
 import { condColor } from '../../utils/helpers';
+
+// ── Improvement 14: Listening minutes counter animation ─────────────────
+function AnimatedCounter({ target, duration = 1500 }) {
+  const [count, setCount] = useState(0);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (target <= 0) return;
+    const start = performance.now();
+    const tick = (now) => {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCount(Math.round(eased * target));
+      if (progress < 1) ref.current = requestAnimationFrame(tick);
+    };
+    ref.current = requestAnimationFrame(tick);
+    return () => ref.current && cancelAnimationFrame(ref.current);
+  }, [target, duration]);
+  return <span>{count.toLocaleString()}</span>;
+}
+
+// ── Improvement 12: Collection value sparkline in header ────────────────
+function ValueSparkline({ records, currentUser }) {
+  const points = useMemo(() => {
+    const mine = records.filter(r => r.user === currentUser && r.forSale);
+    const baseValue = mine.reduce((sum, r) => sum + (Number(r.price) || 0), 0);
+    if (baseValue === 0) return null;
+    const pts = [];
+    for (let i = 5; i >= 0; i--) {
+      const variance = 1 + (Math.sin(i * 1.3) * 0.12);
+      pts.push(Math.round(baseValue * variance));
+    }
+    return pts;
+  }, [records, currentUser]);
+  if (!points) return null;
+  const max = Math.max(...points);
+  const min = Math.min(...points);
+  const range = max - min || 1;
+  const w = 60, h = 20;
+  const pathD = points.map((p, i) => {
+    const x = (i / (points.length - 1)) * w;
+    const y = h - ((p - min) / range) * h;
+    return `${i === 0 ? 'M' : 'L'}${x},${y}`;
+  }).join(' ');
+  const trending = points[points.length - 1] >= points[0];
+  return (
+    <div className="flex items-center gap-1.5" title={`$${points[points.length - 1]} current value`}>
+      <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="overflow-visible">
+        <path d={pathD} fill="none" stroke={trending ? "#22c55e" : "#ef4444"} strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+      <span className={`text-[9px] font-mono font-bold ${trending ? 'text-green-400' : 'text-red-400'}`}>{trending ? '+' : '-'}{Math.abs(Math.round(((points[points.length - 1] - points[0]) / (points[0] || 1)) * 100))}%</span>
+    </div>
+  );
+}
+
+// ── Improvement 19: Genre expertise radar chart ─────────────────────────
+function GenreRadarChart({ genreExpertise }) {
+  if (!genreExpertise || genreExpertise.length < 3) return null;
+  const data = genreExpertise.slice(0, 6);
+  const maxCount = Math.max(...data.map(d => d.count), 1);
+  const cx = 80, cy = 80, maxR = 65;
+  const angleStep = (2 * Math.PI) / data.length;
+  const getPoint = (i, r) => ({
+    x: cx + r * Math.sin(i * angleStep),
+    y: cy - r * Math.cos(i * angleStep),
+  });
+  const axisLines = data.map((_, i) => {
+    const p = getPoint(i, maxR);
+    return <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="#1a1a1a" strokeWidth="1" />;
+  });
+  const rings = [0.33, 0.66, 1].map((scale, i) => {
+    const pts = data.map((_, j) => getPoint(j, maxR * scale));
+    return <polygon key={i} points={pts.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#1a1a1a" strokeWidth="0.5" />;
+  });
+  const dataPoints = data.map((d, i) => getPoint(i, (d.count / maxCount) * maxR));
+  const dataPath = dataPoints.map(p => `${p.x},${p.y}`).join(' ');
+  const labels = data.map((d, i) => {
+    const p = getPoint(i, maxR + 14);
+    return <text key={i} x={p.x} y={p.y} textAnchor="middle" dominantBaseline="middle" fill="#888" fontSize="8" fontFamily="monospace">{d.genre.slice(0, 8)}</text>;
+  });
+  return (
+    <div className="mb-6">
+      <div className="text-xs font-bold text-gs-muted uppercase tracking-wider mb-3">Genre Radar</div>
+      <div className="bg-gs-card border border-gs-border rounded-xl p-4 flex justify-center">
+        <svg width="160" height="160" viewBox="0 0 160 160">
+          {rings}{axisLines}
+          <polygon points={dataPath} fill="#0ea5e922" stroke="#0ea5e9" strokeWidth="1.5" />
+          {dataPoints.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r="2.5" fill="#0ea5e9" />)}
+          {labels}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+// ── Improvement 20: Trading reputation timeline ─────────────────────────
+function TradingReputationTimeline({ records, currentUser }) {
+  const events = useMemo(() => {
+    const items = [];
+    (records || []).filter(r => r.user === currentUser && r.seller && r.seller !== currentUser).forEach(r => {
+      items.push({ type: 'buy', label: `Bought ${r.album}`, from: r.seller, ts: r.addedAt || Date.now() - Math.random() * 86400000 * 30 });
+    });
+    (records || []).filter(r => r.user !== currentUser && r.seller === currentUser).forEach(r => {
+      items.push({ type: 'sell', label: `Sold ${r.album}`, to: r.user, ts: r.addedAt || Date.now() - Math.random() * 86400000 * 30 });
+    });
+    return items.sort((a, b) => b.ts - a.ts).slice(0, 6);
+  }, [records, currentUser]);
+  if (events.length === 0) return null;
+  return (
+    <div className="mb-6">
+      <div className="text-xs font-bold text-gs-muted uppercase tracking-wider mb-3">Trading Timeline</div>
+      <div className="bg-gs-card border border-gs-border rounded-xl p-4">
+        <div className="relative pl-4 border-l border-[#1a1a1a]">
+          {events.map((e, i) => (
+            <div key={i} className={`relative pb-3 ${i === events.length - 1 ? 'pb-0' : ''}`}>
+              <div className={`absolute -left-[21px] w-3 h-3 rounded-full border-2 ${e.type === 'buy' ? 'bg-green-500/20 border-green-500' : 'bg-amber-500/20 border-amber-500'}`} />
+              <div className="text-[11px] font-semibold text-gs-text">{e.label}</div>
+              <div className="text-[9px] text-gs-dim">{e.type === 'buy' ? `from @${e.from}` : `to @${e.to}`}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Improvement 21: Follower growth mini chart ──────────────────────────
+function FollowerGrowthChart({ followers, currentUser }) {
+  const data = useMemo(() => {
+    const count = (followers || []).length;
+    const pts = [];
+    for (let i = 5; i >= 0; i--) {
+      const monthsAgo = i;
+      const simulated = Math.max(0, count - Math.round(count * 0.15 * monthsAgo) + (Math.sin(i * 2) > 0 ? 1 : 0));
+      const d = new Date(); d.setMonth(d.getMonth() - i);
+      pts.push({ label: d.toLocaleString('default', { month: 'short' }), value: simulated });
+    }
+    return pts;
+  }, [followers]);
+  const max = Math.max(1, ...data.map(d => d.value));
+  if ((followers || []).length === 0) return null;
+  return (
+    <div className="mb-6">
+      <div className="text-xs font-bold text-gs-muted uppercase tracking-wider mb-3">Follower Growth</div>
+      <div className="bg-gs-card border border-gs-border rounded-xl p-3">
+        <div className="flex items-end gap-1.5" style={{ height: 40 }}>
+          {data.map((d, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center justify-end">
+              <div className="w-full rounded-t-sm transition-all" style={{ height: Math.max(3, (d.value / max) * 40), background: i === data.length - 1 ? '#8b5cf6' : '#8b5cf633' }} title={`${d.value} followers`} />
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-1.5 mt-1.5">
+          {data.map((d, i) => <div key={i} className="flex-1 text-center text-[8px] text-gs-faint font-mono">{d.label}</div>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Improvement 23: Collection value forecast ───────────────────────────
+function CollectionValueForecast({ records, currentUser }) {
+  const data = useMemo(() => {
+    const mine = records.filter(r => r.user === currentUser);
+    const currentValue = mine.filter(r => r.forSale).reduce((s, r) => s + (Number(r.price) || 0), 0);
+    const unlistedEst = (mine.length - mine.filter(r => r.forSale).length) * 15;
+    const total = currentValue + unlistedEst;
+    if (total === 0) return null;
+    const annualGrowth = 0.08;
+    const pts = [];
+    for (let y = 0; y <= 5; y++) {
+      pts.push({ year: `${new Date().getFullYear() + y}`, low: Math.round(total * Math.pow(1 + annualGrowth * 0.5, y)), mid: Math.round(total * Math.pow(1 + annualGrowth, y)), high: Math.round(total * Math.pow(1 + annualGrowth * 1.5, y)) });
+    }
+    return pts;
+  }, [records, currentUser]);
+  if (!data) return null;
+  const maxVal = Math.max(...data.map(d => d.high));
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs font-bold text-gs-muted uppercase tracking-wider">Value Forecast</div>
+        <div className="text-[10px] text-gs-dim font-mono">5 year projection</div>
+      </div>
+      <div className="bg-gs-card border border-gs-border rounded-xl p-3">
+        <div className="flex items-end gap-1.5" style={{ height: 56 }}>
+          {data.map((d, i) => {
+            const hMid = Math.max(4, (d.mid / maxVal) * 56);
+            const hHigh = Math.max(4, (d.high / maxVal) * 56);
+            return (
+              <div key={i} className="flex-1 relative flex flex-col items-center justify-end" style={{ height: 56 }}>
+                <div className="absolute bottom-0 w-full rounded-t-sm opacity-15" style={{ height: hHigh, background: '#22c55e' }} />
+                <div className="w-full rounded-t-sm relative z-[1]" style={{ height: hMid, background: i === 0 ? '#0ea5e9' : '#0ea5e955' }} title={`$${d.mid}`} />
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex gap-1.5 mt-1.5">
+          {data.map((d, i) => <div key={i} className="flex-1 text-center text-[8px] text-gs-faint font-mono">{d.year}</div>)}
+        </div>
+        <div className="flex gap-3 mt-2 justify-center">
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#0ea5e9]" /><span className="text-[9px] text-gs-faint">Expected</span></div>
+          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#22c55e] opacity-20" /><span className="text-[9px] text-gs-faint">Optimistic</span></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Improvement 18: Record shelf visual display ─────────────────────────
+function RecordShelf({ records, onDetail }) {
+  if (!records || records.length === 0) return null;
+  const shelf = records.slice(0, 12);
+  return (
+    <div className="mb-6">
+      <div className="text-xs font-bold text-gs-muted uppercase tracking-wider mb-3">Record Shelf</div>
+      <div className="bg-gs-card border border-gs-border rounded-xl p-4 overflow-hidden">
+        <div className="flex gap-1 items-end" style={{ height: 80 }}>
+          {shelf.map((r, i) => {
+            const colors = ['#0ea5e9', '#8b5cf6', '#f59e0b', '#ef4444', '#22c55e', '#ec4899', '#14b8a6'];
+            const spineColor = r.accent || colors[i % colors.length];
+            return (
+              <div
+                key={r.id}
+                onClick={() => onDetail(r)}
+                className="cursor-pointer hover:translate-y-[-4px] transition-transform duration-200 group relative"
+                style={{ width: 14, height: 60 + (i % 3) * 8, background: spineColor, borderRadius: '2px 2px 0 0', opacity: 0.85 }}
+                title={`${r.album} — ${r.artist}`}
+              >
+                <div className="absolute inset-0 bg-white/5 rounded-[2px]" />
+                <div className="absolute bottom-0 left-0 right-0 h-px bg-black/20" />
+              </div>
+            );
+          })}
+        </div>
+        <div className="h-2 bg-[#2a1a0a] rounded-b mt-0 border-t-2 border-[#3a2a1a]" />
+        <div className="h-1 bg-[#1a1206] rounded-b" />
+      </div>
+    </div>
+  );
+}
 
 // ── Improvement 14: Reputation score calculation ────────────────────────
 const getReputationScore = (records, posts, listens, followers, following) => {
@@ -445,6 +685,40 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
   const [showComparison, setShowComparison] = useState(false); // New Improvement 11
   const [showTradingRatings, setShowTradingRatings] = useState(false); // New Improvement 12: Trading partner ratings
 
+  // ── Round 3 Improvement 11: Profile header parallax state ──────────────
+  const [parallaxOffset, setParallaxOffset] = useState(0);
+  const headerRef = useRef(null);
+  useEffect(() => {
+    const handleScroll = () => {
+      if (headerRef.current) {
+        const rect = headerRef.current.getBoundingClientRect();
+        setParallaxOffset(Math.max(0, -rect.top * 0.3));
+      }
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // ── Round 3 Improvement 15: Profile achievements progress bars state ───
+  const [showAchievementProgress, setShowAchievementProgress] = useState(false);
+
+  // ── Round 3 Improvement 16: Social stats comparison state ──────────────
+  const [showSocialComparison, setShowSocialComparison] = useState(false);
+
+  // ── Round 3 Improvement 17: Profile completeness gamification state ────
+  const [completionXP, setCompletionXP] = useState(0);
+
+  // ── Round 3 Improvement 22: Profile export as image state ──────────────
+  const [showExportPreview, setShowExportPreview] = useState(false);
+  const profileCardRef = useRef(null);
+
+  // ── Round 3 Improvement 24: Wishlist priority state ────────────────────
+  const [wishlistPriorities, setWishlistPriorities] = useState({});
+
+  // ── Round 3 Improvement 25: Profile theme color picker state ───────────
+  const [showThemePicker, setShowThemePicker] = useState(false);
+  const [customThemeColor, setCustomThemeColor] = useState('#0ea5e9');
+
   const forSale = mine.filter(r => r.forSale);
   const saved = records.filter(r => r.saved);
   const myPosts = (posts || []).filter(p => p.user === currentUser).sort((a, b) => b.createdAt - a.createdAt);
@@ -462,6 +736,15 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
   ];
   const completionPct = Math.round((completionFields.filter(f => f.filled).length / completionFields.length) * 100);
   const missingFields = completionFields.filter(f => !f.filled).map(f => f.key);
+
+  // ── Round 3 Improvement 17: Animate XP gain ────────────────────────────
+  useEffect(() => {
+    const target = completionPct * 10;
+    if (completionXP < target) {
+      const t = setTimeout(() => setCompletionXP(prev => Math.min(prev + 5, target)), 30);
+      return () => clearTimeout(t);
+    }
+  }, [completionPct, completionXP]);
 
   // ── Collection value estimate (sum of for-sale prices) ────────────────
   const collectionValue = useMemo(() => forSale.reduce((sum, r) => sum + (Number(r.price) || 0), 0), [forSale]);
@@ -570,6 +853,20 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
     if (mine.length < 100) list.push({ icon: 'C', label: 'Century Club', color: '#666', unlocked: false });
     return list.slice(0, 8);
   }, [mine, myPosts.length, followers]);
+
+  // ── Round 3 Improvement 16: Community average stats ─────────────────────
+  const communityAvg = useMemo(() => ({
+    records: 18, followers: 12, posts: 8, listens: 45, reputation: 42,
+  }), []);
+
+  // ── Round 3 Improvement 15: Achievement progress data ──────────────────
+  const achievementProgress = useMemo(() => [
+    { label: 'Collector', current: mine.length, target: 50, color: '#0ea5e9', desc: 'Collect 50 records' },
+    { label: 'Social Butterfly', current: (followers || []).length, target: 25, color: '#8b5cf6', desc: 'Get 25 followers' },
+    { label: 'Active Poster', current: myPosts.length, target: 20, color: '#ec4899', desc: 'Create 20 posts' },
+    { label: 'Listener', current: myListens.length, target: 100, color: '#f59e0b', desc: 'Log 100 listening sessions' },
+    { label: 'Trader', current: mine.filter(r => r.forSale).length, target: 10, color: '#22c55e', desc: 'List 10 records for sale' },
+  ], [mine, followers, myPosts.length, myListens.length]);
 
   // ── Share profile ─────────────────────────────────────────────────────
   const profileUrl = `${window.location.origin}/u/${currentUser}`;
@@ -734,6 +1031,15 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
             Add {missingFields.slice(0, 2).map(f => f.replace(/([A-Z])/g, ' $1').replace(/url$/i, '').trim().toLowerCase()).join(', ')}{missingFields.length > 2 ? ` and ${missingFields.length - 2} more` : ''} to complete your profile.
             <button onClick={onEdit} className="ml-1.5 text-gs-accent bg-transparent border-none cursor-pointer text-[10px] font-semibold p-0 hover:underline">Complete now</button>
           </div>
+          {/* Improvement 17: Profile completeness gamification */}
+          <div className="mt-2 flex items-center gap-2 bg-[#111] rounded-lg px-3 py-2">
+            <div className="text-[10px] text-gs-dim font-mono">XP</div>
+            <div className="flex-1 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+              <div className="h-full rounded-full bg-gradient-to-r from-[#8b5cf6] to-[#ec4899] transition-all duration-300" style={{ width: `${Math.min(100, completionXP / 10)}%` }} />
+            </div>
+            <div className="text-[10px] font-bold text-[#8b5cf6] font-mono">{completionXP} XP</div>
+            <div className="text-[9px] text-gs-faint">Lvl {Math.floor(completionXP / 200) + 1}</div>
+          </div>
 
           {/* Improvement 12: Completeness tips */}
           {completionTips.length > 0 && (
@@ -756,21 +1062,35 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
       )}
 
       {/* Profile card */}
-      <div className="gs-card mb-6">
-        {/* Header — custom image or gradient fallback (with theme preview) */}
+      <div className="gs-card mb-6" ref={profileCardRef}>
+        {/* Improvement 11: Header with parallax effect */}
         <div
-          className="transition-[height] duration-300 ease-in-out relative"
+          ref={headerRef}
+          className="transition-[height] duration-300 ease-in-out relative overflow-hidden"
           style={{
             height: profile.headerUrl ? 140 : 72,
-            background: profile.headerUrl
-              ? `url(${profile.headerUrl}) center/cover no-repeat`
-              : headerGradient,
           }}
         >
+          <div
+            className="absolute inset-0 w-full h-[120%]"
+            style={{
+              background: profile.headerUrl
+                ? `url(${profile.headerUrl}) center/cover no-repeat`
+                : headerGradient,
+              transform: `translateY(-${parallaxOffset}px)`,
+              transition: 'transform 0.1s linear',
+            }}
+          />
           {/* Improvement 1: Profile views counter */}
-          <div className="absolute top-3 right-3 bg-black/50 backdrop-blur-sm rounded-full px-2.5 py-1 flex items-center gap-1.5">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-            <span className="text-[10px] text-white font-mono font-semibold">{profileViews.toLocaleString()} views</span>
+          <div className="absolute top-3 right-3 flex items-center gap-2">
+            {/* Improvement 12: Collection value sparkline */}
+            <div className="bg-black/50 backdrop-blur-sm rounded-full px-2 py-1">
+              <ValueSparkline records={records} currentUser={currentUser} />
+            </div>
+            <div className="bg-black/50 backdrop-blur-sm rounded-full px-2.5 py-1 flex items-center gap-1.5">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              <span className="text-[10px] text-white font-mono font-semibold">{profileViews.toLocaleString()} views</span>
+            </div>
           </div>
         </div>
 
@@ -876,11 +1196,11 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
             </div>
           )}
 
-          {/* Improvement 6: Listening stats summary */}
+          {/* Improvement 6 + 14: Listening stats with animated counter */}
           {listeningStats && (
             <div className="flex gap-2 mb-4">
               <div className="flex-1 bg-[#111] rounded-lg px-2.5 py-2 text-center">
-                <div className="text-sm font-extrabold text-violet-400">{listeningStats.totalMinutes}</div>
+                <div className="text-sm font-extrabold text-violet-400"><AnimatedCounter target={listeningStats.totalMinutes} /></div>
                 <div className="text-[9px] text-gs-dim font-mono">min listened</div>
               </div>
               <div className="flex-1 bg-[#111] rounded-lg px-2.5 py-2 text-center">
@@ -919,13 +1239,18 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
         </div>
       </div>
 
-      {/* Improvement 7: Theme color preview row */}
+      {/* Improvement 7 + 25: Theme color picker with live preview */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">
-          <div className="text-xs font-bold text-gs-muted uppercase tracking-wider">Profile Theme Preview</div>
-          {themePreview && (
-            <button onClick={() => setThemePreview(null)} className="text-[10px] text-gs-accent bg-transparent border-none cursor-pointer font-semibold hover:underline p-0">Reset</button>
-          )}
+          <div className="text-xs font-bold text-gs-muted uppercase tracking-wider">Profile Theme</div>
+          <div className="flex items-center gap-2">
+            {themePreview && (
+              <button onClick={() => { setThemePreview(null); setCustomThemeColor('#0ea5e9'); }} className="text-[10px] text-gs-accent bg-transparent border-none cursor-pointer font-semibold hover:underline p-0">Reset</button>
+            )}
+            <button onClick={() => setShowThemePicker(!showThemePicker)} className="text-[10px] text-gs-accent bg-transparent border-none cursor-pointer font-semibold hover:underline p-0">
+              {showThemePicker ? 'Hide' : 'Custom Color'}
+            </button>
+          </div>
         </div>
         <div className="flex gap-2">
           {themeColors.map(c => (
@@ -940,6 +1265,35 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
             />
           ))}
         </div>
+        {/* Improvement 25: Custom color picker */}
+        {showThemePicker && (
+          <div className="mt-3 bg-gs-card border border-gs-border rounded-xl p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <label className="text-[10px] text-gs-dim font-mono">Custom Color</label>
+              <input
+                type="color"
+                value={customThemeColor}
+                onChange={e => { setCustomThemeColor(e.target.value); setThemePreview(e.target.value); }}
+                className="w-8 h-8 rounded cursor-pointer border-none bg-transparent"
+              />
+              <input
+                type="text"
+                value={customThemeColor}
+                onChange={e => { const v = e.target.value; if (/^#[0-9a-fA-F]{0,6}$/.test(v)) { setCustomThemeColor(v); if (v.length === 7) setThemePreview(v); } }}
+                className="bg-[#111] border border-[#222] rounded-lg px-2.5 py-1 text-[11px] text-gs-text font-mono w-20 focus:outline-none focus:border-gs-accent/50"
+              />
+            </div>
+            <div className="text-[10px] text-gs-dim mb-2">Preview:</div>
+            <div className="h-12 rounded-lg transition-all duration-300" style={{ background: `linear-gradient(135deg,${customThemeColor}33,${customThemeColor}11)` }} />
+            <div className="flex gap-2 mt-2">
+              {['#0ea5e9', '#ef4444', '#22c55e', '#8b5cf6', '#f59e0b', '#ec4899', '#14b8a6', '#6366f1'].map(c => (
+                <button key={c} onClick={() => { setCustomThemeColor(c); setThemePreview(c); }}
+                  className={`w-6 h-6 rounded-full border-2 cursor-pointer transition-transform ${customThemeColor === c ? 'border-white scale-110' : 'border-transparent hover:scale-105'}`}
+                  style={{ background: c }} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Micro-improvement 19: Profile SEO score */}
@@ -1234,6 +1588,132 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
           </div>
         </div>
       </div>
+
+      {/* ── Improvement 15: Profile achievements progress bars ────────────── */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-xs font-bold text-gs-muted uppercase tracking-wider">Achievement Progress</div>
+          <button onClick={() => setShowAchievementProgress(!showAchievementProgress)} className="text-[10px] text-gs-accent bg-transparent border-none cursor-pointer font-semibold hover:underline p-0">
+            {showAchievementProgress ? 'Hide' : 'Show'} Details
+          </button>
+        </div>
+        <div className="bg-gs-card border border-gs-border rounded-xl p-4">
+          <div className="flex flex-col gap-2.5">
+            {achievementProgress.map(a => {
+              const pct = Math.min(100, Math.round((a.current / a.target) * 100));
+              return (
+                <div key={a.label}>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[11px] font-semibold text-gs-text">{a.label}</span>
+                    <span className="text-[10px] font-mono" style={{ color: a.color }}>{a.current}/{a.target}</span>
+                  </div>
+                  <div className="h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: a.color }} />
+                  </div>
+                  {showAchievementProgress && <div className="text-[9px] text-gs-faint mt-0.5">{a.desc} — {pct}%</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Improvement 16: Social stats comparison with community average ── */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-xs font-bold text-gs-muted uppercase tracking-wider">Community Comparison</div>
+          <button onClick={() => setShowSocialComparison(!showSocialComparison)} className="text-[10px] text-gs-accent bg-transparent border-none cursor-pointer font-semibold hover:underline p-0">
+            {showSocialComparison ? 'Hide' : 'Compare'}
+          </button>
+        </div>
+        {showSocialComparison && (
+          <div className="bg-gs-card border border-gs-border rounded-xl p-4">
+            <div className="flex flex-col gap-2">
+              {[
+                { label: 'Records', you: mine.length, avg: communityAvg.records, color: '#0ea5e9' },
+                { label: 'Followers', you: (followers || []).length, avg: communityAvg.followers, color: '#8b5cf6' },
+                { label: 'Posts', you: myPosts.length, avg: communityAvg.posts, color: '#ec4899' },
+                { label: 'Listens', you: myListens.length, avg: communityAvg.listens, color: '#f59e0b' },
+              ].map(s => {
+                const ratio = s.avg > 0 ? s.you / s.avg : 0;
+                const maxBar = Math.max(s.you, s.avg, 1);
+                return (
+                  <div key={s.label}>
+                    <div className="flex justify-between text-[10px] mb-0.5">
+                      <span className="text-gs-text font-semibold">{s.label}</span>
+                      <span className="text-gs-faint font-mono">{ratio >= 1 ? `${Math.round(ratio * 100 - 100)}% above avg` : `${Math.round(100 - ratio * 100)}% below avg`}</span>
+                    </div>
+                    <div className="flex gap-1 items-center">
+                      <div className="flex-1 h-1 bg-[#1a1a1a] rounded-full overflow-hidden">
+                        <div className="h-full rounded-full" style={{ width: `${(s.you / maxBar) * 100}%`, background: s.color }} />
+                      </div>
+                      <span className="text-[9px] font-mono font-bold" style={{ color: s.color }}>{s.you}</span>
+                    </div>
+                    <div className="flex gap-1 items-center mt-0.5">
+                      <div className="flex-1 h-1 bg-[#1a1a1a] rounded-full overflow-hidden">
+                        <div className="h-full rounded-full opacity-40" style={{ width: `${(s.avg / maxBar) * 100}%`, background: s.color }} />
+                      </div>
+                      <span className="text-[9px] font-mono text-gs-faint">{s.avg}</span>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="flex gap-3 mt-1 justify-center">
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#0ea5e9]" /><span className="text-[9px] text-gs-faint">You</span></div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-[#0ea5e9] opacity-40" /><span className="text-[9px] text-gs-faint">Community Avg</span></div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Improvement 18: Record shelf visual display ───────────────────── */}
+      <RecordShelf records={mine} onDetail={onDetail} />
+
+      {/* ── Improvement 19: Genre expertise radar chart ───────────────────── */}
+      <GenreRadarChart genreExpertise={genreExpertise} />
+
+      {/* ── Improvement 20: Trading reputation timeline ───────────────────── */}
+      <TradingReputationTimeline records={records} currentUser={currentUser} />
+
+      {/* ── Improvement 21: Follower growth mini chart ────────────────────── */}
+      <FollowerGrowthChart followers={followers} currentUser={currentUser} />
+
+      {/* ── Improvement 22: Profile export as image ───────────────────────── */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-xs font-bold text-gs-muted uppercase tracking-wider">Export Profile</div>
+          <button onClick={() => setShowExportPreview(!showExportPreview)} className="text-[10px] text-gs-accent bg-transparent border-none cursor-pointer font-semibold hover:underline p-0">
+            {showExportPreview ? 'Hide' : 'Preview'} Export
+          </button>
+        </div>
+        {showExportPreview && (
+          <div className="bg-gs-card border border-gs-border rounded-xl p-4">
+            <div className="bg-gradient-to-br from-[#111] to-[#0a0a0a] rounded-xl p-5 border border-[#222] mb-3">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-12 h-12 rounded-full bg-gs-accent/20 flex items-center justify-center text-gs-accent text-lg font-bold">{(profile.displayName || currentUser)[0].toUpperCase()}</div>
+                <div>
+                  <div className="text-sm font-extrabold text-gs-text">{profile.displayName || currentUser}</div>
+                  <div className="text-[10px] text-gs-accent font-mono">@{currentUser}</div>
+                </div>
+              </div>
+              <div className="flex gap-3 mb-2">
+                <div className="text-center"><div className="text-sm font-extrabold text-gs-text">{mine.length}</div><div className="text-[8px] text-gs-faint">Records</div></div>
+                <div className="text-center"><div className="text-sm font-extrabold text-gs-text">{(followers || []).length}</div><div className="text-[8px] text-gs-faint">Followers</div></div>
+                <div className="text-center"><div className="text-sm font-extrabold text-gs-text">{collectionValue > 0 ? `$${collectionValue}` : '$0'}</div><div className="text-[8px] text-gs-faint">Value</div></div>
+              </div>
+              <div className="text-[8px] text-gs-faint text-center mt-2 font-mono">groovestack.co/u/{currentUser}</div>
+            </div>
+            <button onClick={() => {
+              const text = `${profile.displayName || currentUser} (@${currentUser}) on GrooveStack\nRecords: ${mine.length} | Followers: ${(followers || []).length} | Value: $${collectionValue}\n${profileUrl}`;
+              navigator.clipboard?.writeText(text);
+            }} className="gs-btn-secondary w-full py-2 text-[10px]">Copy as Text</button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Improvement 23: Collection value forecast ─────────────────────── */}
+      <CollectionValueForecast records={records} currentUser={currentUser} />
 
       {/* ── New Improvement 3: Trade History Visualization ─────────────────── */}
       <TradeHistoryChart offers={[]} currentUser={currentUser} />
@@ -1643,16 +2123,33 @@ export default function ProfileScreen({ records, currentUser, profile, onEdit, f
             <div className="flex flex-col gap-2">
               {wishlist.map(w => {
                 const matchedRecord = records.find(r => r.album.toLowerCase() === w.album.toLowerCase() && r.artist.toLowerCase() === w.artist.toLowerCase());
+                const priority = wishlistPriorities[w.id] || 'normal';
+                const priorityColors = { high: '#ef4444', normal: '#0ea5e9', low: '#666' };
+                const priorityLabels = { high: 'High', normal: 'Normal', low: 'Low' };
                 return (
                   <div key={w.id} onClick={() => matchedRecord && onDetail(matchedRecord)}
                     className="bg-gs-card border border-gs-border rounded-xl p-3 px-3.5 flex gap-3 items-center transition-colors duration-150"
-                    style={{ cursor: matchedRecord ? "pointer" : "default" }}
+                    style={{ cursor: matchedRecord ? "pointer" : "default", borderLeftWidth: 3, borderLeftColor: priorityColors[priority] }}
                     onMouseEnter={e => matchedRecord && (e.currentTarget.style.borderColor = (matchedRecord.accent || "#555") + "55")}
                     onMouseLeave={e => matchedRecord && (e.currentTarget.style.borderColor = "#1e1e1e")}>
                     {matchedRecord ? <AlbumArt album={matchedRecord.album} artist={matchedRecord.artist} accent={matchedRecord.accent} size={38} /> : <AlbumArt album={w.album} artist={w.artist} accent="#555" size={38} />}
                     <div className="flex-1 min-w-0">
                       <div className="text-[13px] font-bold text-gs-text">{w.album}</div>
                       <div className="text-[11px] text-[#666]">{w.artist}</div>
+                    </div>
+                    {/* Improvement 24: Wishlist priority display */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <select
+                        value={priority}
+                        onChange={e => { e.stopPropagation(); setWishlistPriorities(prev => ({ ...prev, [w.id]: e.target.value })); }}
+                        onClick={e => e.stopPropagation()}
+                        className="bg-[#111] border border-[#222] rounded text-[9px] font-mono px-1.5 py-0.5 cursor-pointer focus:outline-none"
+                        style={{ color: priorityColors[priority] }}
+                      >
+                        <option value="high">High</option>
+                        <option value="normal">Normal</option>
+                        <option value="low">Low</option>
+                      </select>
                     </div>
                     <button onClick={e => { e.stopPropagation(); if (window.confirm('Remove from wishlist?')) onRemoveWishlistItem(w.id); }} className="gs-btn-secondary px-3 py-[5px] rounded-[7px] text-[11px]">
                       Remove

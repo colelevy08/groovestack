@@ -313,6 +313,87 @@ export default function SettingsScreen({ currentUser, profile, deviceCode, vinyl
   const [autoDeleteMsgDays, setAutoDeleteMsgDays] = useState('90');
   const [anonymizeOldData, setAnonymizeOldData] = useState(false);
 
+  // ── Improvement C14: Settings version history ──
+  const [settingsVersions] = useState([
+    { version: '1.2.0', date: '2026-03-20', changes: 'Added parental controls, API key management, trusted contacts' },
+    { version: '1.1.3', date: '2026-03-10', changes: 'Updated privacy dashboard, fixed notification digest timing' },
+    { version: '1.1.2', date: '2026-02-28', changes: 'Added muted words, auto-archive conversations' },
+    { version: '1.1.0', date: '2026-02-15', changes: 'Experimental features, cache management, audit log' },
+    { version: '1.0.0', date: '2026-01-01', changes: 'Initial settings release' },
+  ]);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
+
+  // ── Improvement C15: Settings sync across devices ──
+  const [syncEnabled, setSyncEnabled] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
+  const [syncDevices] = useState([
+    { name: 'MacBook Pro', lastSync: '2026-03-20 09:15', status: 'synced' },
+    { name: 'iPhone 15', lastSync: '2026-03-20 08:42', status: 'synced' },
+    { name: 'iPad Air', lastSync: '2026-03-19 22:10', status: 'pending' },
+  ]);
+
+  // ── Improvement C16: Parental controls ──
+  const [parentalEnabled, setParentalEnabled] = useState(false);
+  const [parentalPin, setParentalPin] = useState('');
+  const [hideExplicit, setHideExplicit] = useState(false);
+  const [purchaseLimit, setPurchaseLimit] = useState('none');
+  const [restrictMessaging, setRestrictMessaging] = useState(false);
+
+  // ── Improvement C17: Content filtering options ──
+  const [filterExplicit, setFilterExplicit] = useState(false);
+  const [filterBootlegs, setFilterBootlegs] = useState(false);
+  const [filterMinRating, setFilterMinRating] = useState('none');
+  const [filterGenres, setFilterGenres] = useState([]);
+  const [showGenreFilter, setShowGenreFilter] = useState(false);
+  const genreFilterOptions = useMemo(() => ['Rock', 'Jazz', 'Electronic', 'Hip-Hop', 'Metal', 'Pop', 'Punk', 'R&B', 'Soul', 'Folk', 'Classical', 'Funk'], []);
+
+  // ── Improvement C18: Marketplace seller settings ──
+  const [sellerMode, setSellerMode] = useState(false);
+  const [storeName, setStoreName] = useState('');
+  const [storeDescription, setStoreDescription] = useState('');
+  const [returnPolicy, setReturnPolicy] = useState('30days');
+  const [sellerBadge, setSellerBadge] = useState(true);
+
+  // ── Improvement C19: Notification test button ──
+  const [notifTestSent, setNotifTestSent] = useState(false);
+
+  // ── Improvement C20: Account linking (Spotify, Last.fm) ──
+  const [linkingStatus, setLinkingStatus] = useState({});
+  const linkablePlatforms = useMemo(() => [
+    { name: 'Spotify', icon: 'S', color: '#1db954', desc: 'Sync listening history and playlists', scopes: 'read playback, read library' },
+    { name: 'Last.fm', icon: 'L', color: '#d51007', desc: 'Scrobble plays and import listening data', scopes: 'read, write' },
+    { name: 'Apple Music', icon: 'A', color: '#fc3c44', desc: 'Import playlists and favorites', scopes: 'read library' },
+    { name: 'Tidal', icon: 'T', color: '#000000', desc: 'High-fidelity streaming integration', scopes: 'read, play' },
+  ], []);
+
+  // ── Improvement C21: Data download request ──
+  const [dataDownloadRequested, setDataDownloadRequested] = useState(false);
+  const [dataDownloadFormat, setDataDownloadFormat] = useState('json');
+  const [dataDownloadScope, setDataDownloadScope] = useState(['collection', 'activity', 'messages', 'settings']);
+
+  // ── Improvement C22: Account freeze option ──
+  const [showFreezeConfirm, setShowFreezeConfirm] = useState(false);
+  const [freezeDuration, setFreezeDuration] = useState('30');
+  const [accountFrozen, setAccountFrozen] = useState(false);
+
+  // ── Improvement C23: Trusted contacts setup ──
+  const [trustedContacts, setTrustedContacts] = useState([]);
+  const [newTrustedContact, setNewTrustedContact] = useState('');
+
+  // ── Improvement C24: Emergency access settings ──
+  const [emergencyAccessEnabled, setEmergencyAccessEnabled] = useState(false);
+  const [emergencyContactEmail, setEmergencyContactEmail] = useState('');
+  const [emergencyWaitPeriod, setEmergencyWaitPeriod] = useState('7');
+  const [emergencyAccessSaved, setEmergencyAccessSaved] = useState(false);
+
+  // ── Improvement C25: API key management UI ──
+  const [apiKeys, setApiKeys] = useState([
+    { name: 'Production Key', key: 'gs_live_...a4f2', created: '2026-02-15', lastUsed: '2026-03-20', active: true },
+    { name: 'Development Key', key: 'gs_test_...b7c3', created: '2026-03-01', lastUsed: '2026-03-19', active: true },
+  ]);
+  const [showNewApiKeyForm, setShowNewApiKeyForm] = useState(false);
+  const [newApiKeyName, setNewApiKeyName] = useState('');
+
   // Micro-improvement 24: Settings search/filter
   const [settingsSearch, setSettingsSearch] = useState('');
   const settingsSections = useMemo(() => [
@@ -324,6 +405,13 @@ export default function SettingsScreen({ currentUser, profile, deviceCode, vinyl
     { id: 'devices', label: 'Devices', keywords: 'vinyl buddy device connected accounts' },
     { id: 'data', label: 'Data', keywords: 'export import cache backup storage delete' },
     { id: 'about', label: 'About', keywords: 'version changelog terms privacy policy' },
+    { id: 'parental', label: 'Parental Controls', keywords: 'parental controls pin restrict children' },
+    { id: 'filtering', label: 'Content Filtering', keywords: 'filter explicit bootleg genre rating' },
+    { id: 'seller', label: 'Seller Settings', keywords: 'seller store marketplace return policy' },
+    { id: 'streaming', label: 'Streaming Links', keywords: 'spotify lastfm apple music tidal link' },
+    { id: 'apikeys', label: 'API Keys', keywords: 'api key developer token integration' },
+    { id: 'emergency', label: 'Emergency Access', keywords: 'emergency access trusted contact recovery' },
+    { id: 'freeze', label: 'Account Freeze', keywords: 'freeze deactivate pause account' },
   ], []);
   const filteredSections = useMemo(() => {
     if (!settingsSearch.trim()) return null;
@@ -425,6 +513,76 @@ export default function SettingsScreen({ currentUser, profile, deviceCode, vinyl
       i === index ? { ...acc, connected: !acc.connected, username: acc.connected ? null : `@${currentUser}` } : acc
     ));
   }, [currentUser]);
+
+  // Improvement C15: Sync handler
+  const handleSyncNow = useCallback(() => {
+    setLastSyncTime(new Date().toLocaleTimeString());
+    setTimeout(() => setLastSyncTime(null), 3000);
+  }, []);
+
+  // Improvement C19: Test notification handler
+  const handleTestNotification = useCallback(() => {
+    setNotifTestSent(true);
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('GrooveStack Test', { body: 'This is a test notification!' });
+    } else {
+      window.alert('Test notification sent! (Notification permission not granted for browser push)');
+    }
+    setTimeout(() => setNotifTestSent(false), 2500);
+  }, []);
+
+  // Improvement C21: Data download handler
+  const handleRequestDataDownload = useCallback(() => {
+    setDataDownloadRequested(true);
+    setTimeout(() => setDataDownloadRequested(false), 5000);
+  }, []);
+
+  // Improvement C22: Account freeze handler
+  const handleFreezeAccount = useCallback(() => {
+    setAccountFrozen(true);
+    setShowFreezeConfirm(false);
+    setTimeout(() => setAccountFrozen(false), 3000);
+  }, []);
+
+  // Improvement C23: Trusted contacts handlers
+  const addTrustedContact = useCallback(() => {
+    if (!newTrustedContact.trim()) return;
+    setTrustedContacts(prev => [...prev, { email: newTrustedContact.trim(), addedAt: new Date().toISOString().split('T')[0] }]);
+    setNewTrustedContact('');
+  }, [newTrustedContact]);
+
+  const removeTrustedContact = useCallback((email) => {
+    setTrustedContacts(prev => prev.filter(c => c.email !== email));
+  }, []);
+
+  // Improvement C24: Emergency access save handler
+  const handleSaveEmergencyAccess = useCallback(() => {
+    setEmergencyAccessSaved(true);
+    setTimeout(() => setEmergencyAccessSaved(false), 2000);
+  }, []);
+
+  // Improvement C25: API key handlers
+  const handleCreateApiKey = useCallback(() => {
+    if (!newApiKeyName.trim()) return;
+    const newKey = {
+      name: newApiKeyName.trim(),
+      key: `gs_${Math.random() > 0.5 ? 'live' : 'test'}_...${Math.random().toString(36).slice(2, 6)}`,
+      created: new Date().toISOString().split('T')[0],
+      lastUsed: 'Never',
+      active: true,
+    };
+    setApiKeys(prev => [...prev, newKey]);
+    setNewApiKeyName('');
+    setShowNewApiKeyForm(false);
+  }, [newApiKeyName]);
+
+  const handleRevokeApiKey = useCallback((keyToRevoke) => {
+    setApiKeys(prev => prev.map(k => k.key === keyToRevoke ? { ...k, active: false } : k));
+  }, []);
+
+  const handleDeleteApiKey = useCallback((keyToDelete) => {
+    setApiKeys(prev => prev.filter(k => k.key !== keyToDelete));
+  }, []);
 
   const visibleActivity = showAllActivity ? ACTIVITY_LOG : ACTIVITY_LOG.slice(0, 3);
 
@@ -1798,6 +1956,423 @@ export default function SettingsScreen({ currentUser, profile, deviceCode, vinyl
         <SettingsRow label="Anonymize Old Data" description="Strip personal identifiers from data older than retention period">
           <Toggle on={anonymizeOldData} onToggle={() => setAnonymizeOldData(v => !v)} />
         </SettingsRow>
+      </SettingsCard>
+
+      {/* ── Improvement C14: Settings Version History ────────── */}
+      <SectionHeader
+        title="Settings History"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>}
+      />
+      <SettingsCard>
+        <SettingsRow label="Settings Version History" description="View past changes to your settings configuration">
+          <button
+            onClick={() => setShowVersionHistory(!showVersionHistory)}
+            className="text-[11px] text-gs-accent bg-transparent border border-gs-accent/30 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-gs-accent/10 transition-colors"
+          >
+            {showVersionHistory ? 'Hide' : 'View'}
+          </button>
+        </SettingsRow>
+        {showVersionHistory && (
+          <div className="mt-3 pt-3 border-t border-[#111] flex flex-col gap-2">
+            {settingsVersions.map((v, i) => (
+              <div key={v.version} className={`flex items-start gap-3 py-2 ${i < settingsVersions.length - 1 ? 'border-b border-[#111]' : ''}`}>
+                <div className="shrink-0">
+                  <span className="text-[11px] font-mono font-bold text-gs-accent">{v.version}</span>
+                  <div className="text-[9px] text-gs-faint font-mono">{v.date}</div>
+                </div>
+                <div className="text-[10px] text-gs-dim">{v.changes}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </SettingsCard>
+
+      {/* ── Improvement C15: Settings Sync Across Devices ──── */}
+      <SectionHeader
+        title="Settings Sync"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10" /><polyline points="23 20 23 14 17 14" /><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15" /></svg>}
+      />
+      <SettingsCard>
+        <SettingsRow label="Sync Settings" description="Keep your preferences synchronized across all devices">
+          <Toggle on={syncEnabled} onToggle={() => setSyncEnabled(v => !v)} />
+        </SettingsRow>
+        {syncEnabled && (
+          <div className="mt-3 pt-3 border-t border-[#111]">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-[10px] text-gs-dim font-mono">Connected Devices</span>
+              <button onClick={handleSyncNow} className="text-[10px] text-gs-accent bg-transparent border border-gs-accent/30 rounded-lg px-2.5 py-1 cursor-pointer hover:bg-gs-accent/10 transition-colors">
+                {lastSyncTime ? `Synced at ${lastSyncTime}` : 'Sync Now'}
+              </button>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {syncDevices.map(device => (
+                <div key={device.name} className="flex items-center justify-between py-1.5 px-2 bg-[#111] rounded-lg">
+                  <div>
+                    <div className="text-[11px] font-semibold text-gs-text">{device.name}</div>
+                    <div className="text-[9px] text-gs-faint font-mono">Last sync: {device.lastSync}</div>
+                  </div>
+                  <span className={`text-[9px] font-mono ${device.status === 'synced' ? 'text-[#22c55e]' : 'text-[#f59e0b]'}`}>{device.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </SettingsCard>
+
+      {/* ── Improvement C16: Parental Controls ──────────────── */}
+      <SectionHeader
+        title="Parental Controls"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>}
+      />
+      <SettingsCard>
+        <SettingsRow label="Enable Parental Controls" description="Restrict content and purchases for supervised accounts">
+          <Toggle on={parentalEnabled} onToggle={() => setParentalEnabled(v => !v)} />
+        </SettingsRow>
+        {parentalEnabled && (
+          <div className="mt-3 pt-3 border-t border-[#111]">
+            <div className="mb-3">
+              <label className="text-[10px] text-gs-dim font-mono block mb-1">PIN Code</label>
+              <input
+                type="password"
+                value={parentalPin}
+                onChange={e => setParentalPin(e.target.value)}
+                placeholder="Set 4-digit PIN"
+                maxLength={4}
+                className="w-32 py-1.5 px-2.5 bg-[#111] rounded-lg text-xs text-gs-text border border-[#222] outline-none focus:border-gs-accent transition-colors font-mono"
+              />
+            </div>
+            <SettingsRow label="Hide Explicit Content" description="Filter out records with explicit content labels">
+              <Toggle on={hideExplicit} onToggle={() => setHideExplicit(v => !v)} />
+            </SettingsRow>
+            <SettingsRow label="Restrict Messaging" description="Disable direct messaging for this account">
+              <Toggle on={restrictMessaging} onToggle={() => setRestrictMessaging(v => !v)} />
+            </SettingsRow>
+            <SettingsRow label="Purchase Limit" description="Set a spending limit per month">
+              <div className="flex gap-1">
+                {[{ l: 'None', v: 'none' }, { l: '$25', v: '25' }, { l: '$50', v: '50' }, { l: '$100', v: '100' }].map(opt => (
+                  <button key={opt.v} onClick={() => setPurchaseLimit(opt.v)} className={`text-[10px] px-2 py-1 rounded-lg font-mono cursor-pointer transition-all border ${purchaseLimit === opt.v ? 'bg-[#ef444411] border-[#ef444433] text-[#ef4444] font-bold' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}>{opt.l}</button>
+                ))}
+              </div>
+            </SettingsRow>
+          </div>
+        )}
+      </SettingsCard>
+
+      {/* ── Improvement C17: Content Filtering Options ──────── */}
+      <SectionHeader
+        title="Content Filtering"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>}
+      />
+      <SettingsCard>
+        <SettingsRow label="Filter Explicit Content" description="Hide records tagged as explicit from browse and search">
+          <Toggle on={filterExplicit} onToggle={() => setFilterExplicit(v => !v)} />
+        </SettingsRow>
+        <SettingsRow label="Filter Bootleg Pressings" description="Exclude known bootleg and unofficial pressings">
+          <Toggle on={filterBootlegs} onToggle={() => setFilterBootlegs(v => !v)} />
+        </SettingsRow>
+        <SettingsRow label="Minimum Rating" description="Only show records above a minimum community rating">
+          <div className="flex gap-1">
+            {[{ l: 'Any', v: 'none' }, { l: '3+', v: '3' }, { l: '4+', v: '4' }, { l: '4.5+', v: '4.5' }].map(opt => (
+              <button key={opt.v} onClick={() => setFilterMinRating(opt.v)} className={`text-[10px] px-2 py-1 rounded-lg font-mono cursor-pointer transition-all border ${filterMinRating === opt.v ? 'bg-[#f9731611] border-[#f9731633] text-[#f97316] font-bold' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}>{opt.l}</button>
+            ))}
+          </div>
+        </SettingsRow>
+        <div className="mt-2 pt-2 border-t border-[#111]">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-semibold text-gs-text">Genre Filters</span>
+            <button onClick={() => setShowGenreFilter(!showGenreFilter)} className="text-[10px] text-gs-accent bg-transparent border-none cursor-pointer hover:underline">{showGenreFilter ? 'Hide' : 'Show'}</button>
+          </div>
+          {showGenreFilter && (
+            <div className="flex flex-wrap gap-1.5">
+              {genreFilterOptions.map(genre => {
+                const active = filterGenres.includes(genre);
+                return (
+                  <button key={genre} onClick={() => setFilterGenres(prev => active ? prev.filter(g => g !== genre) : [...prev, genre])} className={`text-[10px] px-2 py-1 rounded-lg cursor-pointer transition-all border ${active ? 'bg-[#f9731611] border-[#f9731633] text-[#f97316] font-bold' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}>{genre}</button>
+                );
+              })}
+            </div>
+          )}
+          {filterGenres.length > 0 && <div className="mt-1.5 text-[9px] text-gs-faint">Hiding: {filterGenres.join(', ')}</div>}
+        </div>
+      </SettingsCard>
+
+      {/* ── Improvement C18: Marketplace Seller Settings ────── */}
+      <SectionHeader
+        title="Seller Settings"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" /><line x1="3" y1="6" x2="21" y2="6" /><path d="M16 10a4 4 0 01-8 0" /></svg>}
+      />
+      <SettingsCard>
+        <SettingsRow label="Seller Mode" description="Enable marketplace seller features and your store page">
+          <Toggle on={sellerMode} onToggle={() => setSellerMode(v => !v)} />
+        </SettingsRow>
+        {sellerMode && (
+          <div className="mt-3 pt-3 border-t border-[#111]">
+            <FormInput label="Store Name" value={storeName} onChange={setStoreName} placeholder="My Vinyl Shop" />
+            <div className="mb-2">
+              <label className="text-[10px] text-gs-dim font-mono block mb-1">Store Description</label>
+              <textarea
+                value={storeDescription}
+                onChange={e => setStoreDescription(e.target.value)}
+                placeholder="Tell buyers about your store..."
+                className="w-full py-1.5 px-2.5 bg-[#111] rounded-lg text-xs text-gs-text border border-[#222] outline-none focus:border-gs-accent transition-colors font-mono resize-none h-16"
+              />
+            </div>
+            <SettingsRow label="Return Policy" description="Default return policy for listings">
+              <div className="flex gap-1">
+                {[{ l: 'None', v: 'none' }, { l: '14d', v: '14days' }, { l: '30d', v: '30days' }].map(opt => (
+                  <button key={opt.v} onClick={() => setReturnPolicy(opt.v)} className={`text-[10px] px-2 py-1 rounded-lg font-mono cursor-pointer transition-all border ${returnPolicy === opt.v ? 'bg-[#22c55e11] border-[#22c55e33] text-[#22c55e] font-bold' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}>{opt.l}</button>
+                ))}
+              </div>
+            </SettingsRow>
+            <SettingsRow label="Show Seller Badge" description="Display a verified seller badge on your profile">
+              <Toggle on={sellerBadge} onToggle={() => setSellerBadge(v => !v)} />
+            </SettingsRow>
+          </div>
+        )}
+      </SettingsCard>
+
+      {/* ── Improvement C19: Notification Test Button ──────── */}
+      <SettingsCard>
+        <SettingsRow label="Test Notifications" description="Send yourself a test notification to verify delivery">
+          <button
+            onClick={handleTestNotification}
+            className={`text-[11px] bg-transparent border rounded-lg px-3 py-1.5 cursor-pointer transition-colors ${notifTestSent ? 'text-[#22c55e] border-[#22c55e33]' : 'text-gs-accent border-gs-accent/30 hover:bg-gs-accent/10'}`}
+          >
+            {notifTestSent ? 'Sent!' : 'Send Test'}
+          </button>
+        </SettingsRow>
+      </SettingsCard>
+
+      {/* ── Improvement C20: Account Linking ───────────────── */}
+      <SectionHeader
+        title="Link Streaming Accounts"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1db954" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[11px] text-gs-dim mb-3">Connect streaming services to enhance your GrooveStack experience.</div>
+        <div className="flex flex-col gap-1.5">
+          {linkablePlatforms.map(platform => {
+            const status = linkingStatus[platform.name];
+            return (
+              <div key={platform.name} className="flex items-center justify-between py-2.5 border-b border-[#111] last:border-b-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white shrink-0" style={{ background: platform.color }}>{platform.icon}</div>
+                  <div>
+                    <div className="text-[12px] font-semibold text-gs-text">{platform.name}</div>
+                    <div className="text-[10px] text-gs-dim">{platform.desc}</div>
+                    <div className="text-[9px] text-gs-faint font-mono mt-0.5">Scopes: {platform.scopes}</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { setLinkingStatus(prev => ({ ...prev, [platform.name]: 'linking' })); setTimeout(() => setLinkingStatus(prev => ({ ...prev, [platform.name]: 'linked' })), 1500); }}
+                  className={`text-[11px] bg-transparent border rounded-lg px-3 py-1.5 cursor-pointer transition-colors ${status === 'linked' ? 'text-[#22c55e] border-[#22c55e33]' : status === 'linking' ? 'text-[#f59e0b] border-[#f59e0b33]' : 'text-gs-accent border-gs-accent/30 hover:bg-gs-accent/10'}`}
+                >
+                  {status === 'linked' ? 'Linked' : status === 'linking' ? 'Linking...' : 'Link'}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </SettingsCard>
+
+      {/* ── Improvement C21: Data Download Request ─────────── */}
+      <SectionHeader
+        title="Data Download"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[11px] text-gs-dim mb-3">Request a complete download of all your GrooveStack data.</div>
+        <div className="mb-3">
+          <div className="text-[10px] text-gs-faint font-mono mb-1.5">Format</div>
+          <div className="flex gap-1">
+            {['json', 'csv', 'xml'].map(f => (
+              <button key={f} onClick={() => setDataDownloadFormat(f)} className={`text-[10px] px-2.5 py-1 rounded-lg font-mono cursor-pointer transition-all border uppercase ${dataDownloadFormat === f ? 'bg-[#a78bfa11] border-[#a78bfa33] text-[#a78bfa] font-bold' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}>{f}</button>
+            ))}
+          </div>
+        </div>
+        <div className="mb-3">
+          <div className="text-[10px] text-gs-faint font-mono mb-1.5">Include</div>
+          <div className="flex flex-wrap gap-2">
+            {['collection', 'activity', 'messages', 'settings', 'purchases', 'listening history'].map(scope => {
+              const active = dataDownloadScope.includes(scope);
+              return (
+                <label key={scope} className="flex items-center gap-1.5 text-[10px] text-gs-dim cursor-pointer select-none capitalize">
+                  <input type="checkbox" checked={active} onChange={() => setDataDownloadScope(prev => active ? prev.filter(s => s !== scope) : [...prev, scope])} className="accent-[#a78bfa] w-3 h-3" />
+                  {scope}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+        <button
+          onClick={handleRequestDataDownload}
+          className={`text-[11px] bg-transparent border rounded-lg px-4 py-2 cursor-pointer transition-colors font-semibold ${dataDownloadRequested ? 'text-[#22c55e] border-[#22c55e33]' : 'text-gs-accent border-gs-accent/30 hover:bg-gs-accent/10'}`}
+        >
+          {dataDownloadRequested ? 'Request Submitted! Check email in 24h.' : 'Request Download'}
+        </button>
+      </SettingsCard>
+
+      {/* ── Improvement C22: Account Freeze Option ─────────── */}
+      <SectionHeader
+        title="Account Freeze"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2v20" /><path d="M20 16l-4-4 4-4" /><path d="M4 8l4 4-4 4" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[11px] text-gs-dim mb-3">Temporarily freeze your account. Your profile, collection, and listings will be hidden until you reactivate.</div>
+        {accountFrozen ? (
+          <div className="flex items-center gap-2 py-2 px-3 rounded-lg bg-[#06b6d408] border border-[#06b6d422]">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#06b6d4" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+            <span className="text-[10px] text-[#06b6d4] font-semibold">Account freeze requested for {freezeDuration} days</span>
+          </div>
+        ) : !showFreezeConfirm ? (
+          <div>
+            <div className="mb-3">
+              <div className="text-[10px] text-gs-faint font-mono mb-1.5">Freeze Duration</div>
+              <div className="flex gap-1">
+                {['7', '14', '30', '60', '90'].map(d => (
+                  <button key={d} onClick={() => setFreezeDuration(d)} className={`text-[10px] px-2.5 py-1 rounded-lg font-mono cursor-pointer transition-all border ${freezeDuration === d ? 'bg-[#06b6d411] border-[#06b6d433] text-[#06b6d4] font-bold' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}>{d}d</button>
+                ))}
+              </div>
+            </div>
+            <button onClick={() => setShowFreezeConfirm(true)} className="text-[11px] text-[#06b6d4] bg-transparent border border-[#06b6d433] rounded-lg px-3 py-1.5 cursor-pointer hover:bg-[#06b6d411] transition-colors">
+              Freeze Account
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-[#06b6d4] font-semibold">Freeze for {freezeDuration} days?</span>
+            <button onClick={handleFreezeAccount} className="text-[10px] px-2.5 py-1 rounded bg-[#06b6d4] text-white border-none cursor-pointer font-semibold">Confirm</button>
+            <button onClick={() => setShowFreezeConfirm(false)} className="text-[10px] px-2.5 py-1 rounded bg-[#222] text-gs-dim border border-gs-border cursor-pointer">Cancel</button>
+          </div>
+        )}
+      </SettingsCard>
+
+      {/* ── Improvement C23: Trusted Contacts Setup ─────────── */}
+      <SectionHeader
+        title="Trusted Contacts"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[11px] text-gs-dim mb-3">Trusted contacts can help recover your account or receive notifications if something goes wrong.</div>
+        {trustedContacts.length > 0 && (
+          <div className="flex flex-col gap-1.5 mb-3">
+            {trustedContacts.map(contact => (
+              <div key={contact.email} className="flex items-center justify-between py-2 px-3 bg-[#111] rounded-lg">
+                <div>
+                  <div className="text-[11px] font-semibold text-gs-text">{contact.email}</div>
+                  <div className="text-[9px] text-gs-faint font-mono">Added {contact.addedAt}</div>
+                </div>
+                <button onClick={() => removeTrustedContact(contact.email)} className="text-[10px] text-red-400 bg-transparent border border-red-400/30 rounded-lg px-2 py-1 cursor-pointer hover:bg-red-400/10 transition-colors">Remove</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <input
+            type="email"
+            value={newTrustedContact}
+            onChange={e => setNewTrustedContact(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && addTrustedContact()}
+            placeholder="Enter email address..."
+            className="flex-1 py-1.5 px-2.5 bg-[#111] rounded-lg text-xs text-gs-text border border-[#222] outline-none focus:border-gs-accent transition-colors"
+          />
+          <button onClick={addTrustedContact} disabled={!newTrustedContact.trim()} className={`text-[11px] px-3 py-1.5 rounded-lg border transition-colors ${newTrustedContact.trim() ? 'text-gs-accent border-gs-accent/30 cursor-pointer hover:bg-gs-accent/10' : 'text-gs-faint border-[#222] cursor-default'}`}>Add</button>
+        </div>
+        {trustedContacts.length >= 3 && (
+          <div className="mt-2 text-[9px] text-gs-faint">Maximum of 5 trusted contacts recommended.</div>
+        )}
+      </SettingsCard>
+
+      {/* ── Improvement C24: Emergency Access Settings ──────── */}
+      <SectionHeader
+        title="Emergency Access"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>}
+      />
+      <SettingsCard>
+        <SettingsRow label="Enable Emergency Access" description="Allow a designated contact to access your account in emergencies">
+          <Toggle on={emergencyAccessEnabled} onToggle={() => setEmergencyAccessEnabled(v => !v)} />
+        </SettingsRow>
+        {emergencyAccessEnabled && (
+          <div className="mt-3 pt-3 border-t border-[#111]">
+            <div className="mb-3">
+              <label className="text-[10px] text-gs-dim font-mono block mb-1">Emergency Contact Email</label>
+              <input
+                type="email"
+                value={emergencyContactEmail}
+                onChange={e => setEmergencyContactEmail(e.target.value)}
+                placeholder="emergency@example.com"
+                className="w-full py-1.5 px-2.5 bg-[#111] rounded-lg text-xs text-gs-text border border-[#222] outline-none focus:border-gs-accent transition-colors"
+              />
+            </div>
+            <SettingsRow label="Wait Period" description="Days before emergency access is granted after a request">
+              <div className="flex gap-1">
+                {['3', '7', '14', '30'].map(d => (
+                  <button key={d} onClick={() => setEmergencyWaitPeriod(d)} className={`text-[10px] px-2 py-1 rounded-lg font-mono cursor-pointer transition-all border ${emergencyWaitPeriod === d ? 'bg-[#ef444411] border-[#ef444433] text-[#ef4444] font-bold' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}>{d}d</button>
+                ))}
+              </div>
+            </SettingsRow>
+            <button onClick={handleSaveEmergencyAccess} className={`mt-2 text-[11px] bg-transparent border rounded-lg px-4 py-2 cursor-pointer transition-colors font-semibold ${emergencyAccessSaved ? 'text-[#22c55e] border-[#22c55e33]' : 'text-gs-accent border-gs-accent/30 hover:bg-gs-accent/10'}`}>
+              {emergencyAccessSaved ? 'Saved!' : 'Save Emergency Settings'}
+            </button>
+            <div className="mt-2 flex items-start gap-2 py-2 px-3 rounded-lg bg-red-500/5 border border-red-500/15">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" className="shrink-0 mt-0.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
+              <span className="text-[9px] text-red-400">Emergency access grants full account control. Use carefully and only designate someone you trust completely.</span>
+            </div>
+          </div>
+        )}
+      </SettingsCard>
+
+      {/* ── Improvement C25: API Key Management UI ─────────── */}
+      <SectionHeader
+        title="API Keys"
+        icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" /></svg>}
+      />
+      <SettingsCard>
+        <div className="text-[11px] text-gs-dim mb-3">Manage API keys for third-party integrations and custom applications.</div>
+        {apiKeys.length > 0 && (
+          <div className="flex flex-col gap-1.5 mb-3">
+            {apiKeys.map(apiKey => (
+              <div key={apiKey.key} className={`flex items-center justify-between py-2.5 px-3 rounded-lg border ${apiKey.active ? 'bg-[#111] border-[#1a1a1a]' : 'bg-red-500/5 border-red-500/15'}`}>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-semibold text-gs-text">{apiKey.name}</span>
+                    <span className={`text-[8px] px-1.5 py-px rounded-full ${apiKey.active ? 'bg-[#22c55e11] text-[#22c55e] border border-[#22c55e33]' : 'bg-red-500/10 text-red-400 border border-red-500/30'}`}>
+                      {apiKey.active ? 'Active' : 'Revoked'}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-gs-faint font-mono mt-0.5">{apiKey.key}</div>
+                  <div className="text-[9px] text-gs-faint font-mono">Created: {apiKey.created} &middot; Last used: {apiKey.lastUsed}</div>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  {apiKey.active && (
+                    <button onClick={() => handleRevokeApiKey(apiKey.key)} className="text-[10px] text-[#f59e0b] bg-transparent border border-[#f59e0b33] rounded-lg px-2 py-1 cursor-pointer hover:bg-[#f59e0b11] transition-colors">Revoke</button>
+                  )}
+                  <button onClick={() => handleDeleteApiKey(apiKey.key)} className="text-[10px] text-red-400 bg-transparent border border-red-400/30 rounded-lg px-2 py-1 cursor-pointer hover:bg-red-400/10 transition-colors">Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {!showNewApiKeyForm ? (
+          <button onClick={() => setShowNewApiKeyForm(true)} className="text-[11px] text-gs-accent bg-transparent border border-gs-accent/30 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-gs-accent/10 transition-colors">
+            + Create New Key
+          </button>
+        ) : (
+          <div className="flex gap-2 items-center">
+            <input
+              type="text"
+              value={newApiKeyName}
+              onChange={e => setNewApiKeyName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleCreateApiKey()}
+              placeholder="Key name (e.g. 'My App')"
+              className="flex-1 py-1.5 px-2.5 bg-[#111] rounded-lg text-xs text-gs-text border border-[#222] outline-none focus:border-gs-accent transition-colors"
+              autoFocus
+            />
+            <button onClick={handleCreateApiKey} disabled={!newApiKeyName.trim()} className={`text-[11px] px-3 py-1.5 rounded-lg border transition-colors ${newApiKeyName.trim() ? 'text-gs-accent border-gs-accent/30 cursor-pointer hover:bg-gs-accent/10' : 'text-gs-faint border-[#222] cursor-default'}`}>Create</button>
+            <button onClick={() => { setShowNewApiKeyForm(false); setNewApiKeyName(''); }} className="text-[11px] text-gs-faint bg-transparent border border-gs-border rounded-lg px-3 py-1.5 cursor-pointer">Cancel</button>
+          </div>
+        )}
+        <div className="mt-2 text-[9px] text-gs-faint">API keys provide access to your account data. Keep them secret and rotate them regularly.</div>
       </SettingsCard>
 
       {/* ── Improvement 25: About / Credits ────────────────── */}

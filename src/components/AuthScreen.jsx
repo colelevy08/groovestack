@@ -1,22 +1,379 @@
 // Login / Signup screen — shown as modal overlay when guests try restricted actions.
 // Matches GrooveStack's dark theme with Tailwind classes.
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { signUp, signIn, checkUsername } from '../utils/supabase';
 import { USER_PROFILES } from '../constants';
 import FormInput from './ui/FormInput';
 
+/* ── Improvement 1: Animated background particles ─────────── */
+function BackgroundParticles() {
+  const canvasRef = useRef(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let animId;
+    const particles = Array.from({ length: 40 }, () => ({
+      x: Math.random() * 500,
+      y: Math.random() * 700,
+      r: Math.random() * 2 + 0.5,
+      dx: (Math.random() - 0.5) * 0.4,
+      dy: (Math.random() - 0.5) * 0.4,
+      opacity: Math.random() * 0.4 + 0.1,
+    }));
+    const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; };
+    resize();
+    window.addEventListener('resize', resize);
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach(p => {
+        p.x += p.dx; p.y += p.dy;
+        if (p.x < 0 || p.x > canvas.width) p.dx *= -1;
+        if (p.y < 0 || p.y > canvas.height) p.dy *= -1;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(14,165,233,${p.opacity})`;
+        ctx.fill();
+      });
+      // Draw connections
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+          const dist = Math.hypot(particles[i].x - particles[j].x, particles[i].y - particles[j].y);
+          if (dist < 100) {
+            ctx.beginPath();
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.strokeStyle = `rgba(14,165,233,${0.06 * (1 - dist / 100)})`;
+            ctx.stroke();
+          }
+        }
+      }
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => { cancelAnimationFrame(animId); window.removeEventListener('resize', resize); };
+  }, []);
+  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none z-0" />;
+}
+
+/* ── Improvement 2: Social proof counter ──────────────────── */
+function SocialProofCounter() {
+  const [count, setCount] = useState(0);
+  const target = useMemo(() => Math.floor(Math.random() * 40) + 18, []);
+  useEffect(() => {
+    if (count >= target) return;
+    const timer = setTimeout(() => setCount(c => Math.min(c + 1, target)), 50);
+    return () => clearTimeout(timer);
+  }, [count, target]);
+  return (
+    <div className="flex items-center justify-center gap-1.5 mt-2 mb-1 animate-fade-in">
+      <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+      <span className="text-[11px] text-gs-dim"><span className="text-emerald-400 font-bold">{count}</span> users joined today</span>
+    </div>
+  );
+}
+
+/* ── Improvement 3: Feature preview carousel ──────────────── */
+function FeatureCarousel() {
+  const features = [
+    { icon: "disc", title: "Track Your Collection", desc: "Catalog every record you own" },
+    { icon: "chart", title: "Value Insights", desc: "See what your collection is worth" },
+    { icon: "people", title: "Connect & Trade", desc: "Find collectors near you" },
+    { icon: "music", title: "Listening History", desc: "Track spins with Vinyl Buddy" },
+  ];
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setIdx(i => (i + 1) % features.length), 3500);
+    return () => clearInterval(t);
+  }, [features.length]);
+  const f = features[idx];
+  const icons = {
+    disc: <circle cx="12" cy="12" r="10" />,
+    chart: <><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></>,
+    people: <><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></>,
+    music: <><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></>,
+  };
+  return (
+    <div className="bg-[#111] border border-[#1a1a1a] rounded-xl px-4 py-3 mb-4 transition-all duration-500 min-h-[64px]">
+      <div key={idx} className="animate-fade-in flex items-center gap-3">
+        <div className="w-9 h-9 rounded-lg bg-gs-accent/10 border border-gs-accent/20 flex items-center justify-center shrink-0">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{icons[f.icon]}</svg>
+        </div>
+        <div>
+          <div className="text-[11px] font-bold text-gs-text">{f.title}</div>
+          <div className="text-[10px] text-gs-dim">{f.desc}</div>
+        </div>
+      </div>
+      <div className="flex gap-1 justify-center mt-2">
+        {features.map((_, i) => (
+          <div key={i} className={`w-1.5 h-1.5 rounded-full transition-colors ${i === idx ? 'bg-gs-accent' : 'bg-[#333]'}`} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ── Improvement 10: Welcome animation on first login ─────── */
+function WelcomeAnimation({ displayName, onContinue }) {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const timers = [
+      setTimeout(() => setStep(1), 500),
+      setTimeout(() => setStep(2), 1500),
+      setTimeout(() => setStep(3), 2500),
+    ];
+    return () => timers.forEach(clearTimeout);
+  }, []);
+  return (
+    <div className="flex items-center justify-center min-h-0 p-5">
+      <div className="w-[420px] max-w-full bg-gs-surface border border-gs-border rounded-2xl overflow-hidden shadow-2xl text-center py-12 px-8">
+        <div className={`transition-all duration-700 ${step >= 1 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-gs-accent/20 to-[#8b5cf6]/20 border-2 border-gs-accent/30 flex items-center justify-center mx-auto mb-4">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" />
+            </svg>
+          </div>
+        </div>
+        <div className={`transition-all duration-700 delay-200 ${step >= 2 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+          <h2 className="text-xl font-extrabold text-gs-text mb-1">Welcome to GrooveStack{displayName ? `, ${displayName}` : ''}!</h2>
+          <p className="text-[13px] text-gs-dim mb-6">Your vinyl journey starts now. Let's get you set up.</p>
+        </div>
+        <div className={`transition-all duration-700 delay-500 ${step >= 3 ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+          <button onClick={onContinue} className="gs-btn-gradient py-3 px-8 border-none rounded-[10px] text-sm font-bold cursor-pointer font-sans text-white">
+            Get Started
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Improvement 6: Account setup wizard ──────────────────── */
+function AccountSetupWizard({ onComplete }) {
+  const [wizStep, setWizStep] = useState(0);
+  const [favGenre, setFavGenre] = useState('');
+  const [bio, setBio] = useState('');
+  const [setupGoal, setSetupGoal] = useState('');
+  const genres = ['Rock', 'Jazz', 'Hip-Hop', 'Electronic', 'Classical', 'Soul/R&B', 'Country', 'Pop', 'Punk', 'Metal'];
+  const goals = ['Build my collection', 'Trade with others', 'Track what I listen to', 'Sell records', 'Discover new music'];
+  const steps = [
+    { title: 'Choose Your Genre', desc: 'What do you listen to most?' },
+    { title: 'Your Goal', desc: 'What brings you to GrooveStack?' },
+    { title: 'About You', desc: 'Write a short bio (optional)' },
+  ];
+  return (
+    <div className="flex items-center justify-center min-h-0 p-5">
+      <div className="w-[420px] max-w-full bg-gs-surface border border-gs-border rounded-2xl overflow-hidden shadow-2xl">
+        <div className="pt-6 px-8 pb-2">
+          <div className="flex gap-1 mb-4">
+            {steps.map((_, i) => (
+              <div key={i} className={`flex-1 h-1 rounded-full transition-all ${i <= wizStep ? 'bg-gs-accent' : 'bg-[#222]'}`} />
+            ))}
+          </div>
+          <p className="text-[15px] font-semibold text-gs-text">{steps[wizStep].title}</p>
+          <p className="text-[12px] text-gs-dim mt-0.5">{steps[wizStep].desc}</p>
+        </div>
+        <div className="px-8 pb-6 pt-4">
+          {wizStep === 0 && (
+            <div className="flex flex-wrap gap-2 mb-4">
+              {genres.map(g => (
+                <button key={g} type="button" onClick={() => setFavGenre(g)}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-semibold border cursor-pointer transition-colors ${favGenre === g ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-[#111] border-[#222] text-gs-dim hover:border-[#444]'}`}
+                >{g}</button>
+              ))}
+            </div>
+          )}
+          {wizStep === 1 && (
+            <div className="flex flex-col gap-2 mb-4">
+              {goals.map(g => (
+                <button key={g} type="button" onClick={() => setSetupGoal(g)}
+                  className={`text-left px-3.5 py-2.5 rounded-xl text-[12px] font-medium border cursor-pointer transition-colors ${setupGoal === g ? 'bg-gs-accent/10 border-gs-accent/30 text-gs-accent' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}
+                >{g}</button>
+              ))}
+            </div>
+          )}
+          {wizStep === 2 && (
+            <textarea
+              value={bio} onChange={e => setBio(e.target.value)} placeholder="Tell us about your taste in music..."
+              className="w-full h-24 bg-[#111] border border-[#222] rounded-xl px-3.5 py-2.5 text-[12px] text-gs-text placeholder:text-gs-faint resize-none focus:outline-none focus:border-gs-accent/50 mb-4"
+            />
+          )}
+          <div className="flex gap-2">
+            {wizStep > 0 && (
+              <button type="button" onClick={() => setWizStep(s => s - 1)} className="gs-btn-secondary flex-1 py-2.5 text-[12px]">Back</button>
+            )}
+            <button type="button"
+              onClick={() => wizStep < 2 ? setWizStep(s => s + 1) : onComplete({ favGenre, bio, setupGoal })}
+              className="gs-btn-gradient flex-[2] py-2.5 border-none rounded-[10px] text-[12px] font-bold cursor-pointer text-white"
+            >{wizStep < 2 ? 'Next' : 'Finish Setup'}</button>
+          </div>
+          <button type="button" onClick={() => onComplete(null)} className="w-full mt-2 text-[10px] text-gs-faint bg-transparent border-none cursor-pointer hover:text-gs-dim">Skip setup</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Improvement 7: Security question setup ───────────────── */
+function SecurityQuestionSetup({ onComplete }) {
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState('');
+  const questions = [
+    'What was the first album you ever bought?',
+    'What concert changed your life?',
+    'What is your favorite record store?',
+    'What was your first turntable brand?',
+    'What artist got you into vinyl?',
+  ];
+  return (
+    <div className="flex items-center justify-center min-h-0 p-5">
+      <div className="w-[420px] max-w-full bg-gs-surface border border-gs-border rounded-2xl overflow-hidden shadow-2xl">
+        <div className="pt-8 px-8 pb-2 text-center">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#f59e0b]/15 to-gs-accent/15 border border-[#f59e0b]/20 flex items-center justify-center mx-auto mb-3">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+          </div>
+          <p className="text-[15px] font-semibold text-gs-text mt-2">Security Question</p>
+          <p className="text-[12px] text-gs-dim mt-1">Set up a security question for account recovery.</p>
+        </div>
+        <div className="px-8 pb-6 pt-4">
+          <div className="flex flex-col gap-2 mb-4">
+            {questions.map(q => (
+              <button key={q} type="button" onClick={() => setQuestion(q)}
+                className={`text-left px-3 py-2 rounded-lg text-[11px] border cursor-pointer transition-colors ${question === q ? 'bg-gs-accent/10 border-gs-accent/30 text-gs-accent font-semibold' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}
+              >{q}</button>
+            ))}
+          </div>
+          {question && (
+            <div className="mb-4">
+              <label className="text-[10px] text-gs-dim font-bold uppercase tracking-wider block mb-1.5">Your Answer</label>
+              <input type="text" value={answer} onChange={e => setAnswer(e.target.value)} placeholder="Type your answer..."
+                className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2 text-[12px] text-gs-text placeholder:text-gs-faint focus:outline-none focus:border-gs-accent/50" />
+            </div>
+          )}
+          <button type="button" onClick={() => onComplete({ question, answer })} disabled={!question || !answer.trim()}
+            className={`w-full py-3 border-none rounded-[10px] text-[12px] font-bold cursor-pointer font-sans ${question && answer.trim() ? 'gs-btn-gradient text-white' : 'bg-[#1a1a1a] text-gs-dim cursor-not-allowed'}`}
+          >Save Security Question</button>
+          <button type="button" onClick={() => onComplete(null)} className="w-full mt-2 text-[10px] text-gs-faint bg-transparent border-none cursor-pointer hover:text-gs-dim">Skip for now</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Improvement 8: Login history visualization ───────────── */
+function LoginHistoryPanel() {
+  const history = useMemo(() => [
+    { date: 'Today, 10:32 AM', device: 'Chrome / macOS', location: 'New York, US', status: 'success' },
+    { date: 'Yesterday, 8:15 PM', device: 'Safari / iOS', location: 'New York, US', status: 'success' },
+    { date: 'Mar 18, 3:45 PM', device: 'Firefox / Windows', location: 'Boston, US', status: 'failed' },
+    { date: 'Mar 17, 11:20 AM', device: 'Chrome / macOS', location: 'New York, US', status: 'success' },
+    { date: 'Mar 15, 9:00 AM', device: 'Chrome / macOS', location: 'New York, US', status: 'success' },
+  ], []);
+  return (
+    <div className="mt-3 bg-[#111] border border-[#1a1a1a] rounded-[10px] overflow-hidden">
+      <div className="px-3 py-2 border-b border-[#1a1a1a]">
+        <span className="text-[10px] font-bold text-gs-dim uppercase tracking-wider">Recent Login History</span>
+      </div>
+      {history.map((h, i) => (
+        <div key={i} className={`flex items-center justify-between px-3 py-2 ${i < history.length - 1 ? 'border-b border-[#1a1a1a]' : ''}`}>
+          <div className="flex items-center gap-2">
+            <div className={`w-1.5 h-1.5 rounded-full ${h.status === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+            <div>
+              <div className="text-[10px] text-gs-text font-medium">{h.device}</div>
+              <div className="text-[9px] text-gs-faint">{h.location}</div>
+            </div>
+          </div>
+          <div className="text-[9px] text-gs-faint font-mono">{h.date}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Improvement 9: Two-factor setup with backup codes ────── */
+function TwoFactorSetup({ onComplete }) {
+  const [step2fa, setStep2fa] = useState(0);
+  const [verifyCode, setVerifyCode] = useState('');
+  const backupCodes = useMemo(() =>
+    Array.from({ length: 8 }, () => {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    }), []);
+  return (
+    <div className="flex items-center justify-center min-h-0 p-5">
+      <div className="w-[420px] max-w-full bg-gs-surface border border-gs-border rounded-2xl overflow-hidden shadow-2xl">
+        <div className="pt-8 px-8 pb-2 text-center">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500/15 to-gs-accent/15 border border-emerald-500/20 flex items-center justify-center mx-auto mb-3">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0110 0v4" />
+            </svg>
+          </div>
+          <p className="text-[15px] font-semibold text-gs-text mt-2">Two-Factor Authentication</p>
+          <p className="text-[12px] text-gs-dim mt-1">{step2fa === 0 ? 'Add an extra layer of security.' : step2fa === 1 ? 'Enter the code from your authenticator app.' : 'Save these backup codes in a safe place.'}</p>
+        </div>
+        <div className="px-8 pb-6 pt-4">
+          {step2fa === 0 && (
+            <>
+              <div className="bg-[#111] border border-[#1a1a1a] rounded-xl p-4 mb-4 text-center">
+                <div className="w-32 h-32 bg-white rounded-lg mx-auto mb-2 flex items-center justify-center">
+                  <div className="grid grid-cols-4 gap-0.5 p-2">
+                    {Array.from({ length: 16 }).map((_, i) => (
+                      <div key={i} className={`w-6 h-6 rounded-sm ${[0,1,3,4,5,7,8,11,12,14,15].includes(i) ? 'bg-black' : 'bg-white'}`} />
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[10px] text-gs-faint font-mono">Scan with your authenticator app</p>
+              </div>
+              <button type="button" onClick={() => setStep2fa(1)} className="w-full gs-btn-gradient py-3 border-none rounded-[10px] text-[12px] font-bold cursor-pointer text-white">I've Scanned the Code</button>
+            </>
+          )}
+          {step2fa === 1 && (
+            <>
+              <div className="mb-4">
+                <label className="text-[10px] text-gs-dim font-bold uppercase tracking-wider block mb-1.5">Verification Code</label>
+                <input type="text" value={verifyCode} onChange={e => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" maxLength={6}
+                  className="w-full bg-[#111] border border-[#222] rounded-lg px-3 py-2.5 text-center text-lg text-gs-text font-mono tracking-[0.5em] placeholder:text-gs-faint focus:outline-none focus:border-gs-accent/50" />
+              </div>
+              <button type="button" onClick={() => setStep2fa(2)} disabled={verifyCode.length < 6}
+                className={`w-full py-3 border-none rounded-[10px] text-[12px] font-bold cursor-pointer font-sans ${verifyCode.length >= 6 ? 'gs-btn-gradient text-white' : 'bg-[#1a1a1a] text-gs-dim cursor-not-allowed'}`}
+              >Verify</button>
+            </>
+          )}
+          {step2fa === 2 && (
+            <>
+              <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl p-3 mb-4">
+                <div className="grid grid-cols-2 gap-1.5">
+                  {backupCodes.map((code, i) => (
+                    <div key={i} className="text-[11px] font-mono text-gs-muted bg-[#111] rounded px-2 py-1 text-center">{code}</div>
+                  ))}
+                </div>
+              </div>
+              <p className="text-[10px] text-amber-400 mb-3 text-center">Save these codes! They won't be shown again.</p>
+              <button type="button" onClick={() => { navigator.clipboard?.writeText(backupCodes.join('\n')); }} className="w-full gs-btn-secondary py-2 text-[11px] mb-2">Copy All Codes</button>
+              <button type="button" onClick={() => onComplete()} className="w-full gs-btn-gradient py-3 border-none rounded-[10px] text-[12px] font-bold cursor-pointer text-white">Done</button>
+            </>
+          )}
+          <button type="button" onClick={() => onComplete()} className="w-full mt-2 text-[10px] text-gs-faint bg-transparent border-none cursor-pointer hover:text-gs-dim">Skip for now</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Password strength helper ──────────────────────────────── */
 function getPasswordStrength(pw) {
-  if (!pw) return { level: 0, label: '', color: '' };
+  if (!pw) return { level: 0, label: '', color: '', gradient: '' };
   let score = 0;
   if (pw.length >= 6) score++;
   if (pw.length >= 10) score++;
   if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
   if (/\d/.test(pw)) score++;
   if (/[^A-Za-z0-9]/.test(pw)) score++;
-  if (score <= 1) return { level: 1, label: 'Weak', color: 'bg-red-500' };
-  if (score <= 3) return { level: 2, label: 'Medium', color: 'bg-amber-500' };
-  return { level: 3, label: 'Strong', color: 'bg-emerald-500' };
+  if (score <= 1) return { level: 1, label: 'Weak', color: 'bg-red-500', gradient: 'linear-gradient(90deg,#ef4444,#f97316)' };
+  if (score <= 3) return { level: 2, label: 'Medium', color: 'bg-amber-500', gradient: 'linear-gradient(90deg,#f59e0b,#eab308)' };
+  return { level: 3, label: 'Strong', color: 'bg-emerald-500', gradient: 'linear-gradient(90deg,#10b981,#22c55e,#0ea5e9)' };
 }
 
 /* ── Password requirements checker ─────────────────────────── */
@@ -245,16 +602,34 @@ export default function AuthScreen({ onAuth, onGuest }) {
     } catch { return []; }
   });
 
-  /* Countdown timer for signup success redirect */
+  /* New Improvement 6: Account setup wizard after first login */
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
+
+  /* New Improvement 7: Security question setup */
+  const [showSecurityQuestion, setShowSecurityQuestion] = useState(false);
+
+  /* New Improvement 8: Login history visualization */
+  const [showLoginHistory, setShowLoginHistory] = useState(false);
+
+  /* New Improvement 9: Two-factor setup with backup codes */
+  const [show2faSetup, setShow2faSetup] = useState(false);
+
+  /* New Improvement 10: Welcome animation on first login */
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [welcomeName, setWelcomeName] = useState('');
+
+  /* Countdown timer for signup success redirect — triggers welcome animation */
   useEffect(() => {
     if (!signupSuccess || !pendingUser) return;
     if (countdown <= 0) {
-      onAuth(pendingUser);
+      setSignupSuccess(false);
+      setWelcomeName(displayName || '');
+      setShowWelcome(true);
       return;
     }
     const timer = setTimeout(() => setCountdown(c => c - 1), 1000);
     return () => clearTimeout(timer);
-  }, [signupSuccess, countdown, pendingUser, onAuth]);
+  }, [signupSuccess, countdown, pendingUser, displayName]);
 
   /* Lockout countdown timer */
   useEffect(() => {
@@ -411,6 +786,26 @@ export default function AuthScreen({ onAuth, onGuest }) {
     );
   };
 
+  /* New Improvement 10: Welcome animation screen */
+  if (showWelcome) {
+    return <WelcomeAnimation displayName={welcomeName} onContinue={() => { setShowWelcome(false); setShowSetupWizard(true); }} />;
+  }
+
+  /* New Improvement 6: Account setup wizard screen */
+  if (showSetupWizard) {
+    return <AccountSetupWizard onComplete={(data) => { setShowSetupWizard(false); setShowSecurityQuestion(true); }} />;
+  }
+
+  /* New Improvement 7: Security question setup screen */
+  if (showSecurityQuestion) {
+    return <SecurityQuestionSetup onComplete={(data) => { setShowSecurityQuestion(false); setShow2faSetup(true); }} />;
+  }
+
+  /* New Improvement 9: Two-factor setup screen */
+  if (show2faSetup) {
+    return <TwoFactorSetup onComplete={() => { setShow2faSetup(false); if (pendingUser) onAuth(pendingUser); }} />;
+  }
+
   /* Signup success screen with countdown */
   if (signupSuccess) {
     return (
@@ -445,15 +840,27 @@ export default function AuthScreen({ onAuth, onGuest }) {
           </div>
           {magicLinkSent ? (
             <div className="px-8 pb-8 pt-4 text-center">
-              <div className="w-12 h-12 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mx-auto mb-3">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <div className="w-16 h-16 rounded-full bg-emerald-500/15 border-2 border-emerald-500/30 flex items-center justify-center mx-auto mb-4 animate-bounce-once">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <rect x="2" y="4" width="20" height="16" rx="2" />
                   <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
                 </svg>
               </div>
-              <p className="text-gs-muted text-[13px] mb-4">
-                A magic link has been sent to <span className="text-gs-text font-medium">{email}</span>. Click the link to log in.
+              <p className="text-[15px] font-semibold text-gs-text mb-1">Check Your Inbox</p>
+              <p className="text-gs-muted text-[13px] mb-2">
+                A magic link has been sent to <span className="text-gs-text font-medium">{email}</span>.
               </p>
+              <div className="bg-[#111] border border-[#1a1a1a] rounded-xl p-3 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex gap-1">
+                    {[0,1,2].map(i => (
+                      <div key={i} className="w-2 h-2 rounded-full bg-gs-accent animate-pulse" style={{ animationDelay: `${i * 300}ms` }} />
+                    ))}
+                  </div>
+                  <span className="text-[11px] text-gs-dim">Waiting for you to click the link...</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-gs-faint mb-4">Didn't receive it? Check your spam folder or try again in 60 seconds.</p>
               <button type="button" onClick={() => { setMagicLinkMode(false); setMagicLinkSent(false); }} className="gs-btn-gradient py-2.5 px-6 border-none rounded-[10px] text-sm font-bold cursor-pointer font-sans text-white">
                 Back to Login
               </button>
@@ -654,6 +1061,8 @@ export default function AuthScreen({ onAuth, onGuest }) {
 
   return (
     <div className="flex items-center justify-center min-h-0 p-5 relative">
+      {/* Improvement 1: Animated background particles */}
+      <BackgroundParticles />
       {/* Improvement: Animated gradient background */}
       <div className="absolute inset-0 bg-gradient-to-br from-gs-accent/5 via-transparent to-gs-indigo/5 animate-gradient-shift pointer-events-none" />
 
@@ -684,6 +1093,13 @@ export default function AuthScreen({ onAuth, onGuest }) {
               Last signed in as <span className="text-gs-muted font-medium">{lastEmail}</span>
             </p>
           )}
+          {/* Improvement 2: Social proof counter */}
+          <SocialProofCounter />
+        </div>
+
+        {/* Improvement 3: Feature preview carousel */}
+        <div className="px-8">
+          <FeatureCarousel />
         </div>
 
         {/* ── Form with smooth mode transitions ──────────────── */}
@@ -757,20 +1173,24 @@ export default function AuthScreen({ onAuth, onGuest }) {
               </div>
             )}
 
-            {/* Password strength indicator (signup only) */}
+            {/* Improvement 4: Password strength meter with color gradient */}
             {mode === "signup" && password && (
               <div className="-mt-2.5 mb-4">
-                <div className="flex gap-1 mb-1">
-                  {[1, 2, 3].map(i => (
-                    <div
-                      key={i}
-                      className={`h-1 flex-1 rounded-full transition-all duration-300 ${i <= strength.level ? strength.color : 'bg-[#222]'}`}
-                    />
-                  ))}
+                <div className="h-1.5 w-full bg-[#222] rounded-full overflow-hidden mb-1">
+                  <div
+                    className="h-full rounded-full transition-all duration-500 ease-out"
+                    style={{
+                      width: `${(strength.level / 3) * 100}%`,
+                      background: strength.gradient || '#222',
+                    }}
+                  />
                 </div>
-                <span className={`text-[10px] font-medium ${strength.level === 1 ? 'text-red-400' : strength.level === 2 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                  {strength.label}
-                </span>
+                <div className="flex justify-between items-center">
+                  <span className={`text-[10px] font-medium ${strength.level === 1 ? 'text-red-400' : strength.level === 2 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                    {strength.label}
+                  </span>
+                  <span className="text-[9px] text-gs-faint font-mono">{strength.level}/3</span>
+                </div>
               </div>
             )}
 
@@ -1119,6 +1539,23 @@ export default function AuthScreen({ onAuth, onGuest }) {
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Improvement 8: Login history visualization */}
+          {mode === "login" && (
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={() => setShowLoginHistory(v => !v)}
+                className="text-[10px] text-gs-dim bg-transparent border-none cursor-pointer p-0 hover:text-gs-muted transition-colors flex items-center gap-1"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+                </svg>
+                {showLoginHistory ? 'Hide login history' : 'View login history'}
+              </button>
+              {showLoginHistory && <LoginHistoryPanel />}
             </div>
           )}
 

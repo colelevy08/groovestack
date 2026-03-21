@@ -1999,6 +1999,375 @@ function PurchaseRow({ purchase, records, currentUser, onViewUser, onBuy, onExpo
           </div>
         </div>
       )}
+
+      {/* ── C14: Transaction messaging thread panel ───────────────── */}
+      {showMessaging && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="bg-[#111] rounded-lg p-3">
+            <div className="text-[11px] font-semibold text-gs-muted mb-2">Messages with @{p.seller}</div>
+            <div className="flex flex-col gap-2 mb-3 max-h-[200px] overflow-y-auto">
+              {generateMessageThread(p.id, p.seller, currentUser).concat(localMessages).map((msg, i) => (
+                <div key={i} className={`flex ${msg.from === currentUser ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[75%] rounded-lg px-3 py-2 ${msg.from === currentUser ? 'bg-gs-accent/15 text-gs-accent' : 'bg-[#1a1a1a] text-gs-muted'}`}>
+                    <div className="text-[10px] font-semibold mb-0.5">@{msg.from}</div>
+                    <div className="text-[10px]">{msg.text}</div>
+                    <div className="text-[8px] text-gs-faint mt-0.5">{msg.time}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newMessage}
+                onChange={e => setNewMessage(e.target.value)}
+                placeholder="Type a message..."
+                className="flex-1 bg-[#0a0a0a] border border-gs-border rounded-lg px-3 py-1.5 text-[11px] text-gs-text placeholder:text-gs-faint focus:outline-none focus:border-gs-accent/50"
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && newMessage.trim()) {
+                    setLocalMessages(prev => [...prev, { from: currentUser, text: newMessage.trim(), time: 'Just now' }]);
+                    setNewMessage("");
+                  }
+                }}
+              />
+              <button
+                onClick={() => {
+                  if (newMessage.trim()) {
+                    setLocalMessages(prev => [...prev, { from: currentUser, text: newMessage.trim(), time: 'Just now' }]);
+                    setNewMessage("");
+                  }
+                }}
+                disabled={!newMessage.trim()}
+                className={`gs-btn-gradient px-3 py-1.5 text-[10px] ${!newMessage.trim() ? 'opacity-40' : ''}`}
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── C15: Follow-up reminders panel ────────────────────────── */}
+      {showReminders && (() => {
+        const reminders = getFollowUpReminders(p, stage).filter(r => !dismissedReminders.includes(r.type));
+        return (
+          <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+            <div className="bg-amber-500/5 border border-amber-500/15 rounded-lg p-3">
+              <div className="text-[11px] font-semibold text-amber-400 mb-2">Follow-up Reminders</div>
+              {reminders.length === 0 ? (
+                <div className="text-[10px] text-gs-dim">No pending reminders for this transaction.</div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {reminders.map(r => (
+                    <div key={r.type} className="flex items-center gap-2 bg-[#111] rounded-lg px-3 py-2">
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${r.urgency === 'high' ? 'bg-red-400' : r.urgency === 'medium' ? 'bg-amber-400' : 'bg-green-400'}`} />
+                      <span className="text-[10px] text-gs-muted flex-1">{r.text}</span>
+                      <button
+                        onClick={() => setDismissedReminders(prev => [...prev, r.type])}
+                        className="text-[9px] text-gs-faint hover:text-gs-text bg-transparent border-none cursor-pointer"
+                      >Dismiss</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── C16: Return shipping label generator panel ────────────── */}
+      {showReturnLabel && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="bg-red-500/5 border border-red-500/15 rounded-lg p-3">
+            <div className="text-[11px] font-semibold text-red-400 mb-2">Return Shipping Label</div>
+            <div className="border border-dashed border-gs-border rounded-lg p-3 text-center mb-2">
+              <div className="text-[10px] text-gs-dim font-mono mb-1">USPS MEDIA MAIL — RETURN</div>
+              <div className="text-[10px] text-gs-dim mb-0.5">FROM: @{currentUser}</div>
+              <div className="text-[10px] text-gs-dim mb-1.5">TO: @{p.seller}</div>
+              <div className="text-[10px] text-gs-faint font-mono mb-2">RTN-{trackingNum}</div>
+              <div className="flex gap-1 justify-center">
+                {Array.from({ length: 20 }, (_, i) => (
+                  <div key={i} className="bg-gs-text" style={{ width: i % 3 === 0 ? 2 : 1, height: 20 }} />
+                ))}
+              </div>
+            </div>
+            <div className="text-[9px] text-gs-faint mb-2">Return shipping cost: $6.00 (deducted from refund)</div>
+            <button
+              onClick={() => window.alert("Return label generated. Print and attach to package.")}
+              className="gs-btn-secondary w-full py-2 text-[10px]"
+            >
+              Download Return Label
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── C17: Transaction insurance status panel ────────────────── */}
+      {showInsurance && (() => {
+        const ins = getInsuranceStatus(p);
+        return (
+          <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+            <div className="bg-[#111] rounded-lg p-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[11px] font-semibold text-gs-muted">Insurance Status</span>
+                <span className={`text-[10px] font-bold ${ins.insured ? 'text-green-400' : 'text-gs-faint'}`}>
+                  {ins.insured ? 'INSURED' : 'NOT INSURED'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div><span className="text-gs-faint">Provider:</span> <span className="text-gs-muted">{ins.provider}</span></div>
+                <div><span className="text-gs-faint">Coverage:</span> <span className="text-gs-muted">${ins.coverage.toFixed(2)}</span></div>
+                <div><span className="text-gs-faint">Premium:</span> <span className="text-gs-muted">${ins.premium.toFixed(2)}</span></div>
+                <div><span className="text-gs-faint">Value:</span> <span className="text-gs-muted">${parseFloat(p.price).toFixed(2)}</span></div>
+              </div>
+              {!ins.insured && (
+                <button
+                  onClick={() => window.alert("Insurance added for $" + (parseFloat(p.price) * 0.02).toFixed(2))}
+                  className="gs-btn-gradient w-full mt-2 py-1.5 text-[10px]"
+                >
+                  Add Insurance (${(parseFloat(p.price) * 0.02).toFixed(2)})
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── C18: Buyer/seller agreement viewer panel ───────────────── */}
+      {showAgreement && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="bg-violet-500/5 border border-violet-500/15 rounded-lg p-3">
+            <div className="text-[11px] font-semibold text-violet-400 mb-2">Transaction Agreement</div>
+            <div className="bg-[#0a0a0a] border border-gs-border rounded-lg p-3 text-[10px] text-gs-dim space-y-1.5 font-mono max-h-[180px] overflow-y-auto">
+              <div className="font-bold text-gs-muted">GROOVESTACK PURCHASE AGREEMENT</div>
+              <div>Date: {p.time || new Date().toLocaleDateString()}</div>
+              <div>Buyer: @{currentUser} | Seller: @{p.seller}</div>
+              <div>Item: {p.album} by {p.artist}</div>
+              <div>Condition: {p.condition} | Format: {p.format}</div>
+              <div>Price: ${parseFloat(p.price).toFixed(2)}</div>
+              <div className="pt-1 border-t border-[#1a1a1a]">TERMS:</div>
+              <div>1. Seller warrants item condition as described.</div>
+              <div>2. Buyer has 14 days to file a dispute.</div>
+              <div>3. Returns accepted if item not as described.</div>
+              <div>4. Shipping risk transfers to buyer upon carrier scan.</div>
+              <div>5. Platform fee (5%) is non-refundable.</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── C19: Payment installment tracker panel ─────────────────── */}
+      {showInstallments && (() => {
+        const plan = getInstallmentPlan(p);
+        if (!plan) return null;
+        return (
+          <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+            <div className="bg-cyan-500/5 border border-cyan-500/15 rounded-lg p-3">
+              <div className="text-[11px] font-semibold text-cyan-400 mb-2">Payment Installments</div>
+              <div className="flex gap-1 items-center mb-2">
+                {Array.from({ length: plan.total }, (_, i) => (
+                  <div key={i} className={`flex-1 h-2 rounded-full ${i < plan.paid ? 'bg-cyan-400' : 'bg-[#1a1a1a]'}`} />
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div><span className="text-gs-faint">Installments:</span> <span className="text-gs-muted">{plan.paid}/{plan.total}</span></div>
+                <div><span className="text-gs-faint">Amount each:</span> <span className="text-gs-muted">${plan.amount}</span></div>
+                <div><span className="text-gs-faint">Remaining:</span> <span className="text-gs-muted">{plan.remaining} payments</span></div>
+                <div><span className="text-gs-faint">Balance:</span> <span className="text-cyan-400 font-bold">${(plan.remaining * plan.amount).toFixed(2)}</span></div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── C20: Transaction photo evidence panel ──────────────────── */}
+      {showPhotoEvidence && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-lg p-3">
+            <div className="text-[11px] font-semibold text-emerald-400 mb-2">Photo Evidence</div>
+            <div className="grid grid-cols-3 gap-2 mb-2">
+              {['Record front', 'Record back', 'Packaging'].map((label, i) => (
+                <div key={i} className="bg-[#0a0a0a] border border-dashed border-gs-border rounded-lg p-3 text-center cursor-pointer hover:border-emerald-400/30 transition-colors">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.5" className="mx-auto mb-1"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                  <div className="text-[8px] text-gs-faint">{label}</div>
+                </div>
+              ))}
+            </div>
+            <textarea
+              value={photoNotes}
+              onChange={e => setPhotoNotes(e.target.value)}
+              placeholder="Describe condition, any issues..."
+              className="w-full bg-[#0a0a0a] border border-gs-border rounded-lg px-3 py-2 text-[11px] text-gs-text placeholder:text-gs-faint focus:outline-none focus:border-emerald-400/50 resize-none mb-2"
+              rows={2}
+            />
+            <button
+              onClick={() => window.alert("Photo evidence submitted for this transaction.")}
+              className="gs-btn-secondary w-full py-1.5 text-[10px]"
+            >
+              Upload Evidence (Coming Soon)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── C21: Customs declaration generator panel ───────────────── */}
+      {showCustoms && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="bg-orange-500/5 border border-orange-500/15 rounded-lg p-3">
+            <div className="text-[11px] font-semibold text-orange-400 mb-2">Customs Declaration (International)</div>
+            <pre className="bg-[#0a0a0a] border border-gs-border rounded-lg p-3 text-[9px] text-gs-dim font-mono overflow-x-auto whitespace-pre max-h-[200px] overflow-y-auto">
+              {generateCustomsDeclaration(p, currentUser)}
+            </pre>
+            <button
+              onClick={() => {
+                const decl = generateCustomsDeclaration(p, currentUser);
+                const blob = new Blob([decl], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `customs-${p.id}.txt`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="gs-btn-secondary w-full mt-2 py-1.5 text-[10px]"
+            >
+              Download Customs Form
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── C22: Package weight estimator panel ────────────────────── */}
+      {showWeightEstimate && (() => {
+        const w = estimatePackageWeight(p);
+        return (
+          <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+            <div className="bg-sky-500/5 border border-sky-500/15 rounded-lg p-3">
+              <div className="text-[11px] font-semibold text-sky-400 mb-2">Package Weight Estimate</div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-[#111] rounded-lg p-2">
+                  <div className="text-lg font-extrabold text-gs-text">{w.weight}</div>
+                  <div className="text-[9px] text-gs-faint font-mono">{w.unit}</div>
+                </div>
+                <div className="bg-[#111] rounded-lg p-2">
+                  <div className="text-lg font-extrabold text-gs-text">{w.oz}</div>
+                  <div className="text-[9px] text-gs-faint font-mono">ounces</div>
+                </div>
+                <div className="bg-[#111] rounded-lg p-2">
+                  <div className="text-lg font-extrabold text-gs-text">{p.format || 'N/A'}</div>
+                  <div className="text-[9px] text-gs-faint font-mono">format</div>
+                </div>
+              </div>
+              <div className="mt-2 text-[9px] text-gs-faint">
+                Shipping cost estimate: <span className="text-gs-muted font-bold">${(parseFloat(w.weight) * 4).toFixed(2)}</span> (USPS Media Mail)
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── C23: Delivery confirmation workflow panel ───────────────── */}
+      {showDeliveryConfirm && !deliveryConfirmed && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="bg-green-500/5 border border-green-500/15 rounded-lg p-3">
+            <div className="text-[11px] font-semibold text-green-400 mb-2">Confirm Delivery</div>
+            <div className="text-[10px] text-gs-dim mb-3">
+              By confirming delivery, you acknowledge that you have received <span className="text-gs-muted font-semibold">{p.album}</span> by {p.artist} in the condition described. This will release payment to the seller.
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setShowDeliveryConfirm(false)} className="gs-btn-secondary flex-1 py-1.5 text-[10px]">Not Yet</button>
+              <button
+                onClick={() => { setDeliveryConfirmed(true); setShowDeliveryConfirm(false); }}
+                className="flex-[2] py-1.5 text-[10px] rounded-lg font-semibold border-none cursor-pointer bg-green-500 text-white hover:bg-green-600 transition-colors"
+              >
+                Confirm Received
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── C24: Transaction dispute timeline panel ─────────────────── */}
+      {showDisputeTimeline && disputeSubmitted && (() => {
+        let h = 0;
+        const s = String(p.id);
+        for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+        const currentStage = Math.abs(h) % DISPUTE_TIMELINE_STAGES.length;
+        return (
+          <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+            <div className="bg-red-500/5 border border-red-500/15 rounded-lg p-3">
+              <div className="text-[11px] font-semibold text-red-400 mb-2">Dispute Progress</div>
+              <div className="flex gap-1 items-center mb-2">
+                {DISPUTE_TIMELINE_STAGES.map((ds, i) => (
+                  <div key={ds.key} className={`flex-1 h-2 rounded-full`} style={{ background: i <= currentStage ? ds.color : '#1a1a1a' }} />
+                ))}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {DISPUTE_TIMELINE_STAGES.slice(0, currentStage + 1).map((ds, i) => (
+                  <div key={ds.key} className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full shrink-0" style={{ background: ds.color }} />
+                    <span className="text-[10px] font-semibold" style={{ color: ds.color }}>{ds.label}</span>
+                    <span className="text-[9px] text-gs-faint font-mono ml-auto">{i === currentStage ? 'Current' : `${currentStage - i}d ago`}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 pt-2 border-t border-[#1a1a1a] text-[9px] text-gs-faint">
+                Estimated resolution: 3-5 business days
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── C25: Feedback loop (rate transaction experience) panel ─── */}
+      {showFeedbackLoop && !feedbackSubmitted && (
+        <div className="mt-3 pt-3 border-t border-[#1a1a1a]">
+          <div className="bg-teal-500/5 border border-teal-500/15 rounded-lg p-3">
+            <div className="text-[11px] font-semibold text-teal-400 mb-2">Rate Your Transaction Experience</div>
+            <div className="text-[10px] text-gs-dim mb-2">How was the overall transaction process?</div>
+            <div className="flex gap-1 mb-3">
+              {[1, 2, 3, 4, 5].map(star => (
+                <button
+                  key={star}
+                  onClick={() => setFeedbackRating(star)}
+                  className="bg-transparent border-none cursor-pointer p-0.5 text-base transition-transform hover:scale-110"
+                  style={{ color: star <= feedbackRating ? "#14b8a6" : "#333" }}
+                >
+                  ★
+                </button>
+              ))}
+              {feedbackRating > 0 && <span className="text-[10px] text-gs-dim ml-1.5 self-center">{feedbackRating}/5</span>}
+            </div>
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {['Fast shipping', 'Well packed', 'Accurate condition', 'Great communication', 'Fair price'].map(tag => (
+                <button
+                  key={tag}
+                  onClick={() => setFeedbackText(prev => prev.includes(tag) ? prev.replace(tag + ', ', '').replace(tag, '') : (prev ? prev + ', ' + tag : tag))}
+                  className={`px-2 py-0.5 rounded-full text-[9px] border cursor-pointer transition-colors ${
+                    feedbackText.includes(tag)
+                      ? 'bg-teal-400/15 text-teal-400 border-teal-400/30'
+                      : 'bg-transparent text-gs-dim border-gs-border hover:border-gs-muted'
+                  }`}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setShowFeedbackLoop(false)} className="gs-btn-secondary flex-1 py-1.5 text-[10px]">Skip</button>
+              <button
+                onClick={() => { if (feedbackRating > 0) { setFeedbackSubmitted(true); setShowFeedbackLoop(false); } }}
+                disabled={feedbackRating === 0}
+                className={`flex-[2] py-1.5 text-[10px] rounded-lg font-semibold border-none cursor-pointer transition-colors ${
+                  feedbackRating > 0 ? 'bg-teal-500 text-white hover:bg-teal-600' : 'bg-teal-500/20 text-teal-500/40 cursor-not-allowed'
+                }`}
+              >
+                Submit Feedback
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

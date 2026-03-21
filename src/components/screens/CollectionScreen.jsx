@@ -873,6 +873,17 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, on
   const [batchCondition, setBatchCondition] = useState("");
   const [showNotes, setShowNotes] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  // v3 feature toggles
+  const [showBubbleChart, setShowBubbleChart] = useState(false);
+  const [showCSVImporter, setShowCSVImporter] = useState(false);
+  const [showLendingTracker, setShowLendingTracker] = useState(false);
+  const [showUpgradeTracker, setShowUpgradeTracker] = useState(false);
+  const [showArtistCompletion, setShowArtistCompletion] = useState(false);
+  const [showSmartSort, setShowSmartSort] = useState(false);
+  const [showInsurance, setShowInsurance] = useState(false);
+  const [showWantVsHave, setShowWantVsHave] = useState(false);
+  const [showYearDist, setShowYearDist] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
 
   // Memoize the user's records to avoid re-filtering on every render (#15)
   const mine = useMemo(() => records.filter(r => r.user === currentUser), [records, currentUser]);
@@ -1317,6 +1328,56 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, on
         <MissingSuggestions records={mine} />
       )}
 
+      {/* v3-14: Genre Bubble Chart */}
+      {mine.length > 0 && showBubbleChart && (
+        <GenreBubbleChart records={mine} />
+      )}
+
+      {/* v3-15: CSV Importer */}
+      {showCSVImporter && (
+        <CSVImporter onImport={(imported) => { imported.forEach(r => onAddRecord?.(r)); }} onClose={() => setShowCSVImporter(false)} />
+      )}
+
+      {/* v3-16: Lending Tracker */}
+      {showLendingTracker && (
+        <LendingTracker records={mine} onClose={() => setShowLendingTracker(false)} />
+      )}
+
+      {/* v3-17: Condition Upgrade Tracker */}
+      {mine.length > 0 && showUpgradeTracker && (
+        <ConditionUpgradeTracker records={mine} />
+      )}
+
+      {/* v3-18: Artist Completion Tracker */}
+      {mine.length > 0 && showArtistCompletion && (
+        <ArtistCompletionTracker records={mine} />
+      )}
+
+      {/* v3-19: Smart Sort Suggestion */}
+      {mine.length > 0 && showSmartSort && (
+        <SmartSortSuggestion records={mine} onApplySort={(key) => { setSortKey(key); setShowSmartSort(false); }} />
+      )}
+
+      {/* v3-20: Insurance Calculator */}
+      {mine.length > 0 && showInsurance && (
+        <InsuranceCalculator records={mine} />
+      )}
+
+      {/* v3-21: Want vs Have Counter */}
+      {mine.length > 0 && showWantVsHave && (
+        <WantVsHaveCounter records={mine} />
+      )}
+
+      {/* v3-22: Year Distribution Chart */}
+      {mine.length > 0 && showYearDist && (
+        <YearDistributionChart records={mine} />
+      )}
+
+      {/* v3-24: Labels Breakdown */}
+      {mine.length > 0 && showLabels && (
+        <LabelsBreakdown records={mine} />
+      )}
+
       {/* Search + filter toolbar */}
       {mine.length > 0 && (
         <div className="mb-4 space-y-2.5">
@@ -1427,6 +1488,67 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, on
               className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showNotes ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
             >
               Notes
+            </button>
+            {/* v3 feature toggles */}
+            <button
+              onClick={() => setShowBubbleChart(!showBubbleChart)}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showBubbleChart ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+            >
+              Genres
+            </button>
+            <button
+              onClick={() => setShowCSVImporter(!showCSVImporter)}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showCSVImporter ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+            >
+              Import CSV
+            </button>
+            <button
+              onClick={() => setShowLendingTracker(!showLendingTracker)}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showLendingTracker ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+            >
+              Lending
+            </button>
+            <button
+              onClick={() => setShowUpgradeTracker(!showUpgradeTracker)}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showUpgradeTracker ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+            >
+              Upgrades
+            </button>
+            <button
+              onClick={() => setShowArtistCompletion(!showArtistCompletion)}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showArtistCompletion ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+            >
+              Completion
+            </button>
+            <button
+              onClick={() => setShowSmartSort(!showSmartSort)}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showSmartSort ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+            >
+              Smart Sort
+            </button>
+            <button
+              onClick={() => setShowInsurance(!showInsurance)}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showInsurance ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+            >
+              Insurance
+            </button>
+            <button
+              onClick={() => setShowWantVsHave(!showWantVsHave)}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showWantVsHave ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+            >
+              Want/Have
+            </button>
+            <button
+              onClick={() => setShowYearDist(!showYearDist)}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showYearDist ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+            >
+              Years
+            </button>
+            <button
+              onClick={() => setShowLabels(!showLabels)}
+              className={`px-2.5 py-1.5 rounded-lg text-[10px] font-mono border cursor-pointer transition-colors ${showLabels ? 'bg-gs-accent/15 border-gs-accent/40 text-gs-accent' : 'bg-transparent border-gs-border text-gs-dim hover:border-[#333]'}`}
+            >
+              Labels
             </button>
           </div>
 
@@ -1610,6 +1732,8 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, on
                     <div key={r.id} className="flex items-start gap-2">
                       <span className="text-[10px] text-gs-dim shrink-0 w-32 truncate">{r.album}:</span>
                       <RecordNotes recordId={r.id} />
+                      <PressingQualityIndicator record={r} />
+                      <FirstPressingBadge record={r} />
                     </div>
                   ))}
                 </div>
@@ -1635,6 +1759,8 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, on
                 <div key={r.id} className="flex items-start gap-2">
                   <span className="text-[10px] text-gs-dim shrink-0 w-40 truncate" title={`${r.album} - ${r.artist}`}>{r.album}:</span>
                   <RecordNotes recordId={r.id} />
+                  <PressingQualityIndicator record={r} />
+                  <FirstPressingBadge record={r} />
                 </div>
               ))}
             </div>

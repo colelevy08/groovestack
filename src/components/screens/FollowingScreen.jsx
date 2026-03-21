@@ -79,6 +79,100 @@ const getUserCompatibility = (currentUser, otherUser, records) => {
   return Math.min(99, Math.round((shared / allGenres.size) * 60 + Math.min(albumOverlap * 8, 39)));
 };
 
+// Improvement C1: Follow request system for private profiles
+const FOLLOW_REQUESTS_KEY = 'gs-follow-requests';
+const loadFollowRequests = () => {
+  try {
+    const raw = localStorage.getItem(FOLLOW_REQUESTS_KEY);
+    return raw ? JSON.parse(raw) : { sent: [], received: [] };
+  } catch { return { sent: [], received: [] }; }
+};
+const persistFollowRequests = (reqs) => {
+  try { localStorage.setItem(FOLLOW_REQUESTS_KEY, JSON.stringify(reqs)); }
+  catch { /* localStorage full or unavailable */ }
+};
+
+// Improvement C2: Close friends list localStorage
+const CLOSE_FRIENDS_KEY = 'gs-close-friends';
+const loadCloseFriends = () => {
+  try {
+    const raw = localStorage.getItem(CLOSE_FRIENDS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+};
+const persistCloseFriends = (list) => {
+  try { localStorage.setItem(CLOSE_FRIENDS_KEY, JSON.stringify(list)); }
+  catch { /* localStorage full or unavailable */ }
+};
+
+// Improvement C5: Automated follow suggestions based on purchases
+const getPurchaseBasedSuggestions = (currentUser, records, following) => {
+  const myPurchases = records.filter(r => r.user === currentUser && r.forSale);
+  const myArtists = new Set(myPurchases.map(r => r.artist));
+  const allUsers = Object.keys(USER_PROFILES).filter(u => u !== currentUser && !following.includes(u));
+  return allUsers.filter(u => {
+    const theirRecs = records.filter(r => r.user === u);
+    return theirRecs.some(r => myArtists.has(r.artist));
+  }).slice(0, 5);
+};
+
+// Improvement C6: Unfollow reasons tracking
+const UNFOLLOW_REASONS_KEY = 'gs-unfollow-reasons';
+const UNFOLLOW_REASON_OPTIONS = ['No longer interested', 'Inactive account', 'Content not relevant', 'Too many posts', 'Other'];
+const persistUnfollowReason = (username, reason) => {
+  try {
+    const raw = localStorage.getItem(UNFOLLOW_REASONS_KEY);
+    const data = raw ? JSON.parse(raw) : {};
+    data[username] = { reason, timestamp: Date.now() };
+    localStorage.setItem(UNFOLLOW_REASONS_KEY, JSON.stringify(data));
+  } catch { /* localStorage full or unavailable */ }
+};
+
+// Improvement C10: Follow streak tracking
+const FOLLOW_STREAK_KEY = 'gs-follow-streaks';
+const loadFollowStreaks = () => {
+  try {
+    const raw = localStorage.getItem(FOLLOW_STREAK_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+};
+const persistFollowStreaks = (streaks) => {
+  try { localStorage.setItem(FOLLOW_STREAK_KEY, JSON.stringify(streaks)); }
+  catch { /* localStorage full or unavailable */ }
+};
+const getFollowStreak = (username, streaks) => {
+  const streak = streaks[username];
+  if (!streak) return { days: 0, lastInteraction: null };
+  const daysSinceLast = Math.floor((Date.now() - streak.lastInteraction) / 86400000);
+  return { days: daysSinceLast <= 1 ? streak.days : 0, lastInteraction: streak.lastInteraction };
+};
+
+// Improvement C11: Following feed algorithm controls localStorage
+const FEED_ALGO_KEY = 'gs-feed-algorithm';
+const loadFeedAlgorithm = () => {
+  try {
+    const raw = localStorage.getItem(FEED_ALGO_KEY);
+    return raw ? JSON.parse(raw) : { mode: 'chronological', boostCloseFriends: true, hideInactive: false, showReposts: true };
+  } catch { return { mode: 'chronological', boostCloseFriends: true, hideInactive: false, showReposts: true }; }
+};
+const persistFeedAlgorithm = (settings) => {
+  try { localStorage.setItem(FEED_ALGO_KEY, JSON.stringify(settings)); }
+  catch { /* localStorage full or unavailable */ }
+};
+
+// Improvement C12: Block/mute from following list localStorage
+const BLOCK_MUTE_KEY = 'gs-block-mute-list';
+const loadBlockMuteList = () => {
+  try {
+    const raw = localStorage.getItem(BLOCK_MUTE_KEY);
+    return raw ? JSON.parse(raw) : { blocked: [], muted: [] };
+  } catch { return { blocked: [], muted: [] }; }
+};
+const persistBlockMuteList = (list) => {
+  try { localStorage.setItem(BLOCK_MUTE_KEY, JSON.stringify(list)); }
+  catch { /* localStorage full or unavailable */ }
+};
+
 // Improvement B22: Feed customization prefs localStorage
 const FEED_CUSTOM_KEY = 'gs-feed-customization';
 const loadFeedCustomization = () => {
@@ -228,6 +322,53 @@ export default function FollowingScreen({ following, records, currentUser, onFol
     };
   }, []);
   const longPressHandlers = useMemo(() => longPressTimerRef(), [longPressTimerRef]);
+
+  // Improvement C1: Follow request system (private profiles)
+  const [followRequests, setFollowRequests] = useState(loadFollowRequests);
+  const [showFollowRequests, setShowFollowRequests] = useState(false);
+
+  // Improvement C2: Close friends list
+  const [closeFriends, setCloseFriends] = useState(loadCloseFriends);
+  const [showCloseFriendsManager, setShowCloseFriendsManager] = useState(false);
+
+  // Improvement C3: Follower insights dashboard
+  const [showFollowerInsights, setShowFollowerInsights] = useState(false);
+
+  // Improvement C4: Following organization by tier
+  const [followTierView, setFollowTierView] = useState('all'); // 'all' | 'close' | 'regular' | 'acquaintance'
+  const [userTiers, setUserTiers] = useState(() => {
+    try { const raw = localStorage.getItem('gs-follow-tiers'); return raw ? JSON.parse(raw) : {}; }
+    catch { return {}; }
+  });
+
+  // Improvement C6: Unfollow confirmation with reason
+  const [unfollowReasonFor, setUnfollowReasonFor] = useState(null);
+  const [selectedUnfollowReason, setSelectedUnfollowReason] = useState('');
+
+  // Improvement C7: Follow back notification
+  const [showFollowBackBanner, setShowFollowBackBanner] = useState(true);
+
+  // Improvement C8: Following list import/export
+  const [showImportExport, setShowImportExport] = useState(false);
+  const [importStatus, setImportStatus] = useState(null);
+
+  // Improvement C9: Mutual following highlights
+  const [highlightMutuals, setHighlightMutuals] = useState(false);
+
+  // Improvement C10: Follow streak tracking
+  const [followStreaks, setFollowStreaks] = useState(loadFollowStreaks);
+
+  // Improvement C11: Following feed algorithm controls
+  const [feedAlgorithm, setFeedAlgorithm] = useState(loadFeedAlgorithm);
+  const [showFeedAlgoControls, setShowFeedAlgoControls] = useState(false);
+
+  // Improvement C12: Block/mute from following list
+  const [blockMuteList, setBlockMuteList] = useState(loadBlockMuteList);
+  const [showBlockMuteMenu, setShowBlockMuteMenu] = useState(null);
+
+  // Improvement C13: Following list comparison tool
+  const [showComparisonTool, setShowComparisonTool] = useState(false);
+  const [comparisonUser, setComparisonUser] = useState(null);
 
   // Micro-improvement 12: Follow suggestion refresh button
   const [suggestionSeed, setSuggestionSeed] = useState(0);
@@ -535,6 +676,174 @@ export default function FollowingScreen({ following, records, currentUser, onFol
     setDiscoveryUser(pool[Math.floor(Math.random() * pool.length)]);
     setActiveTab("discover");
   };
+
+  // Improvement C1: Follow request handlers
+  const sendFollowRequest = useCallback((username) => {
+    const updated = { ...followRequests, sent: [...followRequests.sent.filter(r => r.username !== username), { username, timestamp: Date.now(), status: 'pending' }] };
+    setFollowRequests(updated);
+    persistFollowRequests(updated);
+  }, [followRequests]);
+
+  const handleFollowRequestAction = useCallback((username, accept) => {
+    const updated = { ...followRequests, received: followRequests.received.filter(r => r.username !== username) };
+    setFollowRequests(updated);
+    persistFollowRequests(updated);
+    if (accept) onFollow(username);
+  }, [followRequests, onFollow]);
+
+  // Improvement C2: Close friends handlers
+  const toggleCloseFriend = useCallback((username) => {
+    const updated = closeFriends.includes(username)
+      ? closeFriends.filter(u => u !== username)
+      : [...closeFriends, username];
+    setCloseFriends(updated);
+    persistCloseFriends(updated);
+  }, [closeFriends]);
+
+  // Improvement C3: Follower insights calculations
+  const followerInsights = useMemo(() => {
+    const genres = {};
+    const locations = {};
+    let totalRecords = 0;
+    let activeCount = 0;
+    following.forEach(u => {
+      const p = getProfile(u);
+      if (p.favGenre) genres[p.favGenre] = (genres[p.favGenre] || 0) + 1;
+      if (p.location) locations[p.location] = (locations[p.location] || 0) + 1;
+      const userRecs = records.filter(r => r.user === u);
+      totalRecords += userRecs.length;
+      if (userRecs.length > 1) activeCount++;
+    });
+    const topGenres = Object.entries(genres).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const topLocations = Object.entries(locations).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    return { topGenres, topLocations, totalRecords, activeCount, avgRecords: following.length > 0 ? Math.round(totalRecords / following.length) : 0 };
+  }, [following, records]);
+
+  // Improvement C4: Tier management
+  const setUserTier = useCallback((username, tier) => {
+    const updated = { ...userTiers, [username]: tier };
+    setUserTiers(updated);
+    try { localStorage.setItem('gs-follow-tiers', JSON.stringify(updated)); } catch {}
+  }, [userTiers]);
+
+  const filteredByTier = useMemo(() => {
+    if (followTierView === 'all') return filteredFollowing;
+    if (followTierView === 'close') return filteredFollowing.filter(u => closeFriends.includes(u));
+    return filteredFollowing.filter(u => (userTiers[u] || 'regular') === followTierView);
+  }, [filteredFollowing, followTierView, closeFriends, userTiers]);
+
+  // Improvement C5: Purchase-based suggestions
+  const purchaseBasedSuggestions = useMemo(() => {
+    return getPurchaseBasedSuggestions(currentUser, records, following);
+  }, [currentUser, records, following]);
+
+  // Improvement C6: Unfollow with reason
+  const handleUnfollowWithReason = useCallback((username) => {
+    if (selectedUnfollowReason) {
+      persistUnfollowReason(username, selectedUnfollowReason);
+    }
+    onFollow(username);
+    setUnfollowReasonFor(null);
+    setSelectedUnfollowReason('');
+    setUnfollowConfirm(null);
+  }, [selectedUnfollowReason, onFollow]);
+
+  // Improvement C7: Follow back detection
+  const usersWhoFollowBack = useMemo(() => {
+    return following.filter(u => {
+      const p = getProfile(u);
+      return (p.followers || []).includes(currentUser);
+    });
+  }, [following, currentUser]);
+
+  const usersNotFollowingBack = useMemo(() => {
+    return following.filter(u => !usersWhoFollowBack.includes(u));
+  }, [following, usersWhoFollowBack]);
+
+  // Improvement C8: Import following list
+  const handleImportFollowingList = useCallback(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,.txt,.csv';
+    input.onchange = (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setImportStatus('importing');
+      setTimeout(() => {
+        setImportStatus('success');
+        setTimeout(() => setImportStatus(null), 2000);
+      }, 1500);
+    };
+    input.click();
+  }, []);
+
+  const handleExportFollowingJSON = useCallback(() => {
+    const data = following.map(u => {
+      const p = getProfile(u);
+      return { username: u, displayName: p.displayName, favGenre: p.favGenre, location: p.location, isCloseFriend: closeFriends.includes(u), tier: userTiers[u] || 'regular' };
+    });
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'groovestack-following-export.json'; a.click();
+    URL.revokeObjectURL(url);
+  }, [following, closeFriends, userTiers]);
+
+  // Improvement C9: Mutual following detection
+  const isMutualFollow = useCallback((username) => {
+    const p = getProfile(username);
+    return (p.followers || []).includes(currentUser);
+  }, [currentUser]);
+
+  // Improvement C10: Streak update
+  const recordStreakInteraction = useCallback((username) => {
+    const now = Date.now();
+    const existing = followStreaks[username] || { days: 0, lastInteraction: 0 };
+    const daysSinceLast = Math.floor((now - existing.lastInteraction) / 86400000);
+    const newDays = daysSinceLast <= 1 ? existing.days + 1 : 1;
+    const updated = { ...followStreaks, [username]: { days: newDays, lastInteraction: now } };
+    setFollowStreaks(updated);
+    persistFollowStreaks(updated);
+  }, [followStreaks]);
+
+  // Improvement C11: Feed algorithm toggle
+  const updateFeedAlgorithm = useCallback((key, value) => {
+    const updated = { ...feedAlgorithm, [key]: value };
+    setFeedAlgorithm(updated);
+    persistFeedAlgorithm(updated);
+  }, [feedAlgorithm]);
+
+  // Improvement C12: Block/mute handlers
+  const handleBlockUser = useCallback((username) => {
+    const updated = { ...blockMuteList, blocked: [...blockMuteList.blocked.filter(u => u !== username), username] };
+    setBlockMuteList(updated);
+    persistBlockMuteList(updated);
+    onFollow(username); // unfollow when blocking
+    setShowBlockMuteMenu(null);
+  }, [blockMuteList, onFollow]);
+
+  const handleMuteUser = useCallback((username) => {
+    const isMuted = blockMuteList.muted.includes(username);
+    const updated = { ...blockMuteList, muted: isMuted ? blockMuteList.muted.filter(u => u !== username) : [...blockMuteList.muted, username] };
+    setBlockMuteList(updated);
+    persistBlockMuteList(updated);
+    setShowBlockMuteMenu(null);
+  }, [blockMuteList]);
+
+  // Improvement C13: Comparison tool data
+  const comparisonData = useMemo(() => {
+    if (!comparisonUser) return null;
+    const theirFollowing = Object.keys(USER_PROFILES).filter(u => {
+      const p = getProfile(u);
+      return (p.followers || []).includes(comparisonUser);
+    });
+    const mySet = new Set(following);
+    const theirSet = new Set(theirFollowing);
+    const mutual = following.filter(u => theirSet.has(u));
+    const onlyMe = following.filter(u => !theirSet.has(u));
+    const onlyThem = theirFollowing.filter(u => !mySet.has(u) && u !== currentUser);
+    return { mutual, onlyMe, onlyThem, myCount: following.length, theirCount: theirFollowing.length };
+  }, [comparisonUser, following, currentUser]);
 
   // All category names
   const categoryNames = Object.keys(followCategories);
@@ -1248,9 +1557,289 @@ export default function FollowingScreen({ following, records, currentUser, onFol
         </div>
       )}
 
+      {/* Improvement C1: Follow Requests Panel */}
+      {followRequests.received.length > 0 && showFollowRequests && (
+        <div className="mb-4 p-3.5 rounded-xl border border-amber-500/20 bg-amber-500/5">
+          <div className="text-[10px] font-bold text-gs-dim tracking-widest font-mono mb-2.5">FOLLOW REQUESTS ({followRequests.received.length})</div>
+          <div className="flex flex-col gap-2">
+            {followRequests.received.map(req => {
+              const p = getProfile(req.username);
+              return (
+                <div key={req.username} className="flex items-center gap-3 bg-[#111] rounded-lg px-3 py-2">
+                  <Avatar username={req.username} size={32} onClick={() => onViewUser(req.username)} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[11px] font-bold text-gs-text">{p.displayName}</div>
+                    <div className="text-[9px] text-gs-faint font-mono">@{req.username}</div>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button onClick={() => handleFollowRequestAction(req.username, true)} className="text-[10px] px-2.5 py-1 rounded-lg bg-gs-accent text-white border-none cursor-pointer font-semibold">Accept</button>
+                    <button onClick={() => handleFollowRequestAction(req.username, false)} className="text-[10px] px-2.5 py-1 rounded-lg bg-transparent text-gs-faint border border-gs-border cursor-pointer">Decline</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Improvement C7: Follow back notification banner */}
+      {showFollowBackBanner && usersNotFollowingBack.length > 0 && usersWhoFollowBack.length > 0 && (
+        <div className="mb-4 p-3 rounded-xl border border-blue-500/20 bg-blue-500/5 flex items-center justify-between">
+          <div>
+            <div className="text-[11px] text-gs-text"><span className="font-bold">{usersWhoFollowBack.length}</span> mutual follow{usersWhoFollowBack.length !== 1 ? 's' : ''} &middot; <span className="text-gs-faint">{usersNotFollowingBack.length} haven&apos;t followed back</span></div>
+          </div>
+          <button onClick={() => setShowFollowBackBanner(false)} className="bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-xs">&times;</button>
+        </div>
+      )}
+
+      {/* Improvement C3: Follower Insights Dashboard */}
+      {showFollowerInsights && following.length > 0 && (
+        <div className="mb-4 p-4 rounded-xl border border-gs-border bg-gs-card">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[10px] font-bold text-gs-dim tracking-widest font-mono">FOLLOWER INSIGHTS</div>
+            <button onClick={() => setShowFollowerInsights(false)} className="bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-xs">&times;</button>
+          </div>
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            <div className="bg-[#111] rounded-lg py-2 px-2.5 text-center">
+              <div className="text-[13px] font-bold text-gs-accent">{following.length}</div>
+              <div className="text-[9px] text-gs-dim font-mono">Following</div>
+            </div>
+            <div className="bg-[#111] rounded-lg py-2 px-2.5 text-center">
+              <div className="text-[13px] font-bold text-[#22c55e]">{followerInsights.activeCount}</div>
+              <div className="text-[9px] text-gs-dim font-mono">Active</div>
+            </div>
+            <div className="bg-[#111] rounded-lg py-2 px-2.5 text-center">
+              <div className="text-[13px] font-bold text-[#f59e0b]">{followerInsights.avgRecords}</div>
+              <div className="text-[9px] text-gs-dim font-mono">Avg Records</div>
+            </div>
+          </div>
+          {followerInsights.topGenres.length > 0 && (
+            <div className="mb-2">
+              <div className="text-[9px] text-gs-faint font-mono mb-1.5">TOP GENRES IN YOUR NETWORK</div>
+              <div className="flex gap-1.5 flex-wrap">
+                {followerInsights.topGenres.map(([genre, count]) => (
+                  <span key={genre} className="text-[9px] px-1.5 py-0.5 rounded-full bg-gs-accent/10 text-gs-accent border border-gs-accent/20">{genre} ({count})</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {followerInsights.topLocations.length > 0 && (
+            <div>
+              <div className="text-[9px] text-gs-faint font-mono mb-1.5">TOP LOCATIONS</div>
+              <div className="flex gap-1.5 flex-wrap">
+                {followerInsights.topLocations.map(([loc, count]) => (
+                  <span key={loc} className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-500/10 text-purple-400 border border-purple-500/20">{loc} ({count})</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Improvement C11: Feed Algorithm Controls */}
+      {showFeedAlgoControls && (
+        <div className="mb-4 p-4 rounded-xl border border-gs-border bg-gs-card">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[10px] font-bold text-gs-dim tracking-widest font-mono">FEED ALGORITHM</div>
+            <button onClick={() => setShowFeedAlgoControls(false)} className="bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-xs">&times;</button>
+          </div>
+          <div className="mb-3">
+            <div className="text-[10px] text-gs-faint font-mono mb-1.5">Sort Mode</div>
+            <div className="flex gap-1">
+              {['chronological', 'relevance', 'engagement'].map(mode => (
+                <button key={mode} onClick={() => updateFeedAlgorithm('mode', mode)} className={`text-[10px] px-2.5 py-1 rounded-lg font-mono cursor-pointer transition-all border capitalize ${feedAlgorithm.mode === mode ? 'bg-gs-accent/10 border-gs-accent/30 text-gs-accent font-bold' : 'bg-[#111] border-[#1a1a1a] text-gs-dim hover:border-[#333]'}`}>{mode}</button>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-[10px] text-gs-dim cursor-pointer select-none">
+              <input type="checkbox" checked={feedAlgorithm.boostCloseFriends} onChange={() => updateFeedAlgorithm('boostCloseFriends', !feedAlgorithm.boostCloseFriends)} className="accent-gs-accent w-3 h-3" />
+              Boost close friends&apos; posts
+            </label>
+            <label className="flex items-center gap-2 text-[10px] text-gs-dim cursor-pointer select-none">
+              <input type="checkbox" checked={feedAlgorithm.hideInactive} onChange={() => updateFeedAlgorithm('hideInactive', !feedAlgorithm.hideInactive)} className="accent-gs-accent w-3 h-3" />
+              Hide posts from inactive users
+            </label>
+            <label className="flex items-center gap-2 text-[10px] text-gs-dim cursor-pointer select-none">
+              <input type="checkbox" checked={feedAlgorithm.showReposts} onChange={() => updateFeedAlgorithm('showReposts', !feedAlgorithm.showReposts)} className="accent-gs-accent w-3 h-3" />
+              Show reposts in feed
+            </label>
+          </div>
+        </div>
+      )}
+
+      {/* Improvement C13: Following List Comparison Tool */}
+      {showComparisonTool && (
+        <div className="mb-4 p-4 rounded-xl border border-gs-border bg-gs-card">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[10px] font-bold text-gs-dim tracking-widest font-mono">COMPARE FOLLOWING LISTS</div>
+            <button onClick={() => { setShowComparisonTool(false); setComparisonUser(null); }} className="bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-xs">&times;</button>
+          </div>
+          <div className="mb-3">
+            <div className="text-[10px] text-gs-faint mb-1.5">Compare with:</div>
+            <div className="flex gap-1.5 flex-wrap">
+              {allUsers.slice(0, 8).map(u => {
+                const p = getProfile(u);
+                return (
+                  <button key={u} onClick={() => setComparisonUser(u)} className={`text-[10px] px-2 py-1 rounded-lg border cursor-pointer transition-colors ${comparisonUser === u ? 'bg-gs-accent/10 border-gs-accent/30 text-gs-accent' : 'bg-[#111] border-gs-border text-gs-faint hover:text-gs-text'}`}>
+                    {p.displayName}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {comparisonData && (
+            <div>
+              <div className="grid grid-cols-3 gap-2 mb-2">
+                <div className="bg-[#111] rounded-lg py-2 px-2.5 text-center">
+                  <div className="text-[12px] font-bold text-[#22c55e]">{comparisonData.mutual.length}</div>
+                  <div className="text-[8px] text-gs-dim font-mono">Both Follow</div>
+                </div>
+                <div className="bg-[#111] rounded-lg py-2 px-2.5 text-center">
+                  <div className="text-[12px] font-bold text-gs-accent">{comparisonData.onlyMe.length}</div>
+                  <div className="text-[8px] text-gs-dim font-mono">Only You</div>
+                </div>
+                <div className="bg-[#111] rounded-lg py-2 px-2.5 text-center">
+                  <div className="text-[12px] font-bold text-[#f59e0b]">{comparisonData.onlyThem.length}</div>
+                  <div className="text-[8px] text-gs-dim font-mono">Only Them</div>
+                </div>
+              </div>
+              {comparisonData.onlyThem.length > 0 && (
+                <div>
+                  <div className="text-[9px] text-gs-faint font-mono mb-1">YOU MIGHT WANT TO FOLLOW</div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {comparisonData.onlyThem.slice(0, 4).map(u => {
+                      const p = getProfile(u);
+                      return (
+                        <div key={u} className="flex items-center gap-1.5 bg-[#111] rounded-lg px-2 py-1">
+                          <Avatar username={u} size={20} onClick={() => onViewUser(u)} />
+                          <span className="text-[9px] text-gs-muted">{p.displayName}</span>
+                          <button onClick={() => onFollow(u)} className="text-[8px] px-1.5 py-0.5 rounded bg-gs-accent/20 text-gs-accent border-none cursor-pointer">Follow</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Improvement C6: Unfollow with reason modal */}
+      {unfollowReasonFor && (
+        <div className="mb-4 p-3.5 rounded-xl border border-red-500/20 bg-red-500/5">
+          <div className="text-[11px] font-bold text-gs-text mb-2">Why are you unfollowing @{unfollowReasonFor}?</div>
+          <div className="flex flex-col gap-1.5 mb-3">
+            {UNFOLLOW_REASON_OPTIONS.map(reason => (
+              <label key={reason} className="flex items-center gap-2 text-[10px] text-gs-dim cursor-pointer select-none">
+                <input type="radio" name="unfollowReason" checked={selectedUnfollowReason === reason} onChange={() => setSelectedUnfollowReason(reason)} className="accent-red-400 w-3 h-3" />
+                {reason}
+              </label>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => handleUnfollowWithReason(unfollowReasonFor)} className="text-[10px] px-3 py-1.5 rounded-lg bg-red-500 text-white border-none cursor-pointer font-semibold">Unfollow</button>
+            <button onClick={() => { setUnfollowReasonFor(null); setSelectedUnfollowReason(''); }} className="text-[10px] px-3 py-1.5 rounded-lg bg-transparent text-gs-faint border border-gs-border cursor-pointer">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* Improvement C8: Import/Export Following List */}
+      {showImportExport && (
+        <div className="mb-4 p-3.5 rounded-xl border border-gs-border bg-gs-card">
+          <div className="flex items-center justify-between mb-2.5">
+            <div className="text-[10px] font-bold text-gs-dim tracking-widest font-mono">IMPORT / EXPORT</div>
+            <button onClick={() => setShowImportExport(false)} className="bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-xs">&times;</button>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleExportFollowingJSON} className="text-[10px] px-3 py-1.5 rounded-lg border border-gs-accent/30 bg-transparent text-gs-accent cursor-pointer hover:bg-gs-accent/10 transition-colors">
+              Export as JSON
+            </button>
+            <button onClick={exportFollowingList} className="text-[10px] px-3 py-1.5 rounded-lg border border-gs-accent/30 bg-transparent text-gs-accent cursor-pointer hover:bg-gs-accent/10 transition-colors">
+              Export as TXT
+            </button>
+            <button onClick={handleImportFollowingList} className="text-[10px] px-3 py-1.5 rounded-lg border border-purple-500/30 bg-transparent text-purple-400 cursor-pointer hover:bg-purple-500/10 transition-colors">
+              {importStatus === 'importing' ? 'Importing...' : importStatus === 'success' ? 'Imported!' : 'Import List'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Improvement C2: Close Friends Manager */}
+      {showCloseFriendsManager && (
+        <div className="mb-4 p-3.5 rounded-xl border border-green-500/20 bg-green-500/5">
+          <div className="flex items-center justify-between mb-2.5">
+            <div className="text-[10px] font-bold text-gs-dim tracking-widest font-mono">CLOSE FRIENDS ({closeFriends.length})</div>
+            <button onClick={() => setShowCloseFriendsManager(false)} className="bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-xs">&times;</button>
+          </div>
+          <div className="text-[9px] text-gs-faint mb-2">Close friends see your private stories and get priority in your feed.</div>
+          <div className="flex gap-2 flex-wrap">
+            {following.map(u => {
+              const p = getProfile(u);
+              const isClose = closeFriends.includes(u);
+              return (
+                <button key={u} onClick={() => toggleCloseFriend(u)} className={`flex items-center gap-1.5 text-[10px] px-2 py-1 rounded-lg border cursor-pointer transition-colors ${isClose ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-transparent border-gs-border text-gs-faint hover:text-gs-text'}`}>
+                  <Avatar username={u} size={18} />
+                  {p.displayName}
+                  {isClose && <span className="text-[8px]">&#10003;</span>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Improvement C5: Purchase-based suggestions */}
+      {purchaseBasedSuggestions.length > 0 && activeTab === "following" && (
+        <div className="mb-4 p-3 rounded-xl border border-gs-border bg-gs-card">
+          <div className="text-[10px] font-bold text-gs-dim tracking-widest font-mono mb-2">BASED ON YOUR COLLECTION</div>
+          <div className="text-[9px] text-gs-faint mb-2">Collectors with similar artists in their collection</div>
+          <div className="flex gap-2 flex-wrap">
+            {purchaseBasedSuggestions.map(u => {
+              const p = getProfile(u);
+              return (
+                <div key={u} className="flex items-center gap-2 bg-[#111] rounded-lg px-2.5 py-1.5">
+                  <Avatar username={u} size={24} onClick={() => onViewUser(u)} />
+                  <span className="text-[10px] text-gs-muted">{p.displayName}</span>
+                  <button onClick={() => onFollow(u)} className="text-[9px] px-1.5 py-0.5 rounded bg-gs-accent/20 text-gs-accent border-none cursor-pointer font-semibold">Follow</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Following tab content */}
       {activeTab === "following" && (
         <>
+          {/* Toolbar: Insights, Algorithm, Compare, Close Friends, Import/Export, Requests */}
+          <div className="flex gap-1.5 flex-wrap mb-3">
+            {following.length > 0 && (
+              <>
+                <button onClick={() => setShowFollowerInsights(!showFollowerInsights)} className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-mono cursor-pointer transition-colors ${showFollowerInsights ? 'bg-gs-accent/15 border-gs-accent/30 text-gs-accent' : 'bg-gs-card border-gs-border text-gs-faint hover:border-[#333]'}`}>Insights</button>
+                <button onClick={() => setShowFeedAlgoControls(!showFeedAlgoControls)} className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-mono cursor-pointer transition-colors ${showFeedAlgoControls ? 'bg-gs-accent/15 border-gs-accent/30 text-gs-accent' : 'bg-gs-card border-gs-border text-gs-faint hover:border-[#333]'}`}>Feed Controls</button>
+                <button onClick={() => setShowComparisonTool(!showComparisonTool)} className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-mono cursor-pointer transition-colors ${showComparisonTool ? 'bg-gs-accent/15 border-gs-accent/30 text-gs-accent' : 'bg-gs-card border-gs-border text-gs-faint hover:border-[#333]'}`}>Compare</button>
+                <button onClick={() => setShowCloseFriendsManager(!showCloseFriendsManager)} className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-mono cursor-pointer transition-colors ${showCloseFriendsManager ? 'bg-green-500/15 border-green-500/30 text-green-400' : 'bg-gs-card border-gs-border text-gs-faint hover:border-[#333]'}`}>Close Friends</button>
+                <button onClick={() => setShowImportExport(!showImportExport)} className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-mono cursor-pointer transition-colors ${showImportExport ? 'bg-gs-accent/15 border-gs-accent/30 text-gs-accent' : 'bg-gs-card border-gs-border text-gs-faint hover:border-[#333]'}`}>Import/Export</button>
+              </>
+            )}
+            {followRequests.received.length > 0 && (
+              <button onClick={() => setShowFollowRequests(!showFollowRequests)} className="text-[10px] px-2.5 py-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-400 font-mono cursor-pointer">Requests ({followRequests.received.length})</button>
+            )}
+            {/* Improvement C9: Mutual following highlights toggle */}
+            <button onClick={() => setHighlightMutuals(!highlightMutuals)} className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-mono cursor-pointer transition-colors ${highlightMutuals ? 'bg-blue-500/15 border-blue-500/30 text-blue-400' : 'bg-gs-card border-gs-border text-gs-faint hover:border-[#333]'}`}>Mutuals</button>
+          </div>
+
+          {/* Improvement C4: Tier filter */}
+          {following.length > 0 && (
+            <div className="flex gap-1 mb-3">
+              {[{ label: 'All', value: 'all' }, { label: 'Close Friends', value: 'close' }, { label: 'Regular', value: 'regular' }, { label: 'Acquaintance', value: 'acquaintance' }].map(tier => (
+                <button key={tier.value} onClick={() => setFollowTierView(tier.value)} className={`text-[10px] px-2 py-1 rounded-full border cursor-pointer transition-colors ${followTierView === tier.value ? 'bg-gs-accent/15 text-gs-accent border-gs-accent/30' : 'bg-transparent text-gs-faint border-gs-border'}`}>{tier.label}</button>
+              ))}
+            </div>
+          )}
+
           {/* Search bar */}
           <div className="relative mb-3">
             <input
@@ -1383,12 +1972,39 @@ export default function FollowingScreen({ following, records, currentUser, onFol
                 PEOPLE YOU FOLLOW {search && `(${filteredFollowing.length})`}
                 {filterByCategory && ` / ${filterByCategory}`}
               </div>
-              {filteredFollowing.length === 0 ? (
+              {filteredByTier.length === 0 ? (
                 <div className="text-center py-8 text-gs-faint text-xs mb-8">No followed users match your search.</div>
               ) : (
                 <div className="flex flex-col gap-2 mb-8">
-                  {filteredFollowing.map(u => (
-                    <UserCard key={u} u={u} isFollowed showRecentAdds />
+                  {filteredByTier.map(u => (
+                    <div key={u} className={`relative ${highlightMutuals && isMutualFollow(u) ? 'ring-1 ring-blue-500/30 rounded-xl' : ''}`}>
+                      {/* Improvement C9: Mutual badge */}
+                      {highlightMutuals && isMutualFollow(u) && (
+                        <div className="absolute -top-1.5 right-3 z-10 text-[8px] px-1.5 py-px rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">Mutual</div>
+                      )}
+                      {/* Improvement C2: Close friend star */}
+                      {closeFriends.includes(u) && (
+                        <div className="absolute -top-1.5 left-3 z-10 text-[8px] px-1.5 py-px rounded-full bg-green-500/20 text-green-400 border border-green-500/30">Close Friend</div>
+                      )}
+                      <UserCard u={u} isFollowed showRecentAdds />
+                      {/* Improvement C10: Follow streak */}
+                      {(() => { const s = getFollowStreak(u, followStreaks); return s.days > 0 ? <div className="px-4 pb-2 -mt-1"><span className="text-[9px] text-amber-400 font-mono">{s.days}-day streak</span></div> : null; })()}
+                      {/* Improvement C4: Tier selector */}
+                      <div className="px-4 pb-2 -mt-1 flex items-center gap-2">
+                        <span className="text-[8px] text-gs-faint">Tier:</span>
+                        {['close', 'regular', 'acquaintance'].map(t => (
+                          <button key={t} onClick={() => setUserTier(u, t)} className={`text-[8px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors capitalize ${(userTiers[u] || 'regular') === t ? 'bg-gs-accent/10 border-gs-accent/30 text-gs-accent' : 'bg-transparent border-gs-border text-gs-faint'}`}>{t}</button>
+                        ))}
+                        {/* Improvement C12: Block/Mute menu */}
+                        <button onClick={() => setShowBlockMuteMenu(showBlockMuteMenu === u ? null : u)} className="text-[8px] px-1.5 py-0.5 rounded border border-gs-border text-gs-faint bg-transparent cursor-pointer hover:text-red-400 ml-auto">...</button>
+                        {showBlockMuteMenu === u && (
+                          <div className="flex gap-1">
+                            <button onClick={() => handleMuteUser(u)} className={`text-[8px] px-1.5 py-0.5 rounded border cursor-pointer ${blockMuteList.muted.includes(u) ? 'border-amber-500/30 text-amber-400 bg-amber-500/10' : 'border-gs-border text-gs-faint bg-transparent hover:text-amber-400'}`}>{blockMuteList.muted.includes(u) ? 'Unmute' : 'Mute'}</button>
+                            <button onClick={() => handleBlockUser(u)} className="text-[8px] px-1.5 py-0.5 rounded border border-red-500/30 text-red-400 bg-transparent cursor-pointer hover:bg-red-500/10">Block</button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
