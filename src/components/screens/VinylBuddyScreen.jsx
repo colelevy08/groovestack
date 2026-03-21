@@ -38,6 +38,18 @@ function ensureKeyframes() {
     @keyframes vb-celebration-bounce { 0%,100% { transform:scale(1); } 50% { transform:scale(1.15); } }
     @keyframes vb-slide-up { from { opacity:0; transform:translateY(30px); } to { opacity:1; transform:translateY(0); } }
     @keyframes vb-bg-drift { 0% { background-position:0% 50%; } 50% { background-position:100% 50%; } 100% { background-position:0% 50%; } }
+    @keyframes vb-vinyl-spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+    @keyframes vb-haptic-buzz { 0%,100% { transform:translateX(0); } 10% { transform:translateX(-2px); } 20% { transform:translateX(2px); } 30% { transform:translateX(-1px); } 40% { transform:translateX(1px); } }
+    @keyframes vb-progress-ring { from { stroke-dashoffset:283; } }
+    @keyframes vb-swipe-hint { 0%,100% { transform:translateX(0); } 50% { transform:translateX(-8px); } }
+    @keyframes vb-quality-pulse { 0%,100% { box-shadow:0 0 0 0 rgba(34,197,94,0.4); } 50% { box-shadow:0 0 0 8px rgba(34,197,94,0); } }
+    @keyframes vb-timeline-draw { from { max-height:0; opacity:0; } to { max-height:600px; opacity:1; } }
+    @keyframes vb-card-float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-4px); } }
+    @keyframes vb-drag-hint { 0%,100% { opacity:0.4; } 50% { opacity:0.8; } }
+    @keyframes vb-compare-slide { from { width:50%; } }
+    @keyframes vb-chain-link { 0% { stroke-dashoffset:20; } 100% { stroke-dashoffset:0; } }
+    @keyframes vb-confetti-burst { 0% { transform:scale(0) rotate(0deg); opacity:1; } 100% { transform:scale(1.5) rotate(360deg); opacity:0; } }
+    @keyframes vb-gradient-shift { 0% { background-position:0% 50%; } 50% { background-position:100% 50%; } 100% { background-position:0% 50%; } }
     @keyframes vb-wave-draw { from { stroke-dashoffset:1000; } to { stroke-dashoffset:0; } }
     .vb-fade-in { animation: vb-fade-in 0.3s ease-out both; }
     .vb-skeleton {
@@ -5380,6 +5392,1389 @@ function DeviceSetupOnboarding() {
   );
 }
 
+// ============================================================================
+// PREMIUM UX FEATURES (P1-P20)
+// ============================================================================
+
+// ── P1: Animated Vinyl Loading Spinner ──────────────────────────────────────
+function VinylLoadingSpinner({ loading = true, size = 64, label = "Loading..." }) {
+  const [rotation, setRotation] = useState(0);
+  useEffect(() => {
+    if (!loading) return;
+    const id = requestAnimationFrame(function spin() {
+      setRotation(r => (r + 2) % 360);
+      if (loading) requestAnimationFrame(spin);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [loading]);
+
+  if (!loading) return null;
+  const half = size / 2;
+  const grooveCount = 8;
+  return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10, padding:24 }}>
+      <div style={{ width:size, height:size, position:'relative' }}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ animation:'vb-vinyl-spin 2s linear infinite' }}>
+          <circle cx={half} cy={half} r={half - 1} fill="#111" stroke="#333" strokeWidth="1" />
+          {Array.from({ length: grooveCount }, (_, i) => {
+            const r = 6 + (i * (half - 10)) / grooveCount;
+            return <circle key={i} cx={half} cy={half} r={r} fill="none" stroke="#222" strokeWidth="0.5" />;
+          })}
+          <circle cx={half} cy={half} r={6} fill="#e11d48" />
+          <circle cx={half} cy={half} r={2} fill="#333" />
+          <line x1={half} y1={half} x2={half + 4} y2={half - 4} stroke="rgba(255,255,255,0.15)" strokeWidth="0.5" />
+        </svg>
+        <div style={{ position:'absolute', top:-4, right:-4, width:size * 0.35, height:2, background:'linear-gradient(90deg,transparent,#666)', borderRadius:1, transformOrigin:'100% 50%', transform:`rotate(${25 + Math.sin(rotation * 0.01) * 3}deg)` }} />
+      </div>
+      <div style={{ fontSize:11, color:'#666', fontWeight:500, letterSpacing:'0.03em' }}>{label}</div>
+    </div>
+  );
+}
+
+// ── P2: Haptic Feedback Patterns ────────────────────────────────────────────
+function HapticFeedbackPatterns() {
+  const [activePattern, setActivePattern] = useState(null);
+  const [playing, setPlaying] = useState(false);
+  const patterns = [
+    { id:'soft-tap', label:'Soft Tap', icon:'👆', bars:[3,1,0,0,0,0,0,0], color:'#6366f1', desc:'Light confirmation' },
+    { id:'double-tap', label:'Double Tap', icon:'👆👆', bars:[4,0,4,0,0,0,0,0], color:'#0ea5e9', desc:'Track identified' },
+    { id:'long-buzz', label:'Long Buzz', icon:'📳', bars:[5,5,5,5,5,5,5,5], color:'#f59e0b', desc:'Error or warning' },
+    { id:'heartbeat', label:'Heartbeat', icon:'💓', bars:[5,2,5,0,0,0,5,2], color:'#e11d48', desc:'Listening milestone' },
+    { id:'celebration', label:'Celebration', icon:'🎉', bars:[2,4,3,5,4,5,3,4], color:'#22c55e', desc:'Achievement unlocked' },
+    { id:'subtle-tick', label:'Subtle Tick', icon:'⏱️', bars:[1,0,1,0,1,0,1,0], color:'#8b5cf6', desc:'Timer tick' },
+  ];
+
+  const playPattern = (p) => {
+    setActivePattern(p.id);
+    setPlaying(true);
+    setTimeout(() => setPlaying(false), 1200);
+  };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><path d="M5 12h14"/><path d="M12 5v14"/><circle cx="12" cy="12" r="10"/></svg>
+        <span className="text-xs font-bold text-gs-text">Haptic Feedback Patterns</span>
+        <span className="text-[9px] bg-[#8b5cf622] text-[#8b5cf6] px-1.5 py-0.5 rounded-full font-semibold ml-auto">DEVICE</span>
+      </div>
+      <p className="text-[10px] text-gs-dim mb-3">Visual preview of haptic patterns your VinylBuddy plays for different events.</p>
+      <div className="grid grid-cols-2 gap-2">
+        {patterns.map(p => (
+          <button key={p.id} onClick={() => playPattern(p)} className="text-left bg-[#0a0a0a] border border-gs-border rounded-xl p-3 transition-all duration-200 hover:border-[#8b5cf633]" style={activePattern === p.id && playing ? { animation:'vb-haptic-buzz 0.3s ease-in-out 3', borderColor: p.color + '55' } : {}}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm">{p.icon}</span>
+              <span className="text-[11px] font-bold text-gs-text">{p.label}</span>
+            </div>
+            <div className="flex items-end gap-[2px] h-5 mb-1.5">
+              {p.bars.map((b, i) => (
+                <div key={i} style={{ width:4, height: b * 4 || 1, background: activePattern === p.id && playing ? p.color : '#333', borderRadius:1, transition:'all 0.15s ease' }} />
+              ))}
+            </div>
+            <div className="text-[9px] text-gs-dim">{p.desc}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── P3: Device Skin/Theme Selector ──────────────────────────────────────────
+function DeviceSkinSelector() {
+  const [selected, setSelected] = useState('classic');
+  const themes = [
+    { id:'classic', name:'Classic', bg:'linear-gradient(135deg,#1a1a1a,#111)', accent:'#22c55e', text:'#e5e5e5', desc:'Original dark look' },
+    { id:'neon', name:'Neon', bg:'linear-gradient(135deg,#0a0020,#1a0040)', accent:'#00ff88', text:'#e0ffe0', desc:'Cyberpunk vibes' },
+    { id:'minimal', name:'Minimal', bg:'linear-gradient(135deg,#fafafa,#f0f0f0)', accent:'#111', text:'#111', desc:'Clean & simple' },
+    { id:'retro', name:'Retro', bg:'linear-gradient(135deg,#2a1810,#1a1008)', accent:'#f59e0b', text:'#fde68a', desc:'Warm vintage feel' },
+  ];
+  const active = themes.find(t => t.id === selected);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        <span className="text-xs font-bold text-gs-text">Device Theme</span>
+        <span className="text-[9px] bg-[#f59e0b22] text-[#f59e0b] px-1.5 py-0.5 rounded-full font-semibold ml-auto">PREMIUM</span>
+      </div>
+      <div className="grid grid-cols-4 gap-2 mb-3">
+        {themes.map(t => (
+          <button key={t.id} onClick={() => setSelected(t.id)} className="rounded-xl p-2 border transition-all duration-200 text-center" style={{ background: t.bg, borderColor: selected === t.id ? t.accent : 'transparent', boxShadow: selected === t.id ? `0 0 12px ${t.accent}22` : 'none' }}>
+            <div style={{ width:24, height:24, borderRadius:'50%', background:t.accent, margin:'0 auto 4px', border:`2px solid ${t.text}22` }} />
+            <div style={{ fontSize:9, fontWeight:700, color:t.text }}>{t.name}</div>
+          </button>
+        ))}
+      </div>
+      {/* Preview */}
+      <div className="rounded-xl p-3 border border-gs-border" style={{ background: active.bg }}>
+        <div className="flex items-center gap-2 mb-2">
+          <div style={{ width:8, height:8, borderRadius:'50%', background:active.accent }} />
+          <span style={{ fontSize:11, fontWeight:700, color:active.text }}>Preview: {active.name}</span>
+        </div>
+        <div className="flex gap-2">
+          <div style={{ width:36, height:36, borderRadius:8, background:active.accent + '33', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <span style={{ fontSize:14 }}>🎵</span>
+          </div>
+          <div>
+            <div style={{ fontSize:10, fontWeight:600, color:active.text }}>Sample Track</div>
+            <div style={{ fontSize:9, color:active.text, opacity:0.6 }}>Artist Name</div>
+          </div>
+        </div>
+        <p className="text-[9px] text-gs-dim mt-2">{active.desc}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── P4: Listening Time Goal Tracker ─────────────────────────────────────────
+function ListeningTimeGoalTracker({ myListens = [] }) {
+  const [goalType, setGoalType] = useState('daily'); // daily | weekly
+  const [dailyGoal, setDailyGoal] = useState(60); // minutes
+  const [weeklyGoal, setWeeklyGoal] = useState(300);
+
+  const { dailyMinutes, weeklyMinutes } = useMemo(() => {
+    const now = Date.now();
+    const dayStart = new Date().setHours(0, 0, 0, 0);
+    const weekStart = now - (new Date().getDay() * 86400000);
+    let dMin = 0, wMin = 0;
+    myListens.forEach(l => {
+      const t = l.timestamp || l.identifiedAt;
+      if (t >= dayStart) dMin += (l.duration || 210) / 60;
+      if (t >= weekStart) wMin += (l.duration || 210) / 60;
+    });
+    return { dailyMinutes: Math.round(dMin), weeklyMinutes: Math.round(wMin) };
+  }, [myListens]);
+
+  const goal = goalType === 'daily' ? dailyGoal : weeklyGoal;
+  const current = goalType === 'daily' ? dailyMinutes : weeklyMinutes;
+  const pct = Math.min(100, Math.round((current / goal) * 100));
+  const circumference = 2 * Math.PI * 45;
+  const offset = circumference - (pct / 100) * circumference;
+  const color = pct >= 100 ? '#22c55e' : pct >= 60 ? '#0ea5e9' : '#f59e0b';
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span className="text-xs font-bold text-gs-text">Listening Goals</span>
+      </div>
+      <div className="flex gap-1 mb-3">
+        {['daily', 'weekly'].map(t => (
+          <button key={t} onClick={() => setGoalType(t)} className="text-[10px] font-semibold px-3 py-1 rounded-full transition-all" style={{ background: goalType === t ? color + '22' : 'transparent', color: goalType === t ? color : '#666', border: `1px solid ${goalType === t ? color + '44' : 'transparent'}` }}>
+            {t.charAt(0).toUpperCase() + t.slice(1)}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-4">
+        <div style={{ position:'relative', width:100, height:100 }}>
+          <svg width="100" height="100" viewBox="0 0 100 100" style={{ transform:'rotate(-90deg)' }}>
+            <circle cx="50" cy="50" r="45" fill="none" stroke="#1a1a1a" strokeWidth="6" />
+            <circle cx="50" cy="50" r="45" fill="none" stroke={color} strokeWidth="6" strokeLinecap="round" strokeDasharray={circumference} strokeDashoffset={offset} style={{ transition:'stroke-dashoffset 0.8s ease', animation: 'vb-progress-ring 1s ease-out' }} />
+          </svg>
+          <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+            <span style={{ fontSize:20, fontWeight:800, color }}>{pct}%</span>
+            <span style={{ fontSize:8, color:'#666' }}>{goalType}</span>
+          </div>
+        </div>
+        <div className="flex-1">
+          <div className="text-[11px] text-gs-muted mb-1">{current} / {goal} min</div>
+          <div className="w-full h-2 bg-[#1a1a1a] rounded-full overflow-hidden mb-2">
+            <div style={{ width:`${pct}%`, height:'100%', background:color, borderRadius:999, transition:'width 0.8s ease' }} />
+          </div>
+          {pct >= 100 ? (
+            <div className="text-[10px] font-bold text-[#22c55e]">Goal reached! Keep it up!</div>
+          ) : (
+            <div className="text-[10px] text-gs-dim">{goal - current} min remaining</div>
+          )}
+          <div className="flex gap-2 mt-2">
+            <button onClick={() => goalType === 'daily' ? setDailyGoal(g => Math.max(15, g - 15)) : setWeeklyGoal(g => Math.max(60, g - 60))} className="text-[9px] text-gs-dim bg-[#1a1a1a] rounded px-2 py-0.5 border border-gs-border">-</button>
+            <span className="text-[9px] text-gs-muted font-mono">{goal}m goal</span>
+            <button onClick={() => goalType === 'daily' ? setDailyGoal(g => g + 15) : setWeeklyGoal(g => g + 60)} className="text-[9px] text-gs-dim bg-[#1a1a1a] rounded px-2 py-0.5 border border-gs-border">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── P5: Record Recommendation Cards ─────────────────────────────────────────
+function RecordRecommendationCards({ myListens = [] }) {
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [swipeDir, setSwipeDir] = useState(null);
+  const [liked, setLiked] = useState([]);
+  const [passed, setPassed] = useState([]);
+
+  const recommendations = useMemo(() => [
+    { title:'Kind of Blue', artist:'Miles Davis', year:1959, genre:'Jazz', reason:'Based on your jazz listening', color:'#0ea5e9', rating:4.9 },
+    { title:'Rumours', artist:'Fleetwood Mac', year:1977, genre:'Rock', reason:'Classic you might love', color:'#e11d48', rating:4.8 },
+    { title:'Blue Train', artist:'John Coltrane', year:1958, genre:'Hard Bop', reason:'Similar to your favorites', color:'#6366f1', rating:4.7 },
+    { title:'Thriller', artist:'Michael Jackson', year:1982, genre:'Pop', reason:'Top-rated pressing available', color:'#f59e0b', rating:4.9 },
+    { title:'Abbey Road', artist:'The Beatles', year:1969, genre:'Rock', reason:'Trending in community', color:'#22c55e', rating:4.8 },
+    { title:'A Love Supreme', artist:'John Coltrane', year:1965, genre:'Spiritual Jazz', reason:'Matches your taste profile', color:'#8b5cf6', rating:4.9 },
+    { title:'Head Hunters', artist:'Herbie Hancock', year:1973, genre:'Jazz Funk', reason:'Genre you explore often', color:'#14b8a6', rating:4.6 },
+    { title:'OK Computer', artist:'Radiohead', year:1997, genre:'Alt Rock', reason:'Highly rated pressing', color:'#ef4444', rating:4.7 },
+  ], []);
+
+  const card = recommendations[currentIdx % recommendations.length];
+  const remaining = recommendations.length - currentIdx;
+
+  const handleSwipe = (dir) => {
+    setSwipeDir(dir);
+    if (dir === 'right') setLiked(l => [...l, card.title]);
+    else setPassed(p => [...p, card.title]);
+    setTimeout(() => {
+      setSwipeDir(null);
+      setCurrentIdx(i => i + 1);
+    }, 300);
+  };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#e11d48" strokeWidth="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+        <span className="text-xs font-bold text-gs-text">Discover Records</span>
+        <span className="text-[9px] text-gs-dim ml-auto">{liked.length} liked</span>
+      </div>
+      <div style={{ position:'relative', height:200, perspective:800, marginBottom:12 }}>
+        {/* Stacked card effect */}
+        <div style={{ position:'absolute', inset:'8px 8px 0', background:'#0a0a0a', borderRadius:14, border:'1px solid #222', opacity:0.4 }} />
+        <div style={{ position:'absolute', inset:'4px 4px 0', background:'#0f0f0f', borderRadius:14, border:'1px solid #252525', opacity:0.6 }} />
+        {/* Active card */}
+        <div style={{
+          position:'absolute', inset:0, borderRadius:14, overflow:'hidden', border:`1px solid ${card.color}33`,
+          background:`linear-gradient(135deg, ${card.color}11 0%, #111 60%)`,
+          transition:'transform 0.3s ease, opacity 0.3s ease',
+          transform: swipeDir === 'right' ? 'translateX(120%) rotate(15deg)' : swipeDir === 'left' ? 'translateX(-120%) rotate(-15deg)' : 'translateX(0)',
+          opacity: swipeDir ? 0 : 1,
+        }}>
+          <div style={{ padding:16, height:'100%', display:'flex', flexDirection:'column', justifyContent:'space-between' }}>
+            <div>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+                <div style={{ width:48, height:48, borderRadius:10, background:`linear-gradient(135deg, ${card.color}, ${card.color}88)`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, fontWeight:800, color:'#fff' }}>
+                  {card.artist.charAt(0)}
+                </div>
+                <div>
+                  <div style={{ fontSize:14, fontWeight:800, color:'#e5e5e5' }}>{card.title}</div>
+                  <div style={{ fontSize:11, color:'#999' }}>{card.artist} ({card.year})</div>
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:6, marginBottom:8 }}>
+                <span style={{ fontSize:9, background:card.color + '22', color:card.color, padding:'2px 8px', borderRadius:99, fontWeight:600 }}>{card.genre}</span>
+                <span style={{ fontSize:9, background:'#f59e0b22', color:'#f59e0b', padding:'2px 8px', borderRadius:99, fontWeight:600 }}>{'★'.repeat(Math.floor(card.rating))} {card.rating}</span>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize:10, color:'#888', marginBottom:4 }}>{card.reason}</div>
+              <div style={{ fontSize:9, color:'#555' }}>{remaining > 0 ? `${remaining} more recommendations` : 'Refresh for more'}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="flex justify-center gap-4">
+        <button onClick={() => handleSwipe('left')} style={{ width:48, height:48, borderRadius:'50%', border:'2px solid #ef444466', background:'#ef444411', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:18, transition:'all 0.15s' }}>
+          ✕
+        </button>
+        <button onClick={() => setCurrentIdx(0)} style={{ width:36, height:36, borderRadius:'50%', border:'1px solid #33333366', background:'#11111166', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:12, color:'#666', alignSelf:'center' }}>
+          ↺
+        </button>
+        <button onClick={() => handleSwipe('right')} style={{ width:48, height:48, borderRadius:'50%', border:'2px solid #22c55e66', background:'#22c55e11', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:18, transition:'all 0.15s' }}>
+          ♥
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── P6: Album Credits Viewer ────────────────────────────────────────────────
+function AlbumCreditsViewer() {
+  const [expanded, setExpanded] = useState(null);
+  const albums = [
+    { title:'Kind of Blue', artist:'Miles Davis', year:1959, cover:'🎺',
+      credits: [
+        { role:'Producer', name:'Teo Macero' },
+        { role:'Trumpet', name:'Miles Davis' },
+        { role:'Alto Saxophone', name:'Cannonball Adderley' },
+        { role:'Tenor Saxophone', name:'John Coltrane' },
+        { role:'Piano', name:'Bill Evans / Wynton Kelly' },
+        { role:'Bass', name:'Paul Chambers' },
+        { role:'Drums', name:'Jimmy Cobb' },
+        { role:'Engineer', name:'Fred Plaut' },
+        { role:'Studio', name:'Columbia 30th Street Studio, NYC' },
+        { role:'Mastering', name:'Columbia Records' },
+      ]},
+    { title:'Rumours', artist:'Fleetwood Mac', year:1977, cover:'🎸',
+      credits: [
+        { role:'Producers', name:'Fleetwood Mac, Ken Caillat, Richard Dashut' },
+        { role:'Vocals/Guitar', name:'Lindsey Buckingham' },
+        { role:'Vocals', name:'Stevie Nicks' },
+        { role:'Keyboards/Vocals', name:'Christine McVie' },
+        { role:'Bass', name:'John McVie' },
+        { role:'Drums', name:'Mick Fleetwood' },
+        { role:'Engineer', name:'Ken Caillat, Richard Dashut' },
+        { role:'Studio', name:'Record Plant, Sausalito; Criteria Studios, Miami' },
+        { role:'Mastering', name:'Ken Perry, Capitol Studios' },
+      ]},
+  ];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" strokeWidth="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>
+        <span className="text-xs font-bold text-gs-text">Album Credits</span>
+      </div>
+      <div className="space-y-2">
+        {albums.map((a, i) => (
+          <div key={i} className="bg-[#0a0a0a] border border-gs-border rounded-xl overflow-hidden">
+            <button onClick={() => setExpanded(expanded === i ? null : i)} className="w-full flex items-center gap-3 p-3 text-left transition-all hover:bg-[#111]" style={{ cursor:'pointer', border:'none', background:'transparent' }}>
+              <div style={{ width:36, height:36, borderRadius:8, background:'linear-gradient(135deg,#14b8a633,#0a0a0a)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>{a.cover}</div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] font-bold text-gs-text truncate">{a.title}</div>
+                <div className="text-[9px] text-gs-dim">{a.artist} ({a.year})</div>
+              </div>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" style={{ transform: expanded === i ? 'rotate(180deg)' : 'rotate(0)', transition:'transform 0.2s' }}>
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+            {expanded === i && (
+              <div style={{ padding:'0 12px 12px', animation:'vb-fade-in 0.2s ease-out' }}>
+                <div style={{ borderTop:'1px solid #1a1a1a', paddingTop:8 }}>
+                  {a.credits.map((c, j) => (
+                    <div key={j} style={{ display:'flex', justifyContent:'space-between', padding:'4px 0', borderBottom:'1px solid #0f0f0f' }}>
+                      <span style={{ fontSize:9, color:'#14b8a6', fontWeight:600, minWidth:80 }}>{c.role}</span>
+                      <span style={{ fontSize:10, color:'#ccc', textAlign:'right', flex:1 }}>{c.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── P7: Vinyl Pressing Quality Analyzer ─────────────────────────────────────
+function PressingQualityAnalyzer() {
+  const [analyzing, setAnalyzing] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const analyze = () => {
+    setAnalyzing(true);
+    setResult(null);
+    setTimeout(() => {
+      setAnalyzing(false);
+      setResult({
+        overall: 87,
+        surfaceNoise: 91,
+        dynamicRange: 84,
+        channelSeparation: 88,
+        wowFlutter: 82,
+        innerGrooveDistortion: 79,
+        pressing: '1st Press, Columbia',
+        grade: 'VG+',
+        color: '#22c55e',
+      });
+    }, 2500);
+  };
+
+  const metrics = result ? [
+    { label:'Surface Noise', value:result.surfaceNoise, color:'#22c55e' },
+    { label:'Dynamic Range', value:result.dynamicRange, color:'#0ea5e9' },
+    { label:'Channel Separation', value:result.channelSeparation, color:'#6366f1' },
+    { label:'Wow & Flutter', value:result.wowFlutter, color:'#f59e0b' },
+    { label:'Inner Groove Dist.', value:result.innerGrooveDistortion, color:'#e11d48' },
+  ] : [];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <span className="text-xs font-bold text-gs-text">Pressing Quality Analyzer</span>
+      </div>
+      {!result && !analyzing && (
+        <div className="text-center py-4">
+          <p className="text-[10px] text-gs-dim mb-3">Analyze audio metrics to score your vinyl pressing quality.</p>
+          <button onClick={analyze} className="gs-btn-gradient px-5 py-2 text-xs text-white rounded-lg">Start Analysis</button>
+        </div>
+      )}
+      {analyzing && <VinylLoadingSpinner loading={true} size={48} label="Analyzing pressing quality..." />}
+      {result && (
+        <div style={{ animation:'vb-fade-in 0.3s ease-out' }}>
+          <div className="flex items-center gap-4 mb-3">
+            <div style={{ position:'relative', width:72, height:72 }}>
+              <svg width="72" height="72" viewBox="0 0 72 72" style={{ transform:'rotate(-90deg)' }}>
+                <circle cx="36" cy="36" r="30" fill="none" stroke="#1a1a1a" strokeWidth="5" />
+                <circle cx="36" cy="36" r="30" fill="none" stroke={result.color} strokeWidth="5" strokeLinecap="round" strokeDasharray={2 * Math.PI * 30} strokeDashoffset={2 * Math.PI * 30 * (1 - result.overall / 100)} style={{ animation:'vb-progress-ring 1s ease-out' }} />
+              </svg>
+              <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+                <span style={{ fontSize:18, fontWeight:800, color:result.color }}>{result.overall}</span>
+                <span style={{ fontSize:7, color:'#666', fontWeight:600 }}>SCORE</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] font-bold text-gs-text mb-1">Grade: <span style={{ color:result.color }}>{result.grade}</span></div>
+              <div className="text-[10px] text-gs-dim">{result.pressing}</div>
+              <button onClick={analyze} className="text-[9px] text-[#0ea5e9] mt-1 underline" style={{ background:'none', border:'none', cursor:'pointer', padding:0 }}>Re-analyze</button>
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            {metrics.map(m => (
+              <div key={m.label} className="flex items-center gap-2">
+                <span className="text-[9px] text-gs-dim w-28">{m.label}</span>
+                <div className="flex-1 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+                  <div style={{ width:`${m.value}%`, height:'100%', background:m.color, borderRadius:999, transition:'width 1s ease' }} />
+                </div>
+                <span className="text-[9px] font-mono font-bold" style={{ color:m.color, width:20, textAlign:'right' }}>{m.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── P8: Listening Room Ambiance Selector ────────────────────────────────────
+function ListeningRoomAmbianceSelector() {
+  const [selected, setSelected] = useState('living-room');
+  const rooms = [
+    { id:'studio', name:'Recording Studio', icon:'🎙️', desc:'Flat response, acoustic treatment', reverb:'Dry', warmth:'Neutral', color:'#6366f1' },
+    { id:'living-room', name:'Living Room', icon:'🛋️', desc:'Natural warmth, slight reflections', reverb:'Medium', warmth:'Warm', color:'#f59e0b' },
+    { id:'concert-hall', name:'Concert Hall', icon:'🎭', desc:'Spacious reverb, wide soundstage', reverb:'Rich', warmth:'Cool', color:'#0ea5e9' },
+    { id:'vinyl-bar', name:'Vinyl Bar', icon:'🍸', desc:'Intimate, cozy, bass emphasis', reverb:'Low', warmth:'Very Warm', color:'#e11d48' },
+    { id:'outdoor', name:'Open Air', icon:'🌿', desc:'No reflections, natural ambience', reverb:'None', warmth:'Neutral', color:'#22c55e' },
+    { id:'headphones', name:'Headphone Mode', icon:'🎧', desc:'Crossfeed, binaural processing', reverb:'Virtual', warmth:'Precise', color:'#8b5cf6' },
+  ];
+  const active = rooms.find(r => r.id === selected);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span className="text-xs font-bold text-gs-text">Listening Ambiance</span>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5 mb-3">
+        {rooms.map(r => (
+          <button key={r.id} onClick={() => setSelected(r.id)} style={{ padding:'8px 4px', borderRadius:10, border:`1px solid ${selected === r.id ? r.color + '66' : '#1a1a1a'}`, background: selected === r.id ? r.color + '11' : '#0a0a0a', cursor:'pointer', textAlign:'center', transition:'all 0.2s' }}>
+            <div style={{ fontSize:18, marginBottom:2 }}>{r.icon}</div>
+            <div style={{ fontSize:8, fontWeight:700, color: selected === r.id ? r.color : '#888' }}>{r.name}</div>
+          </button>
+        ))}
+      </div>
+      {active && (
+        <div className="bg-[#0a0a0a] border border-gs-border rounded-xl p-3" style={{ borderColor:active.color + '33' }}>
+          <div className="flex items-center gap-2 mb-2">
+            <span style={{ fontSize:16 }}>{active.icon}</span>
+            <span className="text-[11px] font-bold" style={{ color:active.color }}>{active.name}</span>
+          </div>
+          <p className="text-[9px] text-gs-dim mb-2">{active.desc}</p>
+          <div className="flex gap-4">
+            <div><span className="text-[8px] text-gs-faint uppercase">Reverb</span><div className="text-[10px] font-semibold text-gs-text">{active.reverb}</div></div>
+            <div><span className="text-[8px] text-gs-faint uppercase">Warmth</span><div className="text-[10px] font-semibold text-gs-text">{active.warmth}</div></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── P9: Record Cleaning Timer ───────────────────────────────────────────────
+function RecordCleaningTimer() {
+  const [running, setRunning] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const [targetSec, setTargetSec] = useState(120);
+  const [rotations, setRotations] = useState(0);
+  const intervalRef = useRef(null);
+
+  useEffect(() => {
+    if (running) {
+      intervalRef.current = setInterval(() => {
+        setSeconds(s => {
+          if (s + 1 >= targetSec) { setRunning(false); clearInterval(intervalRef.current); return targetSec; }
+          return s + 1;
+        });
+        setRotations(r => r + 1);
+      }, 1000);
+    }
+    return () => clearInterval(intervalRef.current);
+  }, [running, targetSec]);
+
+  const pct = Math.min(100, (seconds / targetSec) * 100);
+  const angle = (rotations * 3) % 360;
+  const done = seconds >= targetSec;
+  const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14b8a6" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span className="text-xs font-bold text-gs-text">Record Cleaning Timer</span>
+        {done && <span className="text-[9px] bg-[#22c55e22] text-[#22c55e] px-1.5 py-0.5 rounded-full font-semibold ml-auto">DONE</span>}
+      </div>
+      <div className="flex items-center gap-4">
+        <div style={{ position:'relative', width:80, height:80 }}>
+          <svg width="80" height="80" viewBox="0 0 80 80">
+            <circle cx="40" cy="40" r="36" fill="#111" stroke="#222" strokeWidth="1" />
+            {Array.from({ length: 6 }, (_, i) => (
+              <circle key={i} cx="40" cy="40" r={8 + i * 5} fill="none" stroke="#1a1a1a" strokeWidth="0.5" />
+            ))}
+            <circle cx="40" cy="40" r="5" fill="#14b8a6" />
+            <line x1="40" y1="4" x2="40" y2="10" stroke="#14b8a644" strokeWidth="1" style={{ transformOrigin:'40px 40px', transform:`rotate(${angle}deg)` }} />
+          </svg>
+          {running && <div style={{ position:'absolute', inset:0, border:'2px solid #14b8a633', borderRadius:'50%', animation:'vb-vinyl-spin 3s linear infinite' }} />}
+        </div>
+        <div className="flex-1">
+          <div className="text-2xl font-mono font-bold text-gs-text mb-1">{fmt(seconds)}</div>
+          <div className="text-[10px] text-gs-dim mb-2">{rotations} rotations tracked</div>
+          <div className="w-full h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden mb-2">
+            <div style={{ width:`${pct}%`, height:'100%', background: done ? '#22c55e' : '#14b8a6', borderRadius:999, transition:'width 0.3s' }} />
+          </div>
+          <div className="flex gap-2">
+            {!running && !done && (
+              <button onClick={() => setRunning(true)} style={{ fontSize:10, fontWeight:700, color:'#14b8a6', background:'#14b8a611', border:'1px solid #14b8a633', borderRadius:8, padding:'4px 12px', cursor:'pointer' }}>
+                {seconds > 0 ? 'Resume' : 'Start'}
+              </button>
+            )}
+            {running && (
+              <button onClick={() => setRunning(false)} style={{ fontSize:10, fontWeight:700, color:'#f59e0b', background:'#f59e0b11', border:'1px solid #f59e0b33', borderRadius:8, padding:'4px 12px', cursor:'pointer' }}>Pause</button>
+            )}
+            <button onClick={() => { setRunning(false); setSeconds(0); setRotations(0); }} style={{ fontSize:10, fontWeight:700, color:'#666', background:'#1a1a1a', border:'1px solid #333', borderRadius:8, padding:'4px 12px', cursor:'pointer' }}>Reset</button>
+          </div>
+          <div className="flex gap-1 mt-2">
+            {[60,120,180,300].map(t => (
+              <button key={t} onClick={() => { setTargetSec(t); setSeconds(0); setRunning(false); setRotations(0); }} style={{ fontSize:8, padding:'2px 6px', borderRadius:4, border:`1px solid ${targetSec === t ? '#14b8a644' : '#222'}`, background: targetSec === t ? '#14b8a611' : 'transparent', color: targetSec === t ? '#14b8a6' : '#555', cursor:'pointer', fontWeight:600 }}>
+              {fmt(t)}
+            </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── P10: Audio Spectrum Wallpaper Generator ─────────────────────────────────
+function AudioSpectrumWallpaper() {
+  const [generating, setGenerating] = useState(false);
+  const [generated, setGenerated] = useState(false);
+  const [palette, setPalette] = useState('sunset');
+  const canvasRef = useRef(null);
+
+  const palettes = {
+    sunset: ['#ff6b6b','#feca57','#ff9ff3','#54a0ff','#5f27cd'],
+    ocean: ['#0ea5e9','#06b6d4','#14b8a6','#22c55e','#0891b2'],
+    neon: ['#00ff88','#ff00ff','#00ffff','#ffff00','#ff4444'],
+    midnight: ['#6366f1','#8b5cf6','#a855f7','#c084fc','#312e81'],
+    vinyl: ['#1a1a1a','#333333','#e11d48','#f59e0b','#22c55e'],
+  };
+
+  const generate = () => {
+    setGenerating(true);
+    setTimeout(() => {
+      setGenerating(false);
+      setGenerated(true);
+    }, 1500);
+  };
+
+  const colors = palettes[palette];
+  const bars = 32;
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a855f7" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+        <span className="text-xs font-bold text-gs-text">Spectrum Wallpaper</span>
+        <span className="text-[9px] bg-[#a855f722] text-[#a855f7] px-1.5 py-0.5 rounded-full font-semibold ml-auto">NEW</span>
+      </div>
+      <p className="text-[10px] text-gs-dim mb-3">Generate a unique wallpaper from your listening spectrum data.</p>
+      <div className="flex gap-1.5 mb-3">
+        {Object.keys(palettes).map(p => (
+          <button key={p} onClick={() => setPalette(p)} style={{
+            padding:'4px 8px', borderRadius:6, fontSize:9, fontWeight:600, cursor:'pointer',
+            border:`1px solid ${palette === p ? colors[0] + '66' : '#222'}`,
+            background: palette === p ? colors[0] + '11' : 'transparent',
+            color: palette === p ? colors[0] : '#666',
+          }}>{p.charAt(0).toUpperCase() + p.slice(1)}</button>
+        ))}
+      </div>
+      {/* Preview */}
+      <div ref={canvasRef} style={{ width:'100%', height:120, borderRadius:10, background:'#0a0a0a', border:'1px solid #1a1a1a', overflow:'hidden', display:'flex', alignItems:'flex-end', gap:1, padding:'0 4px 4px', position:'relative' }}>
+        {Array.from({ length: bars }, (_, i) => {
+          const h = 20 + Math.sin(i * 0.5 + Date.now() * 0.001) * 30 + Math.random() * 20;
+          return (
+            <div key={i} style={{
+              flex:1, height:`${h}%`, background:`linear-gradient(to top, ${colors[i % colors.length]}, ${colors[(i + 1) % colors.length]}88)`,
+              borderRadius:'2px 2px 0 0', opacity: generated ? 1 : 0.3,
+              animation: generated ? `vb-spectrum ${0.5 + (i % 3) * 0.3}s ease-in-out infinite alternate` : 'none',
+              animationDelay: `${i * 0.05}s`,
+            }} />
+          );
+        })}
+        {!generated && (
+          <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <span style={{ fontSize:10, color:'#555', fontWeight:600 }}>Preview</span>
+          </div>
+        )}
+      </div>
+      <div className="flex gap-2 mt-3">
+        <button onClick={generate} disabled={generating} className="gs-btn-gradient px-4 py-2 text-xs text-white rounded-lg flex-1" style={{ opacity: generating ? 0.6 : 1 }}>
+          {generating ? 'Generating...' : generated ? 'Regenerate' : 'Generate Wallpaper'}
+        </button>
+        {generated && (
+          <button style={{ fontSize:10, fontWeight:700, color:'#a855f7', background:'#a855f711', border:'1px solid #a855f733', borderRadius:8, padding:'4px 16px', cursor:'pointer' }}>Save</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── P11: Identification History Timeline ────────────────────────────────────
+function IdentificationTimeline({ myListens = [] }) {
+  const [expandedIdx, setExpandedIdx] = useState(null);
+  const timelineItems = useMemo(() => {
+    return myListens.slice(0, 12).map((l, i) => ({
+      ...l,
+      title: l.title || l.track || 'Unknown Track',
+      artist: l.artist || 'Unknown Artist',
+      album: l.album || '',
+      time: l.timestamp || l.identifiedAt || Date.now() - i * 3600000,
+      confidence: l.confidence || (85 + Math.random() * 15),
+    }));
+  }, [myListens]);
+
+  const colors = ['#22c55e','#0ea5e9','#6366f1','#f59e0b','#e11d48','#8b5cf6','#14b8a6','#ec4899'];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2"><line x1="12" y1="2" x2="12" y2="22"/><circle cx="12" cy="6" r="3"/><circle cx="12" cy="18" r="3"/><path d="M6 12h12"/></svg>
+        <span className="text-xs font-bold text-gs-text">ID Timeline</span>
+        <span className="text-[9px] text-gs-dim ml-auto">{timelineItems.length} identifications</span>
+      </div>
+      <div style={{ position:'relative', paddingLeft:24, maxHeight:400, overflowY:'auto' }}>
+        {/* Timeline line */}
+        <div style={{ position:'absolute', left:10, top:0, bottom:0, width:2, background:'linear-gradient(to bottom, #6366f1, #6366f133)', borderRadius:1 }} />
+        {timelineItems.length === 0 && <div className="text-[10px] text-gs-dim py-8 text-center">No identifications yet</div>}
+        {timelineItems.map((item, i) => {
+          const c = colors[i % colors.length];
+          return (
+            <div key={i} style={{ position:'relative', marginBottom:12, animation:'vb-timeline-draw 0.4s ease-out both', animationDelay:`${i * 0.08}s` }}>
+              {/* Dot */}
+              <div style={{ position:'absolute', left:-18, top:4, width:10, height:10, borderRadius:'50%', background:c, border:'2px solid #111', zIndex:1 }} />
+              <button onClick={() => setExpandedIdx(expandedIdx === i ? null : i)} style={{ display:'block', width:'100%', textAlign:'left', background:'#0a0a0a', border:`1px solid ${expandedIdx === i ? c + '44' : '#1a1a1a'}`, borderRadius:10, padding:10, cursor:'pointer', transition:'all 0.15s' }}>
+                <div className="flex items-center gap-2">
+                  <div style={{ width:28, height:28, borderRadius:6, background:`linear-gradient(135deg, ${c}33, #0a0a0a)`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:800, color:c, flexShrink:0 }}>
+                    {item.artist.charAt(0)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] font-bold text-gs-text truncate">{item.title}</div>
+                    <div className="text-[9px] text-gs-dim truncate">{item.artist}</div>
+                  </div>
+                  <div className="text-[8px] text-gs-faint text-right shrink-0">{relTime(item.time)}</div>
+                </div>
+                {expandedIdx === i && (
+                  <div style={{ marginTop:8, paddingTop:8, borderTop:'1px solid #1a1a1a', animation:'vb-fade-in 0.15s ease-out' }}>
+                    {item.album && <div className="text-[9px] text-gs-dim mb-1">Album: {item.album}</div>}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[8px] text-gs-faint">Confidence:</span>
+                      <div className="flex-1 h-1 bg-[#1a1a1a] rounded-full overflow-hidden">
+                        <div style={{ width:`${item.confidence}%`, height:'100%', background:c, borderRadius:999 }} />
+                      </div>
+                      <span className="text-[8px] font-mono" style={{ color:c }}>{Math.round(item.confidence)}%</span>
+                    </div>
+                  </div>
+                )}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── P12: Device Notification Center ─────────────────────────────────────────
+function DeviceNotificationCenter() {
+  const [notifications, setNotifications] = useState([
+    { id:1, type:'success', title:'Track Identified', message:'Miles Davis - So What identified with 96% confidence', time:Date.now() - 120000, read:false },
+    { id:2, type:'info', title:'Firmware Available', message:'VinylBuddy firmware v2.3.1 is ready to install', time:Date.now() - 3600000, read:false },
+    { id:3, type:'warning', title:'Stylus Hours', message:'Your stylus has 450+ hours. Consider replacement soon.', time:Date.now() - 7200000, read:true },
+    { id:4, type:'success', title:'WiFi Connected', message:'Connected to HomeNetwork (signal: strong)', time:Date.now() - 14400000, read:true },
+    { id:5, type:'milestone', title:'Milestone Reached!', message:'You have identified 100 unique records!', time:Date.now() - 86400000, read:true },
+    { id:6, type:'info', title:'Weekly Summary Ready', message:'Your listening report for this week is available', time:Date.now() - 172800000, read:true },
+  ]);
+  const [filter, setFilter] = useState('all');
+
+  const markAllRead = () => setNotifications(n => n.map(x => ({ ...x, read:true })));
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  const typeStyles = {
+    success: { color:'#22c55e', icon:'✓', bg:'#22c55e11' },
+    info: { color:'#0ea5e9', icon:'ℹ', bg:'#0ea5e911' },
+    warning: { color:'#f59e0b', icon:'⚠', bg:'#f59e0b11' },
+    milestone: { color:'#a855f7', icon:'★', bg:'#a855f711' },
+  };
+
+  const filtered = filter === 'all' ? notifications : filter === 'unread' ? notifications.filter(n => !n.read) : notifications.filter(n => n.type === filter);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        <span className="text-xs font-bold text-gs-text">Notifications</span>
+        {unreadCount > 0 && (
+          <span style={{ fontSize:9, background:'#e11d48', color:'#fff', borderRadius:99, padding:'1px 6px', fontWeight:700 }}>{unreadCount}</span>
+        )}
+        {unreadCount > 0 && (
+          <button onClick={markAllRead} className="text-[9px] text-[#0ea5e9] ml-auto" style={{ background:'none', border:'none', cursor:'pointer' }}>Mark all read</button>
+        )}
+      </div>
+      <div className="flex gap-1 mb-3 overflow-x-auto">
+        {['all','unread','success','info','warning','milestone'].map(f => (
+          <button key={f} onClick={() => setFilter(f)} style={{
+            fontSize:9, padding:'2px 8px', borderRadius:99, border:`1px solid ${filter === f ? '#0ea5e966' : '#222'}`,
+            background: filter === f ? '#0ea5e911' : 'transparent', color: filter === f ? '#0ea5e9' : '#666',
+            cursor:'pointer', fontWeight:600, whiteSpace:'nowrap',
+          }}>{f.charAt(0).toUpperCase() + f.slice(1)}{f === 'unread' && unreadCount > 0 ? ` (${unreadCount})` : ''}</button>
+        ))}
+      </div>
+      <div className="space-y-1.5" style={{ maxHeight:280, overflowY:'auto' }}>
+        {filtered.length === 0 && <div className="text-[10px] text-gs-dim py-4 text-center">No notifications</div>}
+        {filtered.map(n => {
+          const s = typeStyles[n.type] || typeStyles.info;
+          return (
+            <div key={n.id} onClick={() => setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, read:true } : x))} style={{ display:'flex', gap:8, padding:8, borderRadius:8, background: n.read ? 'transparent' : s.bg, border:`1px solid ${n.read ? '#1a1a1a' : s.color + '22'}`, cursor:'pointer', transition:'all 0.15s' }}>
+              <div style={{ width:24, height:24, borderRadius:6, background:s.bg, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, color:s.color, fontWeight:700, flexShrink:0, border:`1px solid ${s.color}22` }}>{s.icon}</div>
+              <div className="flex-1 min-w-0">
+                <div style={{ fontSize:10, fontWeight:n.read ? 500 : 700, color: n.read ? '#999' : '#e5e5e5' }}>{n.title}</div>
+                <div style={{ fontSize:9, color:'#666', lineHeight:1.4 }}>{n.message}</div>
+                <div style={{ fontSize:8, color:'#444', marginTop:2 }}>{relTime(n.time)}</div>
+              </div>
+              {!n.read && <div style={{ width:6, height:6, borderRadius:'50%', background:s.color, flexShrink:0, marginTop:4 }} />}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── P13: Quick Share Listening Card ──────────────────────────────────────────
+function QuickShareCard({ myListens = [] }) {
+  const [copied, setCopied] = useState(false);
+  const [style, setStyle] = useState('dark');
+  const latest = myListens[0] || { title:'No tracks yet', artist:'Play some vinyl!', album:'' };
+
+  const styles = {
+    dark: { bg:'linear-gradient(135deg,#111,#1a1a1a)', text:'#e5e5e5', sub:'#888', accent:'#22c55e', border:'#333' },
+    gradient: { bg:'linear-gradient(135deg,#6366f1,#e11d48)', text:'#fff', sub:'#ffffffaa', accent:'#feca57', border:'transparent' },
+    minimal: { bg:'#fff', text:'#111', sub:'#666', accent:'#111', border:'#ddd' },
+  };
+  const s = styles[style];
+
+  const handleCopy = () => {
+    const text = `🎵 Now listening: ${latest.title} by ${latest.artist}${latest.album ? ` (${latest.album})` : ''}\n\nTracked with VinylBuddy`;
+    navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ec4899" strokeWidth="2"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+        <span className="text-xs font-bold text-gs-text">Share Card</span>
+      </div>
+      <div className="flex gap-1.5 mb-3">
+        {Object.keys(styles).map(k => (
+          <button key={k} onClick={() => setStyle(k)} style={{
+            fontSize:9, padding:'2px 10px', borderRadius:99, fontWeight:600, cursor:'pointer',
+            border:`1px solid ${style === k ? '#ec4899' + '66' : '#222'}`,
+            background: style === k ? '#ec489911' : 'transparent',
+            color: style === k ? '#ec4899' : '#666',
+          }}>{k.charAt(0).toUpperCase() + k.slice(1)}</button>
+        ))}
+      </div>
+      {/* Card preview */}
+      <div style={{ background:s.bg, border:`1px solid ${s.border}`, borderRadius:14, padding:16, marginBottom:12 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:12 }}>
+          <div style={{ width:48, height:48, borderRadius:10, background:s.accent + '33', display:'flex', alignItems:'center', justifyContent:'center', border:`2px solid ${s.accent}44` }}>
+            <span style={{ fontSize:20 }}>🎵</span>
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:13, fontWeight:800, color:s.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{latest.title}</div>
+            <div style={{ fontSize:10, color:s.sub }}>{latest.artist}</div>
+            {latest.album && <div style={{ fontSize:9, color:s.sub, opacity:0.7 }}>{latest.album}</div>}
+          </div>
+        </div>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', borderTop:`1px solid ${s.border}`, paddingTop:8 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+            <div style={{ width:6, height:6, borderRadius:'50%', background:s.accent }} />
+            <span style={{ fontSize:8, color:s.sub, fontWeight:600 }}>VinylBuddy</span>
+          </div>
+          <span style={{ fontSize:8, color:s.sub }}>{myListens.length} tracks identified</span>
+        </div>
+      </div>
+      <button onClick={handleCopy} className="gs-btn-gradient px-4 py-2 text-xs text-white rounded-lg w-full">
+        {copied ? 'Copied to clipboard!' : 'Copy Share Text'}
+      </button>
+    </div>
+  );
+}
+
+// ── P14: Stylus Tracking Hours ──────────────────────────────────────────────
+function StylusTrackingHours({ myListens = [] }) {
+  const [stylusHours, setStylusHours] = useState(347);
+  const [replacementThreshold, setReplacementThreshold] = useState(500);
+  const [showSettings, setShowSettings] = useState(false);
+
+  const pct = Math.min(100, (stylusHours / replacementThreshold) * 100);
+  const remaining = Math.max(0, replacementThreshold - stylusHours);
+  const color = pct >= 90 ? '#ef4444' : pct >= 70 ? '#f59e0b' : '#22c55e';
+  const status = pct >= 90 ? 'Replace Soon' : pct >= 70 ? 'Monitor' : 'Good Condition';
+
+  const weeklyRate = useMemo(() => {
+    const avgPerTrack = 3.5; // minutes
+    const tracksPerWeek = Math.min(myListens.length, 7 * 10);
+    return Math.round((tracksPerWeek * avgPerTrack) / 60 * 10) / 10;
+  }, [myListens]);
+
+  const weeksRemaining = weeklyRate > 0 ? Math.round(remaining / weeklyRate) : '---';
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span className="text-xs font-bold text-gs-text">Stylus Hours</span>
+        <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold ml-auto" style={{ background:color + '22', color }}>{status}</span>
+      </div>
+      <div className="flex items-center gap-4 mb-3">
+        <div style={{ position:'relative', width:80, height:80 }}>
+          <svg width="80" height="80" viewBox="0 0 80 80" style={{ transform:'rotate(-90deg)' }}>
+            <circle cx="40" cy="40" r="34" fill="none" stroke="#1a1a1a" strokeWidth="6" />
+            <circle cx="40" cy="40" r="34" fill="none" stroke={color} strokeWidth="6" strokeLinecap="round" strokeDasharray={2 * Math.PI * 34} strokeDashoffset={2 * Math.PI * 34 * (1 - pct / 100)} />
+          </svg>
+          <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+            <span style={{ fontSize:16, fontWeight:800, color }}>{stylusHours}</span>
+            <span style={{ fontSize:7, color:'#666' }}>HOURS</span>
+          </div>
+        </div>
+        <div className="flex-1">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-[#0a0a0a] rounded-lg p-2">
+              <div className="text-[8px] text-gs-faint uppercase">Remaining</div>
+              <div className="text-[12px] font-bold" style={{ color }}>{remaining}h</div>
+            </div>
+            <div className="bg-[#0a0a0a] rounded-lg p-2">
+              <div className="text-[8px] text-gs-faint uppercase">Weekly Use</div>
+              <div className="text-[12px] font-bold text-gs-text">{weeklyRate}h</div>
+            </div>
+            <div className="bg-[#0a0a0a] rounded-lg p-2">
+              <div className="text-[8px] text-gs-faint uppercase">Weeks Left</div>
+              <div className="text-[12px] font-bold text-gs-text">{weeksRemaining}</div>
+            </div>
+            <div className="bg-[#0a0a0a] rounded-lg p-2">
+              <div className="text-[8px] text-gs-faint uppercase">Usage</div>
+              <div className="text-[12px] font-bold" style={{ color }}>{pct.toFixed(0)}%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <button onClick={() => setShowSettings(!showSettings)} className="text-[9px] text-gs-dim" style={{ background:'none', border:'none', cursor:'pointer' }}>
+        {showSettings ? 'Hide settings' : 'Adjust settings'}
+      </button>
+      {showSettings && (
+        <div style={{ marginTop:8, padding:8, background:'#0a0a0a', borderRadius:8, border:'1px solid #1a1a1a', animation:'vb-fade-in 0.2s ease-out' }}>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[9px] text-gs-dim w-24">Threshold (hrs)</span>
+            <input type="range" min="200" max="1000" step="50" value={replacementThreshold} onChange={e => setReplacementThreshold(Number(e.target.value))} style={{ flex:1, accentColor:color }} />
+            <span className="text-[9px] font-mono text-gs-text w-8 text-right">{replacementThreshold}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] text-gs-dim w-24">Current hours</span>
+            <input type="range" min="0" max={replacementThreshold} step="10" value={stylusHours} onChange={e => setStylusHours(Number(e.target.value))} style={{ flex:1, accentColor:color }} />
+            <span className="text-[9px] font-mono text-gs-text w-8 text-right">{stylusHours}</span>
+          </div>
+          <button onClick={() => setStylusHours(0)} style={{ marginTop:6, fontSize:9, fontWeight:600, color:'#22c55e', background:'#22c55e11', border:'1px solid #22c55e33', borderRadius:6, padding:'3px 10px', cursor:'pointer' }}>Reset (new stylus)</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── P15: Record Value Tracker ───────────────────────────────────────────────
+function RecordValueTracker({ myListens = [] }) {
+  const [timeRange, setTimeRange] = useState('6m');
+  const records = useMemo(() => [
+    { title:'Kind of Blue', artist:'Miles Davis', current:320, prev:280, change:14.3, trend:'up' },
+    { title:'Abbey Road', artist:'The Beatles', current:185, prev:190, change:-2.6, trend:'down' },
+    { title:'Thriller', artist:'Michael Jackson', current:95, prev:75, change:26.7, trend:'up' },
+    { title:'Rumours', artist:'Fleetwood Mac', current:145, prev:140, change:3.6, trend:'up' },
+    { title:'A Love Supreme', artist:'John Coltrane', current:410, prev:380, change:7.9, trend:'up' },
+  ], []);
+
+  const totalValue = records.reduce((a, r) => a + r.current, 0);
+  const totalPrev = records.reduce((a, r) => a + r.prev, 0);
+  const totalChange = ((totalValue - totalPrev) / totalPrev * 100).toFixed(1);
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        <span className="text-xs font-bold text-gs-text">Record Values</span>
+        <span className="text-[9px] ml-auto font-mono font-bold" style={{ color: totalChange >= 0 ? '#22c55e' : '#ef4444' }}>
+          {totalChange >= 0 ? '+' : ''}{totalChange}%
+        </span>
+      </div>
+      <div className="flex gap-1 mb-3">
+        {['1m','3m','6m','1y','all'].map(t => (
+          <button key={t} onClick={() => setTimeRange(t)} style={{
+            fontSize:8, padding:'2px 8px', borderRadius:99, fontWeight:600, cursor:'pointer',
+            border:`1px solid ${timeRange === t ? '#22c55e44' : '#222'}`,
+            background: timeRange === t ? '#22c55e11' : 'transparent',
+            color: timeRange === t ? '#22c55e' : '#666',
+          }}>{t.toUpperCase()}</button>
+        ))}
+      </div>
+      <div className="bg-[#0a0a0a] rounded-xl p-3 mb-3 border border-gs-border">
+        <div className="text-[9px] text-gs-faint uppercase mb-1">Total Collection Value</div>
+        <div className="text-xl font-bold text-gs-text font-mono">${totalValue.toLocaleString()}</div>
+        <div className="text-[10px] font-mono" style={{ color: totalChange >= 0 ? '#22c55e' : '#ef4444' }}>
+          {totalChange >= 0 ? '↑' : '↓'} ${Math.abs(totalValue - totalPrev)} ({totalChange >= 0 ? '+' : ''}{totalChange}%)
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        {records.map((r, i) => (
+          <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-[#0a0a0a] border border-[#1a1a1a]">
+            <div style={{ width:28, height:28, borderRadius:6, background:'linear-gradient(135deg,#22c55e22,#0a0a0a)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:800, color:'#22c55e', flexShrink:0 }}>{r.artist.charAt(0)}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-bold text-gs-text truncate">{r.title}</div>
+              <div className="text-[8px] text-gs-dim">{r.artist}</div>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="text-[11px] font-bold font-mono text-gs-text">${r.current}</div>
+              <div className="text-[8px] font-mono" style={{ color: r.trend === 'up' ? '#22c55e' : '#ef4444' }}>
+                {r.trend === 'up' ? '↑' : '↓'} {r.change}%
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── P16: Listening Statistics Widgets ────────────────────────────────────────
+function ListeningStatsWidgets({ myListens = [] }) {
+  const [layout, setLayout] = useState(['total','unique','avgPerDay','topGenre','streak','longestSession']);
+
+  const stats = useMemo(() => {
+    const unique = new Set(myListens.map(l => `${l.artist}-${l.title}`)).size;
+    const days = new Set(myListens.map(l => new Date(l.timestamp || l.identifiedAt || 0).toDateString())).size;
+    return {
+      total: { label:'Total Plays', value:myListens.length, icon:'🎵', color:'#6366f1' },
+      unique: { label:'Unique Tracks', value:unique, icon:'💿', color:'#22c55e' },
+      avgPerDay: { label:'Avg / Day', value: days > 0 ? (myListens.length / days).toFixed(1) : '0', icon:'📊', color:'#0ea5e9' },
+      topGenre: { label:'Top Genre', value:'Jazz', icon:'🎷', color:'#f59e0b' },
+      streak: { label:'Current Streak', value:'5 days', icon:'🔥', color:'#ef4444' },
+      longestSession: { label:'Longest Session', value:'2h 14m', icon:'⏱️', color:'#8b5cf6' },
+    };
+  }, [myListens]);
+
+  const moveWidget = (idx, dir) => {
+    const newLayout = [...layout];
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= newLayout.length) return;
+    [newLayout[idx], newLayout[newIdx]] = [newLayout[newIdx], newLayout[idx]];
+    setLayout(newLayout);
+  };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366f1" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span className="text-xs font-bold text-gs-text">Stat Widgets</span>
+        <span className="text-[9px] text-gs-dim ml-auto" style={{ animation:'vb-drag-hint 2s ease-in-out infinite' }}>Drag to reorder</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {layout.map((key, i) => {
+          const s = stats[key];
+          if (!s) return null;
+          return (
+            <div key={key} className="bg-[#0a0a0a] border border-gs-border rounded-xl p-3 relative group" style={{ animation:`vb-card-float 3s ease-in-out infinite`, animationDelay:`${i * 0.3}s` }}>
+              <div className="flex items-center justify-between mb-2">
+                <span style={{ fontSize:16 }}>{s.icon}</span>
+                <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => moveWidget(i, -1)} style={{ width:14, height:14, borderRadius:3, border:'1px solid #333', background:'#1a1a1a', fontSize:8, cursor:'pointer', color:'#666', display:'flex', alignItems:'center', justifyContent:'center' }}>↑</button>
+                  <button onClick={() => moveWidget(i, 1)} style={{ width:14, height:14, borderRadius:3, border:'1px solid #333', background:'#1a1a1a', fontSize:8, cursor:'pointer', color:'#666', display:'flex', alignItems:'center', justifyContent:'center' }}>↓</button>
+                </div>
+              </div>
+              <div style={{ fontSize:18, fontWeight:800, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
+              <div style={{ fontSize:9, color:'#666', marginTop:2, fontWeight:500 }}>{s.label}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── P17: Audio Comparison A/B Test ──────────────────────────────────────────
+function AudioComparisonABTest() {
+  const [selectedPressing, setSelectedPressing] = useState(null);
+  const [revealed, setRevealed] = useState(false);
+  const [votes, setVotes] = useState({ a:0, b:0 });
+
+  const pressings = {
+    a: { label:'Pressing A', year:'1959 Original', plant:'Columbia NYC', weight:'180g', noise:8, dynamics:92, warmth:88, clarity:85, color:'#0ea5e9' },
+    b: { label:'Pressing B', year:'2020 Remaster', plant:'QRP', weight:'180g', noise:95, dynamics:87, warmth:78, clarity:94, color:'#f59e0b' },
+  };
+
+  const handleVote = (choice) => {
+    setSelectedPressing(choice);
+    setVotes(v => ({ ...v, [choice]: v[choice] + 1 }));
+    setTimeout(() => setRevealed(true), 500);
+  };
+
+  const metrics = ['noise','dynamics','warmth','clarity'];
+  const metricLabels = { noise:'Surface Noise', dynamics:'Dynamic Range', warmth:'Warmth', clarity:'Clarity' };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" strokeWidth="2"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="18" y1="8" x2="23" y2="13"/><line x1="23" y1="8" x2="18" y2="13"/></svg>
+        <span className="text-xs font-bold text-gs-text">A/B Comparison</span>
+      </div>
+      <p className="text-[10px] text-gs-dim mb-3">Compare two pressings of the same album. Which sounds better?</p>
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        {['a','b'].map(k => {
+          const p = pressings[k];
+          const isSelected = selectedPressing === k;
+          return (
+            <button key={k} onClick={() => !revealed && handleVote(k)} style={{
+              padding:12, borderRadius:12, border:`2px solid ${isSelected ? p.color : '#222'}`,
+              background: isSelected ? p.color + '11' : '#0a0a0a', cursor: revealed ? 'default' : 'pointer',
+              textAlign:'left', transition:'all 0.2s',
+            }}>
+              <div style={{ fontSize:12, fontWeight:800, color:p.color, marginBottom:4 }}>{p.label}</div>
+              {revealed ? (
+                <div>
+                  <div style={{ fontSize:9, color:'#888', marginBottom:4 }}>{p.year} - {p.plant}</div>
+                  <div className="space-y-1">
+                    {metrics.map(m => (
+                      <div key={m} className="flex items-center gap-1">
+                        <span style={{ fontSize:7, color:'#555', width:44 }}>{metricLabels[m]}</span>
+                        <div style={{ flex:1, height:3, background:'#1a1a1a', borderRadius:2, overflow:'hidden' }}>
+                          <div style={{ width:`${p[m]}%`, height:'100%', background:p.color, borderRadius:2 }} />
+                        </div>
+                        <span style={{ fontSize:7, fontFamily:'monospace', color:p.color, width:16, textAlign:'right' }}>{p[m]}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize:10, color:'#555' }}>Tap to vote</div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {revealed && (
+        <div style={{ textAlign:'center', animation:'vb-fade-in 0.3s ease-out' }}>
+          <div className="text-[10px] text-gs-dim mb-1">Community votes</div>
+          <div className="flex items-center gap-2 justify-center">
+            <span style={{ fontSize:10, fontWeight:700, color:pressings.a.color }}>{votes.a + 127}</span>
+            <div style={{ width:100, height:4, borderRadius:2, background:'#1a1a1a', overflow:'hidden', display:'flex' }}>
+              <div style={{ width:`${((votes.a + 127) / (votes.a + votes.b + 127 + 94)) * 100}%`, background:pressings.a.color }} />
+              <div style={{ flex:1, background:pressings.b.color }} />
+            </div>
+            <span style={{ fontSize:10, fontWeight:700, color:pressings.b.color }}>{votes.b + 94}</span>
+          </div>
+          <button onClick={() => { setSelectedPressing(null); setRevealed(false); }} style={{ marginTop:8, fontSize:9, color:'#666', background:'none', border:'none', cursor:'pointer', textDecoration:'underline' }}>Try another comparison</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── P18: Record Provenance Chain ────────────────────────────────────────────
+function RecordProvenanceChain() {
+  const [selectedRecord, setSelectedRecord] = useState(0);
+  const records = [
+    {
+      title:'Kind of Blue', artist:'Miles Davis',
+      chain: [
+        { owner:'Columbia Records', date:'March 1959', event:'First Pressing', location:'New York, NY', verified:true, color:'#6366f1' },
+        { owner:'Tower Records', date:'April 1959', event:'Initial Distribution', location:'Los Angeles, CA', verified:true, color:'#0ea5e9' },
+        { owner:'Robert Chen', date:'June 1959', event:'Original Purchase', location:'San Francisco, CA', verified:true, color:'#22c55e' },
+        { owner:'Vinyl Vault Records', date:'March 1992', event:'Estate Sale', location:'Berkeley, CA', verified:true, color:'#f59e0b' },
+        { owner:'James Mitchell', date:'August 2005', event:'Purchased at Auction', location:'Chicago, IL', verified:false, color:'#e11d48' },
+        { owner:'You', date:'December 2024', event:'Acquired from Discogs', location:'Current Owner', verified:true, color:'#22c55e' },
+      ]
+    },
+    {
+      title:'Rumours', artist:'Fleetwood Mac',
+      chain: [
+        { owner:'Warner Bros Records', date:'February 1977', event:'First Pressing', location:'Burbank, CA', verified:true, color:'#6366f1' },
+        { owner:'Sam Goody', date:'March 1977', event:'Retail Distribution', location:'New York, NY', verified:true, color:'#0ea5e9' },
+        { owner:'You', date:'March 2025', event:'Record Store Day Find', location:'Current Owner', verified:true, color:'#22c55e' },
+      ]
+    },
+  ];
+
+  const rec = records[selectedRecord];
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" strokeWidth="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+        <span className="text-xs font-bold text-gs-text">Provenance Chain</span>
+      </div>
+      <div className="flex gap-1.5 mb-3">
+        {records.map((r, i) => (
+          <button key={i} onClick={() => setSelectedRecord(i)} style={{
+            fontSize:9, padding:'3px 10px', borderRadius:8, fontWeight:600, cursor:'pointer',
+            border:`1px solid ${selectedRecord === i ? '#8b5cf666' : '#222'}`,
+            background: selectedRecord === i ? '#8b5cf611' : '#0a0a0a',
+            color: selectedRecord === i ? '#8b5cf6' : '#666',
+          }}>{r.title}</button>
+        ))}
+      </div>
+      <div style={{ position:'relative', paddingLeft:20 }}>
+        <div style={{ position:'absolute', left:8, top:4, bottom:4, width:2, background:'linear-gradient(to bottom, #8b5cf6, #8b5cf622)', borderRadius:1 }} />
+        {rec.chain.map((link, i) => (
+          <div key={i} style={{ position:'relative', marginBottom:10, paddingLeft:12, animation:'vb-fade-in 0.3s ease-out both', animationDelay:`${i * 0.1}s` }}>
+            <div style={{ position:'absolute', left:-8, top:4, width:12, height:12, borderRadius:'50%', background:link.color, border:'2px solid #111', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1 }}>
+              {link.verified && <svg width="6" height="6" viewBox="0 0 24 24" fill="#fff" stroke="none"><polyline points="20 6 9 17 4 12" fill="none" stroke="#fff" strokeWidth="4"/></svg>}
+            </div>
+            <div style={{ background:'#0a0a0a', borderRadius:8, padding:8, border:`1px solid ${link.color}22` }}>
+              <div className="flex items-center justify-between mb-1">
+                <span style={{ fontSize:10, fontWeight:700, color:'#e5e5e5' }}>{link.owner}</span>
+                <span style={{ fontSize:8, color:'#555' }}>{link.date}</span>
+              </div>
+              <div style={{ fontSize:9, color:link.color, fontWeight:500, marginBottom:2 }}>{link.event}</div>
+              <div className="flex items-center gap-1">
+                <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#444" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                <span style={{ fontSize:8, color:'#555' }}>{link.location}</span>
+                {link.verified && <span style={{ fontSize:7, color:'#22c55e', marginLeft:'auto', fontWeight:600 }}>VERIFIED</span>}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── P19: Collaborative Playlist Builder ─────────────────────────────────────
+function CollaborativePlaylistBuilder({ myListens = [] }) {
+  const [playlistName, setPlaylistName] = useState('Friday Night Vinyl Session');
+  const [tracks, setTracks] = useState([
+    { title:'So What', artist:'Miles Davis', addedBy:'You', avatar:'C', color:'#22c55e' },
+    { title:'Dreams', artist:'Fleetwood Mac', addedBy:'Alex', avatar:'A', color:'#0ea5e9' },
+    { title:'Billie Jean', artist:'Michael Jackson', addedBy:'Sarah', avatar:'S', color:'#e11d48' },
+    { title:'Come Together', artist:'The Beatles', addedBy:'You', avatar:'C', color:'#22c55e' },
+    { title:'A Love Supreme Pt 1', artist:'John Coltrane', addedBy:'Mike', avatar:'M', color:'#f59e0b' },
+  ]);
+  const [editing, setEditing] = useState(false);
+  const [inviteCode, setInviteCode] = useState(null);
+
+  const collaborators = useMemo(() => {
+    const map = {};
+    tracks.forEach(t => { map[t.addedBy] = { name:t.addedBy, avatar:t.avatar, color:t.color, count:(map[t.addedBy]?.count || 0) + 1 }; });
+    return Object.values(map);
+  }, [tracks]);
+
+  const generateInvite = () => {
+    setInviteCode('VB-' + Math.random().toString(36).substring(2, 8).toUpperCase());
+  };
+
+  const removeTrack = (idx) => setTracks(t => t.filter((_, i) => i !== idx));
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <span className="text-xs font-bold text-gs-text">Collaborative Playlist</span>
+      </div>
+      {/* Playlist name */}
+      <div className="flex items-center gap-2 mb-3">
+        {editing ? (
+          <input value={playlistName} onChange={e => setPlaylistName(e.target.value)} onBlur={() => setEditing(false)} onKeyDown={e => e.key === 'Enter' && setEditing(false)} autoFocus style={{ flex:1, fontSize:13, fontWeight:800, color:'#e5e5e5', background:'transparent', border:'none', borderBottom:'1px solid #22c55e44', outline:'none', padding:'2px 0' }} />
+        ) : (
+          <button onClick={() => setEditing(true)} style={{ flex:1, textAlign:'left', fontSize:13, fontWeight:800, color:'#e5e5e5', background:'none', border:'none', cursor:'pointer' }}>
+            {playlistName} <span style={{ fontSize:9, color:'#555' }}>✏️</span>
+          </button>
+        )}
+      </div>
+      {/* Collaborators */}
+      <div className="flex items-center gap-1 mb-3">
+        {collaborators.map((c, i) => (
+          <div key={i} style={{ width:24, height:24, borderRadius:'50%', background:c.color, display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:700, color:'#fff', border:'2px solid #111', marginLeft: i > 0 ? -6 : 0, zIndex: collaborators.length - i }} title={`${c.name} (${c.count} tracks)`}>
+            {c.avatar}
+          </div>
+        ))}
+        <button onClick={generateInvite} style={{ width:24, height:24, borderRadius:'50%', border:'1px dashed #444', background:'transparent', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, color:'#666', cursor:'pointer', marginLeft:-2 }}>+</button>
+        <span className="text-[9px] text-gs-dim ml-2">{collaborators.length} collaborators</span>
+      </div>
+      {inviteCode && (
+        <div style={{ background:'#22c55e11', border:'1px solid #22c55e33', borderRadius:8, padding:8, marginBottom:8, animation:'vb-fade-in 0.2s ease-out' }}>
+          <div className="text-[9px] text-gs-dim mb-1">Share this code to invite friends:</div>
+          <div className="flex items-center gap-2">
+            <code style={{ fontSize:13, fontWeight:800, color:'#22c55e', letterSpacing:2 }}>{inviteCode}</code>
+            <button onClick={() => navigator.clipboard?.writeText(inviteCode)} style={{ fontSize:8, color:'#22c55e', background:'#22c55e22', border:'none', borderRadius:4, padding:'2px 8px', cursor:'pointer', fontWeight:600 }}>Copy</button>
+          </div>
+        </div>
+      )}
+      {/* Track list */}
+      <div className="space-y-1" style={{ maxHeight:240, overflowY:'auto' }}>
+        {tracks.map((t, i) => (
+          <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-[#0a0a0a] border border-[#1a1a1a] group">
+            <div style={{ fontSize:10, color:'#444', fontFamily:'monospace', width:16 }}>{i + 1}</div>
+            <div style={{ width:20, height:20, borderRadius:4, background:t.color + '33', display:'flex', alignItems:'center', justifyContent:'center', fontSize:8, fontWeight:700, color:t.color }}>{t.avatar}</div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-bold text-gs-text truncate">{t.title}</div>
+              <div className="text-[8px] text-gs-dim">{t.artist} - added by {t.addedBy}</div>
+            </div>
+            <button onClick={() => removeTrack(i)} className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ width:18, height:18, borderRadius:4, border:'1px solid #333', background:'#1a1a1a', fontSize:10, color:'#666', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>×</button>
+          </div>
+        ))}
+      </div>
+      <div className="text-[9px] text-gs-faint text-center mt-2">{tracks.length} tracks - ~{Math.round(tracks.length * 4.2)} min</div>
+    </div>
+  );
+}
+
+// ── P20: Year-in-Review Generator ───────────────────────────────────────────
+function YearInReviewGenerator({ myListens = [] }) {
+  const [generating, setGenerating] = useState(false);
+  const [generated, setGenerated] = useState(false);
+  const [year, setYear] = useState(2025);
+  const [page, setPage] = useState(0);
+
+  const reviewData = useMemo(() => ({
+    totalTracks: myListens.length || 342,
+    uniqueAlbums: new Set(myListens.map(l => l.album || l.title)).size || 87,
+    totalHours: Math.round((myListens.length || 342) * 3.5 / 60),
+    topArtist: 'Miles Davis',
+    topAlbum: 'Kind of Blue',
+    topGenre: 'Jazz',
+    longestStreak: 14,
+    firstListen: 'So What - Miles Davis',
+    rarest: 'Blue Train (1st Press)',
+    moodSummary: 'Reflective & Exploratory',
+  }), [myListens]);
+
+  const pages = [
+    { title:`Your ${year} in Vinyl`, bg:'linear-gradient(135deg,#6366f1,#0ea5e9)', content:(
+      <div style={{ textAlign:'center', padding:20 }}>
+        <div style={{ fontSize:40, marginBottom:8 }}>🎵</div>
+        <div style={{ fontSize:20, fontWeight:900, color:'#fff', marginBottom:4 }}>Your {year} in Vinyl</div>
+        <div style={{ fontSize:11, color:'#ffffffaa' }}>A year of incredible listening</div>
+      </div>
+    )},
+    { title:'By the Numbers', bg:'linear-gradient(135deg,#111,#1a1a1a)', content:(
+      <div style={{ padding:16 }}>
+        <div style={{ fontSize:12, fontWeight:800, color:'#e5e5e5', marginBottom:12, textAlign:'center' }}>By The Numbers</div>
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { label:'Tracks Played', value:reviewData.totalTracks, icon:'🎵', color:'#6366f1' },
+            { label:'Unique Albums', value:reviewData.uniqueAlbums, icon:'💿', color:'#22c55e' },
+            { label:'Hours Listening', value:reviewData.totalHours, icon:'⏱️', color:'#0ea5e9' },
+            { label:'Day Streak', value:reviewData.longestStreak, icon:'🔥', color:'#ef4444' },
+          ].map((s, i) => (
+            <div key={i} style={{ textAlign:'center', padding:8 }}>
+              <div style={{ fontSize:20, marginBottom:2 }}>{s.icon}</div>
+              <div style={{ fontSize:18, fontWeight:900, color:s.color, fontFamily:'monospace' }}>{s.value}</div>
+              <div style={{ fontSize:8, color:'#888', fontWeight:500 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )},
+    { title:'Top Picks', bg:'linear-gradient(135deg,#e11d48,#f59e0b)', content:(
+      <div style={{ padding:16 }}>
+        <div style={{ fontSize:12, fontWeight:800, color:'#fff', marginBottom:12, textAlign:'center' }}>Your Top Picks</div>
+        {[
+          { label:'Most Played Artist', value:reviewData.topArtist },
+          { label:'Favorite Album', value:reviewData.topAlbum },
+          { label:'Go-To Genre', value:reviewData.topGenre },
+          { label:'Rarest Find', value:reviewData.rarest },
+          { label:'Listening Mood', value:reviewData.moodSummary },
+        ].map((item, i) => (
+          <div key={i} style={{ display:'flex', justifyContent:'space-between', padding:'6px 0', borderBottom:'1px solid rgba(255,255,255,0.1)' }}>
+            <span style={{ fontSize:10, color:'#ffffffaa' }}>{item.label}</span>
+            <span style={{ fontSize:10, fontWeight:700, color:'#fff' }}>{item.value}</span>
+          </div>
+        ))}
+      </div>
+    )},
+    { title:'First Listen', bg:'linear-gradient(135deg,#22c55e,#14b8a6)', content:(
+      <div style={{ textAlign:'center', padding:20 }}>
+        <div style={{ fontSize:10, color:'#ffffffaa', marginBottom:8, textTransform:'uppercase', letterSpacing:2 }}>Where It All Started</div>
+        <div style={{ fontSize:32, marginBottom:8 }}>🎶</div>
+        <div style={{ fontSize:14, fontWeight:800, color:'#fff', marginBottom:4 }}>First Identification</div>
+        <div style={{ fontSize:11, color:'#ffffffcc' }}>{reviewData.firstListen}</div>
+        <div style={{ fontSize:9, color:'#ffffff88', marginTop:8 }}>January 3, {year}</div>
+      </div>
+    )},
+  ];
+
+  const doGenerate = () => {
+    setGenerating(true);
+    setTimeout(() => { setGenerating(false); setGenerated(true); setPage(0); }, 2000);
+  };
+
+  return (
+    <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+      <div className="flex items-center gap-2 mb-3">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span className="text-xs font-bold text-gs-text">Year in Review</span>
+        <span className="text-[9px] bg-[#f59e0b22] text-[#f59e0b] px-1.5 py-0.5 rounded-full font-semibold ml-auto">{year}</span>
+      </div>
+      {!generated && !generating && (
+        <div className="text-center py-6">
+          <div style={{ fontSize:40, marginBottom:8 }}>📀</div>
+          <div className="text-[12px] font-bold text-gs-text mb-1">Generate Your {year} Vinyl Wrapped</div>
+          <p className="text-[10px] text-gs-dim mb-4">Beautiful summary of your listening year with shareable graphics.</p>
+          <div className="flex gap-2 justify-center mb-3">
+            {[2024,2025,2026].map(y => (
+              <button key={y} onClick={() => setYear(y)} style={{
+                fontSize:10, padding:'4px 12px', borderRadius:8, fontWeight:600, cursor:'pointer',
+                border:`1px solid ${year === y ? '#f59e0b44' : '#222'}`,
+                background: year === y ? '#f59e0b11' : 'transparent',
+                color: year === y ? '#f59e0b' : '#666',
+              }}>{y}</button>
+            ))}
+          </div>
+          <button onClick={doGenerate} className="gs-btn-gradient px-6 py-2.5 text-xs text-white rounded-lg">Generate Review</button>
+        </div>
+      )}
+      {generating && <VinylLoadingSpinner loading={true} size={48} label="Creating your year in review..." />}
+      {generated && (
+        <div style={{ animation:'vb-fade-in 0.4s ease-out' }}>
+          {/* Card display */}
+          <div style={{ borderRadius:14, overflow:'hidden', background:pages[page].bg, minHeight:200, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:12, position:'relative' }}>
+            {pages[page].content}
+            {/* Page indicator */}
+            <div style={{ position:'absolute', bottom:8, left:'50%', transform:'translateX(-50%)', display:'flex', gap:4 }}>
+              {pages.map((_, i) => (
+                <div key={i} style={{ width:6, height:6, borderRadius:'50%', background: page === i ? '#fff' : '#ffffff44', cursor:'pointer', transition:'all 0.2s' }} onClick={() => setPage(i)} />
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ flex:1, fontSize:10, fontWeight:600, padding:'6px 0', borderRadius:8, border:'1px solid #333', background:'#1a1a1a', color: page === 0 ? '#333' : '#999', cursor: page === 0 ? 'default' : 'pointer' }}>Previous</button>
+            <button onClick={() => setPage(p => Math.min(pages.length - 1, p + 1))} disabled={page === pages.length - 1} style={{ flex:1, fontSize:10, fontWeight:600, padding:'6px 0', borderRadius:8, border:'1px solid #333', background:'#1a1a1a', color: page === pages.length - 1 ? '#333' : '#999', cursor: page === pages.length - 1 ? 'default' : 'pointer' }}>Next</button>
+          </div>
+          <div className="flex gap-2 mt-2">
+            <button className="gs-btn-gradient px-4 py-1.5 text-[10px] text-white rounded-lg flex-1">Share</button>
+            <button onClick={() => { setGenerated(false); setGenerating(false); }} style={{ fontSize:10, color:'#666', background:'none', border:'1px solid #333', borderRadius:8, padding:'4px 12px', cursor:'pointer' }}>Regenerate</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function VinylBuddyScreen({ currentUser, listeningHistory, activated, deviceCode, onActivate, onDeactivate }) {
   const [showFullScreen, setShowFullScreen] = useState(false);
   const [showCelebration, setShowCelebration] = useState(false);
@@ -6450,6 +7845,21 @@ function OverviewTab({ myListens, nowPlaying, isRecent, topArtist, topTrack, top
       {/* (Final 25) Companion App Download */}
       <CompanionAppDownload />
 
+      {/* (P4) Listening Time Goal Tracker */}
+      <ListeningTimeGoalTracker myListens={myListens} />
+
+      {/* (P5) Record Recommendation Cards */}
+      <RecordRecommendationCards myListens={myListens} />
+
+      {/* (P6) Album Credits Viewer */}
+      <AlbumCreditsViewer />
+
+      {/* (P13) Quick Share Listening Card */}
+      <QuickShareCard myListens={myListens} />
+
+      {/* (P19) Collaborative Playlist Builder */}
+      <CollaborativePlaylistBuilder myListens={myListens} />
+
       {/* Recently Played widget */}
       <div className="mb-2">
         <div className="text-[10px] text-gs-dim font-mono mb-2.5 uppercase tracking-[0.06em]">Recently Played Widget</div>
@@ -6556,6 +7966,12 @@ function HistoryTab({ myListens, loading }) {
 
       {/* (Improvement 4) Audio comparison tool */}
       <AudioComparisonTool myListens={myListens} />
+
+      {/* (P11) Identification History Timeline */}
+      <IdentificationTimeline myListens={myListens} />
+
+      {/* (P18) Record Provenance Chain */}
+      <RecordProvenanceChain />
 
       {/* Result count */}
       {search && (
@@ -6927,6 +8343,24 @@ function StatsTab({ myListens, loading }) {
 
       {/* (Final 21) Audio Export Options */}
       <AudioExportOptions myListens={myListens} />
+
+      {/* (P7) Vinyl Pressing Quality Analyzer */}
+      <PressingQualityAnalyzer />
+
+      {/* (P14) Stylus Tracking Hours */}
+      <StylusTrackingHours myListens={myListens} />
+
+      {/* (P15) Record Value Tracker */}
+      <RecordValueTracker myListens={myListens} />
+
+      {/* (P16) Listening Statistics Widgets */}
+      <ListeningStatsWidgets myListens={myListens} />
+
+      {/* (P17) Audio Comparison A/B Test */}
+      <AudioComparisonABTest />
+
+      {/* (P20) Year-in-Review Generator */}
+      <YearInReviewGenerator myListens={myListens} />
 
       {/* Recently Played widget (embeddable preview) */}
       <div className="mb-4">
@@ -8714,6 +10148,32 @@ function DeviceCard({ currentUser, deviceCode, onDeactivate, isDemo }) {
       <BootLogViewer />
       <WatchdogTimerStatus />
       <HardwareSelfTestPanel />
+
+      {/* ── Premium UX Features (P1-P3, P8-P10, P12) ── */}
+
+      {/* (P1) Animated Vinyl Loading Spinner (demo) */}
+      <div className="bg-gs-card border border-gs-border rounded-[14px] p-4 mb-4">
+        <div className="text-[11px] font-bold text-gs-text mb-2">Loading Spinner Preview</div>
+        <VinylLoadingSpinner loading={true} size={48} label="Identifying record..." />
+      </div>
+
+      {/* (P2) Haptic Feedback Patterns */}
+      <HapticFeedbackPatterns />
+
+      {/* (P3) Device Skin/Theme Selector */}
+      <DeviceSkinSelector />
+
+      {/* (P8) Listening Room Ambiance Selector */}
+      <ListeningRoomAmbianceSelector />
+
+      {/* (P9) Record Cleaning Timer */}
+      <RecordCleaningTimer />
+
+      {/* (P10) Audio Spectrum Wallpaper Generator */}
+      <AudioSpectrumWallpaper />
+
+      {/* (P12) Device Notification Center */}
+      <DeviceNotificationCenter />
 
       {/* Setup Guide */}
       <SetupGuide />

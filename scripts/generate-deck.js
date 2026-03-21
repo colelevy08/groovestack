@@ -5,7 +5,7 @@ const pptx = new pptxgen();
 pptx.layout = 'LAYOUT_WIDE';
 pptx.author = 'GrooveStack';
 pptx.company = 'GrooveStack';
-pptx.subject = 'Product Overview — Waves 1–20';
+pptx.subject = 'Product Overview — Waves 1–29';
 
 // Theme colors
 const BG = '0f1117';
@@ -262,7 +262,7 @@ titleSlide.addText('Powered by AI  \u2022  Built for Collectors  \u2022  Connect
   color: GRAY, align: 'center'
 });
 
-titleSlide.addText('Waves 1\u201320  \u2022  Final Comprehensive Edition', {
+titleSlide.addText('Waves 1\u201329  \u2022  Final Comprehensive Edition', {
   x: 0.8, y: 5.2, w: 11.5, h: 0.5,
   fontSize: 14, fontFace: 'Arial',
   color: GRAY, align: 'center'
@@ -283,17 +283,17 @@ addContentSlide('What Is GrooveStack?', [
   'AI-powered verification with Claude and Discogs integration',
   'PWA with full mobile and desktop experience, card flip animations, and drawer modals',
   'ESP-NOW mesh networking for multi-device communication',
-  '1,800+ improvements across 20 development waves'
+  '2,000+ improvements across 29 development waves'
 ]);
 
 
 // ─── 3. Platform Stats ──────────────────────────────────────────────────────
 addCardGridSlide('Platform Stats', [
-  { number: '1,800+', label: 'Total Improvements' },
-  { number: '275+', label: 'API Endpoints' },
+  { number: '2,000+', label: 'Total Improvements' },
+  { number: '290+', label: 'API Endpoints' },
   { number: '51', label: 'Collector Profiles' },
   { number: '100+', label: 'Seed Records' },
-  { number: '20', label: 'Development Waves' },
+  { number: '29', label: 'Development Waves' },
   { number: '18 / 85+', label: 'Genres / Subgenres' }
 ]);
 
@@ -305,7 +305,7 @@ addCardGridSlide('Key Features Summary', [
   { number: 'Collections', label: 'Organize, Track, Value' },
   { number: 'Analytics', label: 'Charts, Stats, Insights' },
   { number: 'Vinyl Buddy', label: 'BLE + OLED + SD + Gesture' },
-  { number: '275+ APIs', label: 'Full REST Backend' }
+  { number: '290+ APIs', label: 'Full REST Backend' }
 ]);
 
 
@@ -740,11 +740,11 @@ addContentSlide('PWA & Mobile Experience', [
 
 
 // ─── 30. API Overview ───────────────────────────────────────────────────────
-addCardGridSlide('API Overview \u2014 275+ Endpoints', [
-  { number: '40+', label: 'Marketplace & Checkout' },
-  { number: '30+', label: 'Social & Feed' },
+addCardGridSlide('API Overview \u2014 290+ Endpoints', [
+  { number: '45+', label: 'Marketplace & Checkout' },
+  { number: '35+', label: 'Social & Feed' },
   { number: '25+', label: 'Collection & Records' },
-  { number: '35+', label: 'Vinyl Buddy / Hardware' },
+  { number: '40+', label: 'Vinyl Buddy / Hardware' },
   { number: '25+', label: 'Auth & User Management' },
   { number: '120+', label: 'Analytics, Admin, Utility & Misc' }
 ]);
@@ -812,11 +812,113 @@ addContentSlide('Development Journey \u2014 Waves 11\u201320', [
   'Wave 17: Active noise cancellation, auto-gain control',
   'Wave 18: Featured listings, storefront customization',
   'Wave 19: Advanced analytics, taste evolution, mood detection',
-  'Wave 20: Final polish, 275+ endpoints, comprehensive documentation'
+  'Wave 20: Polish, 275+ endpoints, comprehensive documentation'
 ]);
 
 
-// ─── 35. Roadmap / Future Plans ─────────────────────────────────────────────
+// ─── 34b. Development Journey — Waves 21–29 ─────────────────────────────────
+addContentSlide('Development Journey \u2014 Waves 21\u201329', [
+  'Wave 21: Revenue model, 5% transaction fee, seller tier subscriptions',
+  'Wave 22: Gamification system, achievements, streaks, leaderboards',
+  'Wave 23: Vinyl Buddy build guide, $43.50 BOM, full HTML instructions',
+  'Wave 24: Full-screen now-playing UX, genre wheel, identification battles',
+  'Wave 25: Listening party invites, social listening sessions',
+  'Wave 26: Loyalty points refinements, redeemable credits',
+  'Wave 27: User engagement features, daily challenges, collector ranks',
+  'Wave 28: Featured listing placements, promoted seller storefronts',
+  'Wave 29: Final comprehensive deck, 2,000+ improvements, 290+ endpoints'
+]);
+
+
+// ─── 35. Vinyl Buddy Build Guide ────────────────────────────────────────────
+addTwoColumnSlide('Vinyl Buddy Build Guide',
+  'Components ($43.50 Total)',
+  [
+    'ESP32-DevKitC V4 — ~$10',
+    'INMP441 I2S MEMS Microphone — ~$3',
+    'SSD1306 OLED 128x64 Display — ~$5',
+    'APDS-9960 Gesture Sensor — ~$6',
+    'MicroSD Card Module — ~$2',
+    'MicroSD Card (16GB) — ~$5',
+    'USB-C Cable + Breadboard + Wires — ~$8',
+    'Optional: 3D-printed enclosure — ~$4.50'
+  ],
+  'Build Guide Included',
+  [
+    'Full HTML build guide with step-by-step photos',
+    'Wiring diagrams for all components',
+    'Breadboard layout and pin mapping',
+    'Firmware flashing instructions',
+    'WiFi and BLE configuration walkthrough',
+    'Audio calibration steps',
+    'Troubleshooting FAQ',
+    'No soldering required — breadboard friendly'
+  ]
+);
+
+
+// ─── 36. Vinyl Buddy UX Experience ─────────────────────────────────────────
+addTwoColumnSlide('Vinyl Buddy UX Experience',
+  'Premium Now-Playing',
+  [
+    'Full-screen now-playing display with album art',
+    'Animated equalizer visualization',
+    'Track progress bar with elapsed/remaining time',
+    'Artist, album, and track metadata display',
+    'Swipe gestures for track control',
+    'Background gradient from album art colors'
+  ],
+  'Interactive Features',
+  [
+    'Genre wheel — spin to explore by genre',
+    'Identification battles — guess the record before AI',
+    'Listening party invites — invite friends to listen along',
+    'Real-time session sharing across devices',
+    'Achievement popups during listening sessions',
+    'Mood-based playlist suggestions from listening data'
+  ]
+);
+
+
+// ─── 37. Revenue Model ─────────────────────────────────────────────────────
+addTwoColumnSlide('Revenue Model',
+  'Transaction Revenue',
+  [
+    '5% transaction fee on all marketplace sales (min $1)',
+    '$6 flat shipping fee per order',
+    'Escrow fee for high-value transactions',
+    'Featured listing placement fees',
+    'Promoted search result positions',
+    'Marketplace search ads'
+  ],
+  'Recurring & Hardware Revenue',
+  [
+    'Seller tier subscriptions (Bronze/Silver/Gold/Platinum)',
+    'Premium collector subscriptions',
+    'Vinyl Buddy hardware sales ($43.50+ per unit)',
+    'Vinyl Buddy accessory sales (enclosures, cables)',
+    'Loyalty points system drives repeat purchases',
+    'Record label partnership and exclusive drop fees'
+  ]
+);
+
+
+// ─── 38. User Engagement Features ───────────────────────────────────────────
+addContentSlide('User Engagement Features', [
+  'Achievement system: First Spin, Century Club, Genre Explorer, Streak Master',
+  'Daily listening streaks with streak shields and recovery',
+  'Weekly and monthly challenges with reward points',
+  'Collector leaderboards: top sellers, top collectors, most active',
+  'Genre leaderboards ranked by listening hours',
+  'Level-up system based on total engagement score',
+  'Seasonal events and limited-edition badges',
+  'Referral program with bonus loyalty points',
+  'Daily login rewards and activity milestones',
+  'Social challenges: identify battles, taste comparisons'
+]);
+
+
+// ─── 39. Roadmap / Future Plans ─────────────────────────────────────────────
 addContentSlide('Roadmap \u2014 Future Plans', [
   'Mobile app (React Native) for iOS and Android',
   'Real-time notifications and chat via WebSockets',
@@ -857,7 +959,7 @@ thankYouSlide.addText('Where Vinyl Lives', {
 });
 
 thankYouSlide.addText([
-  { text: '1,800+ improvements  \u2022  275+ API endpoints  \u2022  20 waves', options: { fontSize: 16, color: GREEN } },
+  { text: '2,000+ improvements  \u2022  290+ API endpoints  \u2022  29 waves', options: { fontSize: 16, color: GREEN } },
   { text: '\n' },
   { text: 'groovestack.vercel.app', options: { fontSize: 18, color: WHITE } },
   { text: '\n' },
@@ -885,5 +987,5 @@ thankYouSlide.addShape(pptx.ShapeType.rect, {
 
 const outputPath = '/Users/colelevy/Development/groovestack/GrooveStack_Overview.pptx';
 pptx.writeFile({ fileName: outputPath })
-  .then(() => console.log(`Presentation saved to: ${outputPath} (36 slides)`))
+  .then(() => console.log(`Presentation saved to: ${outputPath} (41 slides)`))
   .catch(err => console.error('Error:', err));

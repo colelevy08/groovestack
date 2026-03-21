@@ -7,7 +7,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import Paginated from '../Paginated';
 import Empty from '../ui/Empty';
-import { CONDITIONS, FORMATS } from '../../constants';
+import { CONDITIONS, FORMATS, USER_WISHLISTS } from '../../constants';
 
 // Estimate heuristic: base price by condition with year multiplier
 function estimateValue(condition, year) {
@@ -1034,6 +1034,45 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, on
     return suggestions;
   }, [mine]);
 
+  // ── Marketplace encouragement: trending records, completion suggestions, demand ──
+  const trendingUpRecords = useMemo(() => {
+    return mine
+      .map(r => {
+        const currentEst = estimateValue(r.condition, r.year);
+        // Simulate appreciation: older + better condition = more appreciation
+        const seed = (r.id * 7 + 3) % 30;
+        const appreciation = r.year && r.year < 1990 ? 8 + seed : seed > 20 ? 5 + (seed % 10) : 0;
+        return { ...r, currentEst, appreciation };
+      })
+      .filter(r => r.appreciation > 5)
+      .sort((a, b) => b.appreciation - a.appreciation)
+      .slice(0, 5);
+  }, [mine]);
+
+  const duplicateRecords = useMemo(() => {
+    const seen = {};
+    const dupes = [];
+    mine.forEach(r => {
+      const key = `${(r.album || '').toLowerCase()}|||${(r.artist || '').toLowerCase()}`;
+      if (seen[key]) {
+        if (!dupes.find(d => d.key === key)) dupes.push({ key, records: [seen[key], r] });
+        else dupes.find(d => d.key === key).records.push(r);
+      } else {
+        seen[key] = r;
+      }
+    });
+    return dupes;
+  }, [mine]);
+
+  const recordDemand = useMemo(() => {
+    return mine.map(r => {
+      const wantCount = Object.values(USER_WISHLISTS || {}).filter(items =>
+        items.some(w => w.album.toLowerCase() === (r.album || '').toLowerCase() && w.artist.toLowerCase() === (r.artist || '').toLowerCase())
+      ).length;
+      return { ...r, wantCount };
+    }).filter(r => r.wantCount > 0).sort((a, b) => b.wantCount - a.wantCount);
+  }, [mine]);
+
   // Toggle selection
   const toggleSelect = useCallback((id) => {
     setSelected(prev => {
@@ -1225,6 +1264,106 @@ export default function CollectionScreen({ records, currentUser, onAddRecord, on
           <div className="flex gap-4 text-[9px] text-gs-faint font-mono">
             <span>Diversity: {healthScore.diversity}%</span>
             <span>Completeness: {healthScore.completeness}%</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Marketplace: Collection value CTA with list duplicates prompt ── */}
+      {mine.length > 0 && (
+        <div className="bg-gradient-to-r from-emerald-500/8 to-amber-500/5 border border-emerald-500/20 rounded-xl p-3.5 mb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[13px] font-bold text-gs-text mb-0.5">
+                Your collection is worth ~<span className="text-emerald-400">${stats.estCollectionValue.toLocaleString()}</span>
+              </div>
+              {duplicateRecords.length > 0 && (
+                <div className="text-[11px] text-gs-dim">
+                  You have {duplicateRecords.length} duplicate{duplicateRecords.length !== 1 ? 's' : ''} &mdash; list them to earn from your extras
+                </div>
+              )}
+            </div>
+            {duplicateRecords.length > 0 && (
+              <button
+                onClick={onAddRecord}
+                className="text-[10px] font-bold px-3.5 py-2 rounded-lg border-none text-black cursor-pointer shrink-0"
+                style={{ background: 'linear-gradient(135deg, #10b981, #f59e0b)' }}
+              >
+                List Duplicates
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Marketplace: Records trending up in value ── */}
+      {trendingUpRecords.length > 0 && (
+        <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+          <div className="text-[10px] font-mono text-gs-dim mb-2 tracking-wider uppercase flex items-center gap-1.5">
+            Trending Up in Value
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {trendingUpRecords.map(r => (
+              <div key={r.id} onClick={() => handlers.onDetail?.(r)} className="shrink-0 bg-[#111] rounded-lg px-2.5 py-2 border border-[#1a1a1a] cursor-pointer hover:border-emerald-500/30 transition-colors" style={{ minWidth: 140 }}>
+                <div className="text-[10px] font-bold text-gs-text truncate">{r.album}</div>
+                <div className="text-[9px] text-gs-faint truncate">{r.artist}</div>
+                <div className="flex items-center gap-1 mt-1">
+                  <span className="text-[10px] text-gs-dim">~${r.currentEst}</span>
+                  <span className="text-[9px] font-bold text-emerald-400">+{r.appreciation}%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Marketplace: Complete your collection — buy links for missing albums ── */}
+      {missingAlbums.length > 0 && (
+        <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+          <div className="text-[10px] font-mono text-gs-dim tracking-wider uppercase mb-2">Complete Your Collection</div>
+          {missingAlbums.slice(0, 3).map(({ artist, missing }) => (
+            <div key={artist} className="mb-2 last:mb-0">
+              <span className="text-[10px] font-bold text-gs-text">{artist}</span>
+              <div className="flex gap-1.5 mt-1 flex-wrap">
+                {missing.map(album => (
+                  <button
+                    key={album}
+                    onClick={() => window.alert(`Search marketplace for "${album}" by ${artist}`)}
+                    className="text-[9px] px-2 py-1 rounded-lg bg-gs-accent/10 border border-gs-accent/20 text-gs-accent cursor-pointer hover:bg-gs-accent/20 transition-colors"
+                  >
+                    Find &ldquo;{album}&rdquo;
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Marketplace: Demand indicators — X people want this record ── */}
+      {recordDemand.length > 0 && (
+        <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+          <div className="text-[10px] font-mono text-gs-dim tracking-wider uppercase mb-2">In Demand</div>
+          <div className="space-y-1.5">
+            {recordDemand.slice(0, 4).map(r => (
+              <div key={r.id} className="flex items-center justify-between px-2 py-1.5 bg-[#111] rounded-lg">
+                <div className="flex-1 min-w-0">
+                  <span className="text-[10px] font-bold text-gs-text truncate block">{r.album}</span>
+                  <span className="text-[9px] text-gs-faint">{r.artist}</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[9px] text-amber-400 font-semibold">{r.wantCount} {r.wantCount === 1 ? 'person wants' : 'people want'} this</span>
+                  {!r.forSale && (
+                    <button
+                      onClick={() => onAddRecord?.()}
+                      className="text-[9px] px-2 py-1 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20 cursor-pointer font-bold hover:bg-amber-500/25 transition-colors"
+                    >
+                      List it
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}

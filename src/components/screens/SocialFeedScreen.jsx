@@ -1603,7 +1603,21 @@ function PostCard({ post, currentUser, profile, onLikePost, onCommentPost, onBoo
                           ${matchedRecord.price}
                         </span>
                       )}
+                      {/* Marketplace: "Available for Sale" badge on posts with listed records */}
+                      {matchedRecord.forSale && (
+                        <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-bold">FOR SALE</span>
+                      )}
                     </div>
+                  )}
+                  {/* Marketplace: "Buy this record" quick action on review posts */}
+                  {matchedRecord?.forSale && (
+                    <button
+                      onClick={e => { e.stopPropagation(); onDetail(matchedRecord); }}
+                      className="mt-2 text-[10px] font-bold px-3 py-1.5 rounded-lg border-none text-black cursor-pointer hover:opacity-90 transition-opacity"
+                      style={{ background: `linear-gradient(135deg, ${tagAccent}, #6366f1)` }}
+                    >
+                      Buy &middot; ${matchedRecord.price}
+                    </button>
                   )}
                 </div>
                 {matchedRecord && (
@@ -2206,6 +2220,27 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
     }
   }, [storyViewIndex, storyUsers]);
 
+  // ── Marketplace: Trending marketplace records for sidebar widget ──
+  const trendingMarketplace = useMemo(() => {
+    return records
+      .filter(r => r.forSale)
+      .sort((a, b) => (b.likes || 0) - (a.likes || 0))
+      .slice(0, 5);
+  }, [records]);
+
+  // ── Marketplace: Engagement-to-marketplace conversion tracking ──
+  const marketplaceConversions = useMemo(() => {
+    const reviewPosts = posts.filter(p => p.taggedRecord);
+    const forSaleRecords = records.filter(r => r.forSale);
+    const matchCount = reviewPosts.filter(p =>
+      forSaleRecords.some(r =>
+        r.album.toLowerCase() === (p.taggedRecord?.album || '').toLowerCase() &&
+        r.artist.toLowerCase() === (p.taggedRecord?.artist || '').toLowerCase()
+      )
+    ).length;
+    return { total: reviewPosts.length, forSale: matchCount, rate: reviewPosts.length > 0 ? Math.round((matchCount / reviewPosts.length) * 100) : 0 };
+  }, [posts, records]);
+
   // Trending topic click -> set search query
   const handleTopicClick = (topic) => {
     setQ(topic.startsWith('#') ? topic : topic);
@@ -2713,6 +2748,48 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
         ))}
       </div>
 
+      {/* ── Marketplace: Trending in Marketplace sidebar widget ── */}
+      {trendingMarketplace.length > 0 && (
+        <div className="bg-gs-card border border-gs-border rounded-xl p-3.5 mb-4">
+          <div className="flex items-center justify-between mb-2.5">
+            <span className="text-[10px] font-bold font-mono text-gs-dim tracking-wider uppercase">Trending in Marketplace</span>
+            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-gs-accent/10 text-gs-accent/60 font-mono">Shop</span>
+          </div>
+          <div className="space-y-2">
+            {trendingMarketplace.map((r, i) => (
+              <div key={r.id} onClick={() => onDetail(r)} className="flex items-center gap-2.5 cursor-pointer group">
+                <span className="text-[10px] text-gs-faint font-mono w-4 text-right">{i + 1}</span>
+                <div className="w-8 h-8 rounded overflow-hidden shrink-0" style={{ background: r.accent || '#333' }} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-semibold text-gs-text truncate group-hover:text-gs-accent transition-colors">{r.album}</div>
+                  <div className="text-[9px] text-gs-faint truncate">{r.artist}</div>
+                </div>
+                <span className="text-[11px] font-bold text-gs-text shrink-0">${r.price}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Marketplace: Engagement-to-marketplace conversion display ── */}
+      {showAnalytics && marketplaceConversions.total > 0 && (
+        <div className="bg-gs-card border border-gs-border rounded-xl p-3 mb-4">
+          <div className="text-[10px] font-mono text-gs-dim tracking-wider uppercase mb-2">Post to Marketplace Conversions</div>
+          <div className="flex items-center gap-3">
+            <div className="text-center">
+              <div className="text-lg font-bold text-gs-accent">{marketplaceConversions.rate}%</div>
+              <div className="text-[9px] text-gs-faint">conversion rate</div>
+            </div>
+            <div className="flex-1 h-1.5 bg-[#1a1a1a] rounded-full overflow-hidden">
+              <div className="h-full bg-gs-accent rounded-full" style={{ width: `${marketplaceConversions.rate}%` }} />
+            </div>
+            <div className="text-[9px] text-gs-dim font-mono">
+              {marketplaceConversions.forSale}/{marketplaceConversions.total} posts linked to listings
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Posts */}
       {sorted.length === 0 ? (
         <Empty
@@ -2727,28 +2804,54 @@ export default function SocialFeedScreen({ posts, records, currentUser, followin
         />
       ) : (
         <div className={`flex flex-col ${densityConfig.gap}`}>
-          {visiblePosts.map(post => (
-            <PostCard
-              key={post.id}
-              post={post}
-              currentUser={currentUser}
-              profile={profile}
-              onLikePost={onLikePost}
-              onCommentPost={onCommentPost}
-              onBookmarkPost={onBookmarkPost}
-              onViewUser={onViewUser}
-              onViewArtist={onViewArtist}
-              onDetail={onDetail}
-              records={records}
-              showAnalytics={showAnalytics}
-              density={feedDensity}
-              onPinPost={handlePinPost}
-              onRepost={handleRepost}
-              showReportedContent={showReportedContent}
-              posts={posts}
-              following={following}
-              onBoostPost={(postId, level) => window.alert(`Post ${postId} boosted to ${level}!`)}
-            />
+          {visiblePosts.map((post, idx) => (
+            <div key={post.id}>
+              <PostCard
+                post={post}
+                currentUser={currentUser}
+                profile={profile}
+                onLikePost={onLikePost}
+                onCommentPost={onCommentPost}
+                onBookmarkPost={onBookmarkPost}
+                onViewUser={onViewUser}
+                onViewArtist={onViewArtist}
+                onDetail={onDetail}
+                records={records}
+                showAnalytics={showAnalytics}
+                density={feedDensity}
+                onPinPost={handlePinPost}
+                onRepost={handleRepost}
+                showReportedContent={showReportedContent}
+                posts={posts}
+                following={following}
+                onBoostPost={(postId, level) => window.alert(`Post ${postId} boosted to ${level}!`)}
+              />
+              {/* Marketplace: Promoted marketplace post — appears after 3rd post, clearly marked */}
+              {idx === 2 && trendingMarketplace.length > 0 && (
+                <div className="bg-gs-card border border-gs-border rounded-2xl overflow-hidden mt-3">
+                  <div className="h-0.5 bg-gradient-to-r from-amber-500/50 to-transparent" />
+                  <div className="px-5 py-1.5 flex items-center gap-2 border-b border-gs-border bg-amber-500/3">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                    <span className="text-[9px] font-mono text-amber-500/80">Promoted &middot; Marketplace</span>
+                  </div>
+                  <div className="p-4">
+                    <div className="text-[11px] text-gs-dim mb-2">Records the community is talking about</div>
+                    <div className="flex gap-2.5 overflow-x-auto pb-1">
+                      {trendingMarketplace.slice(0, 3).map(r => (
+                        <div key={r.id} onClick={() => onDetail(r)} className="shrink-0 flex gap-2 items-center bg-[#111] rounded-lg px-3 py-2 cursor-pointer hover:bg-[#1a1a1a] transition-colors border border-transparent hover:border-gs-accent/20" style={{ minWidth: 180 }}>
+                          <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={36} />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[10px] font-bold text-gs-text truncate">{r.album}</div>
+                            <div className="text-[9px] text-gs-faint truncate">{r.artist}</div>
+                            <div className="text-[10px] font-bold text-gs-text mt-0.5">${r.price}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           ))}
 
           {/* Infinite scroll sentinel */}

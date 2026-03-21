@@ -890,6 +890,19 @@ export default function Card({
               )}
             </div>
           )}
+          {/* Marketplace: Quick List button for own records not yet listed */}
+          {!r.forSale && r.user === currentUser && (
+            <div className="text-right shrink-0">
+              <button
+                onClick={e => { e.stopPropagation(); onBuy?.(r); }}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/25 text-[9px] text-amber-400 font-bold cursor-pointer hover:bg-amber-500/20 transition-colors"
+                title="List this record for sale"
+              >
+                Quick List
+              </button>
+              <div className="text-[9px] text-gs-faint mt-0.5">~${estimateValue(r.condition, r.year)}</div>
+            </div>
+          )}
         </div>
 
         {/* Hover card preview on desktop */}

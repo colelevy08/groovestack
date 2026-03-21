@@ -464,6 +464,9 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
   // ── Improvement B5: Bundle deal suggestions toggle ─────────────────
   const [showBundleDeals, setShowBundleDeals] = useState(false);
 
+  // ── Marketplace encouragement: Promoted listings dismissed state ────
+  const [promotedDismissed, setPromotedDismissed] = useState(false);
+
   // ── Improvement B6: Time-limited deals section ─────────────────────
   const [showTimeLimitedDeals, setShowTimeLimitedDeals] = useState(true);
 
@@ -669,6 +672,40 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
       b.id - a.id
     );
   }, [baseFiltered, sort, mode]);
+
+  // ── Marketplace encouragement: Hot deals, selling fast, bundles, price drops, promoted ──
+  const hotDeals = useMemo(() => shopRecords.filter(r => {
+    const est = estimateValue(r.condition, r.year);
+    return r.price <= est * 0.80; // 20%+ below estimate
+  }), [shopRecords]);
+
+  const sellingFastRecords = useMemo(() => shopRecords.filter(r => (r.saves || r.likes || 0) >= 3), [shopRecords]);
+
+  const bundleSuggestions = useMemo(() => {
+    const sellerCounts = {};
+    shopRecords.forEach(r => { sellerCounts[r.user] = (sellerCounts[r.user] || 0) + 1; });
+    return Object.entries(sellerCounts)
+      .filter(([, count]) => count >= 2)
+      .map(([seller, count]) => {
+        const sellerRecords = shopRecords.filter(r => r.user === seller).slice(0, 3);
+        const totalPrice = sellerRecords.reduce((sum, r) => sum + parseFloat(r.price || 0), 0);
+        return { seller, count, records: sellerRecords, totalPrice, bundlePrice: Math.round(totalPrice * 0.9) };
+      })
+      .slice(0, 3);
+  }, [shopRecords]);
+
+  const priceDropRecords = useMemo(() => shopRecords.filter(r => {
+    // Deterministic "price drop" simulation based on record id
+    const seed = (r.id * 17 + 11) % 100;
+    return seed < 20; // ~20% of records show as recently dropped
+  }), [shopRecords]);
+
+  const promotedListings = useMemo(() => {
+    return shopRecords
+      .filter(r => r.rating >= 4 || (r.likes || 0) >= 2)
+      .sort((a, b) => (b.likes || 0) - (a.likes || 0))
+      .slice(0, 4);
+  }, [shopRecords]);
 
   // Fix: filter out current user instead of hardcoded "yourhandle" for suggested collectors
   const suggestedUsers = Object.keys(USER_PROFILES).filter(u => u !== currentUser).slice(0, 10);
@@ -1005,6 +1042,56 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
                     <span className="text-xs font-bold text-red-400">${r.price}</span>
                     <span className="text-[9px] text-gs-faint line-through">~${estimateValue(r.condition, r.year)}</span>
                   </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Marketplace: Promoted Listings section at top of shop view ── */}
+      {mode === "shop" && !promotedDismissed && promotedListings.length > 0 && (
+        <div className="mb-4 p-3.5 rounded-xl border border-gs-accent/20 bg-gradient-to-r from-gs-accent/5 to-gs-indigo/5 relative">
+          <button onClick={() => setPromotedDismissed(true)} className="absolute top-2 right-2 bg-transparent border-none text-gs-faint hover:text-gs-text cursor-pointer text-sm">&times;</button>
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="text-[10px] font-bold tracking-widest text-gs-accent font-mono">FEATURED PICKS</span>
+            <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-gs-accent/10 text-gs-accent/60 font-mono">Promoted</span>
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {promotedListings.map(r => (
+              <div key={r.id} onClick={() => trackView(r)} className="shrink-0 flex gap-2 items-center bg-[#111] rounded-lg px-3 py-2.5 cursor-pointer hover:bg-[#1a1a1a] transition-colors border border-transparent hover:border-gs-accent/20" style={{ minWidth: 200 }}>
+                <AlbumArt album={r.album} artist={r.artist} accent={r.accent} size={44} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-bold text-gs-text truncate">{r.album}</div>
+                  <div className="text-[10px] text-gs-faint truncate">{r.artist}</div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-xs font-bold text-gs-text">${r.price}</span>
+                    <Badge label={r.condition} color={condColor(r.condition)} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Marketplace: Bundle discount suggestions ── */}
+      {mode === "shop" && bundleSuggestions.length > 0 && (
+        <div className="mb-4 p-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+          <div className="text-[10px] font-bold tracking-widest text-emerald-400 font-mono mb-2">BUNDLE &amp; SAVE</div>
+          <div className="flex gap-2.5 overflow-x-auto pb-1">
+            {bundleSuggestions.map(b => (
+              <div key={b.seller} className="shrink-0 bg-[#111] rounded-lg px-3 py-2 border border-[#1a1a1a] min-w-[180px]">
+                <div className="text-[10px] text-gs-dim mb-1">Buy {b.count}+ from <button onClick={e => { e.stopPropagation(); onViewUser(b.seller); }} className="bg-transparent border-none text-gs-accent text-[10px] p-0 cursor-pointer">@{b.seller}</button></div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gs-faint line-through">${b.totalPrice}</span>
+                  <span className="text-xs font-bold text-emerald-400">${b.bundlePrice}</span>
+                  <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold">SAVE 10%</span>
+                </div>
+                <div className="flex gap-1 mt-1.5">
+                  {b.records.map(r => (
+                    <div key={r.id} className="w-7 h-7 rounded overflow-hidden shrink-0" style={{ background: r.accent || '#333' }} title={r.album} />
+                  ))}
                 </div>
               </div>
             ))}
@@ -1906,6 +1993,22 @@ export default function ExploreScreen({ records, currentUser, onViewUser, onBuy,
                     {/* Improvement 1: New badge in shop */}
                     {isNewThisWeek(r, records) && (
                       <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-gs-accent/15 text-gs-accent border border-gs-accent/20 font-bold">NEW</span>
+                    )}
+                    {/* Marketplace: Hot Deal badge — priced 20%+ below estimate */}
+                    {(() => {
+                      const est = estimateValue(r.condition, r.year);
+                      if (r.price <= est * 0.80) return (
+                        <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/20 font-bold animate-pulse">HOT DEAL</span>
+                      );
+                      return null;
+                    })()}
+                    {/* Marketplace: Selling Fast indicator — 3+ saves/likes */}
+                    {(r.saves || r.likes || 0) >= 3 && (
+                      <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/20 font-bold">SELLING FAST</span>
+                    )}
+                    {/* Marketplace: Price just dropped badge */}
+                    {((r.id * 17 + 11) % 100) < 20 && (
+                      <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-bold">PRICE DROP</span>
                     )}
                   </div>
                   <div className="text-xs text-[#777] mb-1.5 flex items-center gap-1.5">
